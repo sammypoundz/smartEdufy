@@ -1072,31 +1072,62 @@ export default function Students() {
 }
 
 // Centered Modal Component
-function CenteredModal({ children, onClose, title, theme, size = 'md', className = '' }: any) {
+// Centered Modal Component
+function CenteredModal({
+  children,
+  onClose,
+  title,
+  theme,
+  size = 'md',
+  className = '',
+}: any) {
   const maxWidth = size === 'lg' ? 'max-w-5xl' : 'max-w-md';
+
   return (
     <>
+      {/* Backdrop */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"
+        className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
       />
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4">
+
+      {/* Perfectly centered modal */}
+      <div className="fixed inset-0 z-50 grid place-items-center p-4 overflow-y-auto">
         <motion.div
-          initial={{ scale: 0.9, opacity: 0, y: 20 }}
+          initial={{ scale: 0.95, opacity: 0, y: 20 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
-          exit={{ scale: 0.9, opacity: 0, y: 20 }}
-          className={`w-full ${maxWidth} max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${theme === 'dark' ? 'bg-gray-900' : 'bg-white'} ${className}`}
+          exit={{ scale: 0.95, opacity: 0, y: 20 }}
+          transition={{ duration: 0.2 }}
+          onClick={(e) => e.stopPropagation()}
+          className={`relative my-8 w-full ${maxWidth} max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
+            theme === 'dark' ? 'bg-gray-900' : 'bg-white'
+          } ${className}`}
         >
-          <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
-            <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{title}</h3>
-            <button onClick={onClose} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition">
+          {/* Header */}
+          <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
+            <h3
+              className={`text-xl font-bold ${
+                theme === 'dark' ? 'text-white' : 'text-gray-900'
+              }`}
+            >
+              {title}
+            </h3>
+
+            <button
+              onClick={onClose}
+              className="rounded-full p-1 transition hover:bg-gray-200 dark:hover:bg-gray-700"
+            >
               <XMarkIcon className="h-5 w-5 text-gray-500 dark:text-gray-400" />
             </button>
           </div>
-          <div className="p-6 overflow-y-auto flex-1">{children}</div>
+
+          {/* Body */}
+          <div className="flex-1 overflow-y-auto p-6">
+            {children}
+          </div>
         </motion.div>
       </div>
     </>
