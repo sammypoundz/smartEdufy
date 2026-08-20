@@ -1,22 +1,11 @@
 import axios from 'axios';
 
-// Determine the API base URL based on the environment
-const getApiBaseUrl = () => {
-  // If VITE_API_URL is set (in production/deployment), use it
-  if (import.meta.env.VITE_API_URL) {
-    return import.meta.env.VITE_API_URL;
-  }
-  
-  // In development, use localhost
-  if (import.meta.env.DEV) {
-    return 'http://localhost:5000/api';
-  }
-  
-  // Fallback for production without VITE_API_URL
-  return 'https://smartedufybackend.onrender.com/api';
-};
+// Hardcode for production, use localhost for development
+const API_BASE_URL = window.location.hostname === 'localhost' 
+  ? 'http://localhost:5000/api' 
+  : 'https://smartedufybackend.onrender.com/api';
 
-const API_BASE_URL = getApiBaseUrl();
+console.log('API_BASE_URL:', API_BASE_URL);
 
 const api = axios.create({
   baseURL: API_BASE_URL,
