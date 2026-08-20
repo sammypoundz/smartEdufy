@@ -1,9 +1,7 @@
 import axios from 'axios';
 
-// Hardcode for production, use localhost for development
-const API_BASE_URL = window.location.hostname === 'localhost' 
-  ? 'http://localhost:5000/api' 
-  : 'https://smartedufybackend.onrender.com/api';
+// Always use the online server
+const API_BASE_URL = 'https://smartedufybackend.onrender.com/api';
 
 console.log('API_BASE_URL:', API_BASE_URL);
 
