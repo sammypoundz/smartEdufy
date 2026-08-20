@@ -1194,7 +1194,10 @@ export default function OpenArm() {
     );
   }
 
-  const displayTitle = `${className} ${armData.alias || ''} ( Arm ${armData.letter} )`.trim();
+  // ✅ FIXED: Clean title without duplication
+  const displayTitle = armData.alias 
+    ? `${armData.alias} (Arm ${armData.letter})` 
+    : `${className} Arm ${armData.letter}`;
 
   // --- Main render ---
   return (
@@ -1286,7 +1289,7 @@ export default function OpenArm() {
         </motion.div>
       </div>
 
-      {/* ====== All Modals (unchanged, but with improved light mode) ====== */}
+      {/* ====== All Modals (unchanged) ====== */}
 
       {/* Add Student Modal */}
       <AnimatePresence>
@@ -1312,7 +1315,6 @@ export default function OpenArm() {
                     <XMarkIcon className="h-5 w-5" />
                   </button>
                 </div>
-                {/* Modal content unchanged */}
                 {addStudentOption === null ? (
                   <div className="p-6 space-y-4">
                     <button
@@ -1472,7 +1474,6 @@ export default function OpenArm() {
                     <XMarkIcon className="h-5 w-5" />
                   </button>
                 </div>
-                {/* Modal content unchanged – already has good light mode styling */}
                 {editingSubject ? (
                   <div>
                     <div className="space-y-4">
@@ -1522,7 +1523,6 @@ export default function OpenArm() {
                     </div>
                   </div>
                 ) : (
-                  // Steps etc. (unchanged)
                   <>
                     {subjectStep === 'choose' && (
                       <div className="space-y-4">
@@ -1689,7 +1689,7 @@ export default function OpenArm() {
         )}
       </AnimatePresence>
 
-      {/* Skill Modal (similar pattern – unchanged) */}
+      {/* Skill Modal */}
       <AnimatePresence>
         {showSkillModal && (
           <>
@@ -1726,7 +1726,6 @@ export default function OpenArm() {
                     <XMarkIcon className="h-5 w-5" />
                   </button>
                 </div>
-                {/* Modal body – same structure as subject modal, using similar classes */}
                 {editingSkill ? (
                   <div>
                     <div className="space-y-4">
@@ -1769,7 +1768,6 @@ export default function OpenArm() {
                     </div>
                   </div>
                 ) : (
-                  // Steps (same as subject)
                   <>
                     {skillStep === 'choose' && (
                       <div className="space-y-4">
@@ -1924,7 +1922,6 @@ export default function OpenArm() {
                     <XMarkIcon className="h-5 w-5" />
                   </button>
                 </div>
-                {/* Steps (unchanged – already styled) */}
                 {parentAssignmentStep === 'choose' && (
                   <div className="space-y-4">
                     <button
