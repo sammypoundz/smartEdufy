@@ -1,5 +1,5 @@
 // src/utils/api.ts
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://smartedufybackend.onrender.com/api';
 
 /**
  * Get the stored token from localStorage.

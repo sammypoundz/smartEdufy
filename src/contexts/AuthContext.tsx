@@ -1,5 +1,6 @@
 // AuthContext.tsx
 import { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
+import api from '../services/api'; // 👈 Import your configured axios instance
 
 type UserRole = 'admin' | 'teacher' | 'parent' | 'student' | null;
 
@@ -27,8 +28,6 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-const API_URL = 'http://localhost:5000/api';
-
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -46,19 +45,9 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     try {
-      const response = await fetch(`${API_URL}/auth/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        return { success: false, error: data.error || 'Login failed' };
-      }
-
-      const { token, user } = data;
+      // 👇 Use the configured api instance instead of fetch
+      const response = await api.post('/auth/login', { email, password });
+      const { token, user } = response.data;
 
       // Ensure the user object contains schoolId
       if (!user.schoolId) {
@@ -76,9 +65,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       }
 
       return { success: true, user };
-    } catch (err) {
+    } catch (err: any) {
       console.error('Login error:', err);
-      return { success: false, error: 'Network error. Please try again.' };
+      
+      // Handle different error types
+      if (err.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        return { 
+          success: false, 
+          error: err.response.data?.error || 'Login failed. Please check your credentials.' 
+        };
+      } else if (err.request) {
+        // The request was made but no response was received
+        return { 
+          success: false, 
+          error: 'Network error. Please check your connection.' 
+        };
+      } else {
+        // Something happened in setting up the request that triggered an Error
+        return { 
+          success: false, 
+          error: 'An unexpected error occurred. Please try again.' 
+        };
+      }
     }
   };
 
