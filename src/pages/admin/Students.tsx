@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -45,19 +45,6 @@ import {
 import { useDropzone } from 'react-dropzone';
 import * as XLSX from 'xlsx';
 
-// Helper functions
-function getArmAlias(letter: string): string {
-  const aliases: Record<string, string> = {
-    A: 'Explorer', B: 'Pioneer', C: 'Voyager', D: 'Trailblazer',
-    E: 'Navigator', F: 'Ranger', G: 'Pathfinder', H: 'Adventurer',
-  };
-  return aliases[letter.toUpperCase()] || 'Explorer';
-}
-
-function formatArmDisplay(letter: string): string {
-  return `Arm ${letter} (${getArmAlias(letter)})`;
-}
-
 // Types
 interface Student {
   id: string;
@@ -67,7 +54,7 @@ interface Student {
   createdAt?: string;
   isActive?: boolean;
   class?: { id: string; name: string };
-  arm?: { id: string; letter: string };
+  arm?: { id: string; letter: string; alias?: string };
   parent?: { name: string; phone?: string; email?: string };
   results?: { term: string; score: number; subject: { name: string } }[];
 }
@@ -75,7 +62,7 @@ interface Student {
 interface ClassOption {
   id: string;
   name: string;
-  arms?: { id: string; letter: string }[];
+  arms?: { id: string; letter: string; alias?: string }[];
 }
 
 const COLORS = ['#0088FE', '#00C49F', '#FFBB28', '#FF8042', '#8884D8'];
@@ -116,6 +103,42 @@ export default function Students() {
   const [itemsPerPage] = useState(10);
   const [suspendingId, setSuspendingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  // Create a map of arm ID to alias from the classes data
+  const armAliasMap = useMemo(() => {
+    const map = new Map<string, string>();
+    classes.forEach(cls => {
+      cls.arms?.forEach(arm => {
+        if (arm.alias) {
+          map.set(arm.id, arm.alias);
+        }
+      });
+    });
+    return map;
+  }, [classes]);
+
+  // Helper function to get arm display name
+  const getArmDisplayName = (arm: { id: string; letter: string; alias?: string } | undefined): string => {
+    if (!arm) return '-';
+    
+    // If the arm already has an alias, use it
+    if (arm.alias) {
+      return `Arm ${arm.letter} (${arm.alias})`;
+    }
+    
+    // Look up the alias from the classes data
+    const alias = armAliasMap.get(arm.id);
+    if (alias) {
+      return `Arm ${arm.letter} (${alias})`;
+    }
+    
+    return `Arm ${arm.letter}`;
+  };
+
+  // For dropdowns - shows only the letter
+  const formatArmDropdown = (letter: string): string => {
+    return `Arm ${letter}`;
+  };
 
   // Fetch data
   const fetchStudents = async () => {
@@ -607,7 +630,7 @@ export default function Students() {
               >
                 <option value="">All Arms</option>
                 {classes.find(c => c.id === selectedClassId)?.arms?.map((arm) => (
-                  <option key={arm.id} value={arm.id}>{formatArmDisplay(arm.letter)}</option>
+                  <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
                 ))}
               </select>
             )}
@@ -674,7 +697,7 @@ export default function Students() {
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{student.admissionNumber || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{student.class?.name || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">
-                      {student.arm?.letter ? formatArmDisplay(student.arm.letter) : '-'}
+                      {getArmDisplayName(student.arm)}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900 dark:text-gray-100">{student.parent?.name || '-'}</td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
@@ -779,7 +802,7 @@ export default function Students() {
                   >
                     <option value="">Select Arm</option>
                     {classes.find(c => c.id === newStudentForm.classId)?.arms?.map((arm) => (
-                      <option key={arm.id} value={arm.id}>{formatArmDisplay(arm.letter)}</option>
+                      <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
                     ))}
                   </select>
                 </div>
@@ -837,7 +860,7 @@ export default function Students() {
                       >
                         <option value="">-- No default arm --</option>
                         {classes.find(c => c.id === bulkClassId)?.arms?.map((arm) => (
-                          <option key={arm.id} value={arm.id}>{formatArmDisplay(arm.letter)}</option>
+                          <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
                         ))}
                       </select>
                     </div>
@@ -953,9 +976,16 @@ export default function Students() {
         )}
       </AnimatePresence>
 
+      {/* View All Students Modal - FULLSCREEN */}
       <AnimatePresence>
         {showAllModal && (
-          <CenteredModal onClose={() => setShowAllModal(false)} title="All Students" theme={theme} size="lg" className="modal-content">
+          <CenteredModal 
+            onClose={() => setShowAllModal(false)} 
+            title="All Students" 
+            theme={theme} 
+            size="fullscreen" 
+            className="modal-content"
+          >
             <div className="space-y-4">
               <div className="relative">
                 <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
@@ -971,9 +1001,9 @@ export default function Students() {
                 />
               </div>
 
-              <div className="overflow-x-auto max-h-[60vh] overflow-y-auto">
+              <div className="overflow-x-auto max-h-[70vh] overflow-y-auto">
                 <table className="min-w-full text-sm">
-                  <thead className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
+                  <thead className="sticky top-0 bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 z-10">
                     <tr>
                       <th className="px-4 py-2 text-left text-gray-900 dark:text-gray-300">Name</th>
                       <th className="px-4 py-2 text-left text-gray-900 dark:text-gray-300">Admission No.</th>
@@ -984,55 +1014,57 @@ export default function Students() {
                     </tr>
                   </thead>
                   <tbody>
-                    {paginatedStudents.map((student) => (
-                      <tr key={student.id} className={`border-b ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'} hover:bg-gray-50 dark:hover:bg-gray-800/50`}>
-                        <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100">{student.name}</td>
-                        <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{student.admissionNumber || '-'}</td>
-                        <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
-                          {student.class?.name || '-'} {student.arm?.letter ? `(Arm ${student.arm.letter})` : ''}
-                        </td>
-                        <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{student.parent?.name || '-'}</td>
-                        <td className="px-4 py-2">
-                          <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                            student.isActive !== false ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
-                          }`}>
-                            {student.isActive !== false ? 'Active' : 'Suspended'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-2 space-x-2 whitespace-nowrap">
-                          <button
-                            onClick={() => handleEditStudent(student)}
-                            className="text-blue-600 hover:text-blue-800 dark:text-blue-400"
-                            title="Edit Student"
-                          >
-                            <PencilIcon className="h-4 w-4 inline" /> Edit
-                          </button>
-                          <button
-                            onClick={() => handleSuspendStudent(student)}
-                            disabled={suspendingId === student.id}
-                            className={`text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 disabled:opacity-50`}
-                            title={student.isActive !== false ? 'Suspend Student' : 'Activate Student'}
-                          >
-                            {suspendingId === student.id ? (
-                              <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block mr-1" />
-                            ) : student.isActive !== false ? (
-                              <StopIcon className="h-4 w-4 inline" />
-                            ) : (
-                              <PlayIcon className="h-4 w-4 inline" />
-                            )}
-                            {student.isActive !== false ? ' Suspend' : ' Activate'}
-                          </button>
-                          <button
-                            onClick={() => handleDeleteStudent(student)}
-                            disabled={deletingId === student.id}
-                            className="text-red-600 hover:text-red-800 dark:text-red-400 disabled:opacity-50"
-                            title="Delete Student"
-                          >
-                            <TrashIcon className="h-4 w-4 inline" /> Delete
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                    {paginatedStudents.map((student) => {
+                      return (
+                        <tr key={student.id} className={`border-b ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'} hover:bg-gray-50 dark:hover:bg-gray-800/50`}>
+                          <td className="px-4 py-2 font-medium text-gray-900 dark:text-gray-100">{student.name}</td>
+                          <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{student.admissionNumber || '-'}</td>
+                          <td className="px-4 py-2 text-gray-900 dark:text-gray-100">
+                            {student.class?.name || '-'} {student.arm ? `(${getArmDisplayName(student.arm)})` : ''}
+                          </td>
+                          <td className="px-4 py-2 text-gray-900 dark:text-gray-100">{student.parent?.name || '-'}</td>
+                          <td className="px-4 py-2">
+                            <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                              student.isActive !== false ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
+                            }`}>
+                              {student.isActive !== false ? 'Active' : 'Suspended'}
+                            </span>
+                          </td>
+                          <td className="px-4 py-2 space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => handleEditStudent(student)}
+                              className="text-blue-600 hover:text-blue-800 dark:text-blue-400"
+                              title="Edit Student"
+                            >
+                              <PencilIcon className="h-4 w-4 inline" /> Edit
+                            </button>
+                            <button
+                              onClick={() => handleSuspendStudent(student)}
+                              disabled={suspendingId === student.id}
+                              className={`text-yellow-600 hover:text-yellow-800 dark:text-yellow-400 disabled:opacity-50`}
+                              title={student.isActive !== false ? 'Suspend Student' : 'Activate Student'}
+                            >
+                              {suspendingId === student.id ? (
+                                <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin inline-block mr-1" />
+                              ) : student.isActive !== false ? (
+                                <StopIcon className="h-4 w-4 inline" />
+                              ) : (
+                                <PlayIcon className="h-4 w-4 inline" />
+                              )}
+                              {student.isActive !== false ? ' Suspend' : ' Activate'}
+                            </button>
+                            <button
+                              onClick={() => handleDeleteStudent(student)}
+                              disabled={deletingId === student.id}
+                              className="text-red-600 hover:text-red-800 dark:text-red-400 disabled:opacity-50"
+                              title="Delete Student"
+                            >
+                              <TrashIcon className="h-4 w-4 inline" /> Delete
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {paginatedStudents.length === 0 && (
                       <tr>
                         <td colSpan={6} className="px-4 py-8 text-center text-gray-900 dark:text-gray-400">No students found.</td>
@@ -1071,8 +1103,7 @@ export default function Students() {
   );
 }
 
-// Centered Modal Component
-// Centered Modal Component
+// Centered Modal Component - UPDATED to support fullscreen
 function CenteredModal({
   children,
   onClose,
@@ -1081,7 +1112,9 @@ function CenteredModal({
   size = 'md',
   className = '',
 }: any) {
-  const maxWidth = size === 'lg' ? 'max-w-5xl' : 'max-w-md';
+  const maxWidth = size === 'lg' ? 'max-w-5xl' : size === 'fullscreen' ? 'max-w-full' : 'max-w-md';
+  const maxHeight = size === 'fullscreen' ? 'max-h-[95vh]' : 'max-h-[90vh]';
+  const padding = size === 'fullscreen' ? 'p-4 sm:p-6 md:p-8' : 'p-6';
 
   return (
     <>
@@ -1102,7 +1135,7 @@ function CenteredModal({
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ duration: 0.2 }}
           onClick={(e) => e.stopPropagation()}
-          className={`relative my-8 w-full ${maxWidth} max-h-[90vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
+          className={`relative my-4 w-full ${maxWidth} ${maxHeight} flex flex-col rounded-2xl shadow-2xl overflow-hidden ${
             theme === 'dark' ? 'bg-gray-900' : 'bg-white'
           } ${className}`}
         >
@@ -1125,7 +1158,7 @@ function CenteredModal({
           </div>
 
           {/* Body */}
-          <div className="flex-1 overflow-y-auto p-6">
+          <div className={`flex-1 overflow-y-auto ${padding}`}>
             {children}
           </div>
         </motion.div>

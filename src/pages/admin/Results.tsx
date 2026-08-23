@@ -22,9 +22,9 @@ interface Student { id: string; name: string; admissionNumber?: string; }
 interface StudentResult {
   studentId: string;
   studentName: string;
-  ca: number;
-  exam: number;
-  total: number;
+  ca: number | null;
+  exam: number | null;
+  total: number | null;
   grade: string;
 }
 
@@ -81,7 +81,6 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  // ❌ removed unused state: const [loadingHistory, setLoadingHistory] = useState(false);
 
   // ---------- Data fetching ----------
   const fetchClasses = useCallback(async () => {
@@ -149,10 +148,10 @@ export default function AdminResults() {
         return {
           studentId: s.id,
           studentName: s.name,
-          ca: ex?.ca ?? 0,
-          exam: ex?.exam ?? 0,
-          total: ex?.total ?? 0,
-          grade: ex?.grade ?? '',
+          ca: ex?.ca !== undefined ? ex.ca : null,
+          exam: ex?.exam !== undefined ? ex.exam : null,
+          total: ex?.total !== undefined ? ex.total : null,
+          grade: ex?.grade || '',
         };
       });
       setResults(combined);
@@ -166,7 +165,6 @@ export default function AdminResults() {
 
   const fetchHistory = useCallback(async () => {
     if (!token || !selectedArmId) return;
-    // ❌ removed setLoadingHistory(true);
     try {
       const res = await api.get(`/results/history?armId=${selectedArmId}`, token);
       if (!res.ok) throw new Error(await res.text());
@@ -175,8 +173,6 @@ export default function AdminResults() {
     } catch (err) {
       console.error('Failed to fetch history', err);
       setHistory([]);
-    } finally {
-      // ❌ removed setLoadingHistory(false);
     }
   }, [token, selectedArmId]);
 
@@ -350,9 +346,9 @@ export default function AdminResults() {
       armId: selectedArmId,
       term: selectedTerm,
       academicYearId: selectedAcademicYearId,
-      ca: r.ca,
-      exam: r.exam,
-      total: r.total,
+      ca: r.ca ?? 0,
+      exam: r.exam ?? 0,
+      total: (r.ca ?? 0) + (r.exam ?? 0),
       grade: r.grade,
     }));
     setSaving(true);
@@ -423,11 +419,16 @@ export default function AdminResults() {
     input.click();
   };
 
-  const handleScoreChange = (studentId: string, field: 'ca' | 'exam', value: number) => {
+  // FIXED: handleScoreChange now accepts number | null
+  const handleScoreChange = (studentId: string, field: 'ca' | 'exam', value: number | null) => {
     setResults(prev => prev.map(r => {
       if (r.studentId === studentId) {
-        const newCa = field === 'ca' ? value : r.ca;
-        const newExam = field === 'exam' ? value : r.exam;
+        // If value is null or undefined, set to null
+        if (value === null || value === undefined || isNaN(value)) {
+          return { ...r, [field]: null, total: null, grade: '' };
+        }
+        const newCa = field === 'ca' ? value : (r.ca ?? 0);
+        const newExam = field === 'exam' ? value : (r.exam ?? 0);
         const total = newCa + newExam;
         let grade = '';
         if (total >= 70) grade = 'A';
@@ -553,13 +554,35 @@ export default function AdminResults() {
                     <tr key={r.studentId} className={theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-50'}>
                       <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.studentName}</td>
                       <td className="px-6 py-4 text-sm">
-                        <input type="number" min="0" max="30" value={r.ca} onChange={e=>handleScoreChange(r.studentId,'ca',+e.target.value)} className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} />
+                        <input 
+                          type="number" 
+                          min="0" 
+                          max="30" 
+                          value={r.ca ?? ''} 
+                          onChange={e => {
+                            const val = e.target.value === '' ? null : Number(e.target.value);
+                            handleScoreChange(r.studentId, 'ca', val);
+                          }} 
+                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} 
+                          placeholder="-"
+                        />
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <input type="number" min="0" max="70" value={r.exam} onChange={e=>handleScoreChange(r.studentId,'exam',+e.target.value)} className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} />
+                        <input 
+                          type="number" 
+                          min="0" 
+                          max="70" 
+                          value={r.exam ?? ''} 
+                          onChange={e => {
+                            const val = e.target.value === '' ? null : Number(e.target.value);
+                            handleScoreChange(r.studentId, 'exam', val);
+                          }} 
+                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} 
+                          placeholder="-"
+                        />
                       </td>
-                      <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.total}</td>
-                      <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.grade}</td>
+                      <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.total ?? '-'}</td>
+                      <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.grade || '-'}</td>
                     </tr>
                   ))
                 )}

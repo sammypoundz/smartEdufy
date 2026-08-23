@@ -22,10 +22,10 @@ import {
 // Types
 interface GradingScale {
   id: string;
-  minScore: number;
-  maxScore: number;
+  minScore: number | null;
+  maxScore: number | null;
   grade: string;
-  points?: number;
+  points?: number | null;
 }
 
 interface ReportCardTemplate {
@@ -39,7 +39,7 @@ interface PromotionRule {
   id: string;
   fromClass: string;
   toClass: string;
-  minAverage: number;
+  minAverage: number | null;
   isAutomatic: boolean;
 }
 
@@ -210,7 +210,6 @@ export default function AdminSettings() {
     }
   };
 
-  // Modified: accept an optional termId parameter
   const saveAcademic = async (termId?: string) => {
     const id = termId || academic.currentTermId;
     if (!id) {
@@ -222,7 +221,6 @@ export default function AdminSettings() {
       const res = await api.put('/settings/academic', { currentTermId: id });
       if (!res.ok) throw new Error(await res.text());
       toast.success('Academic settings saved');
-      // Refetch to get updated data from server
       const academicRes = await api.get('/settings/academic');
       if (academicRes.ok) setAcademic(await academicRes.json());
     } catch (err: any) {
@@ -374,7 +372,6 @@ export default function AdminSettings() {
     try {
       const res = await api.put(`/settings/templates/${id}`, { isDefault: true });
       if (!res.ok) throw new Error(await res.text());
-      // No need to store the response – we just update the local state
       setTemplates(prev => prev.map(t => ({ ...t, isDefault: t.id === id })));
       toast.success('Default template set');
     } catch (err: any) {
@@ -382,10 +379,19 @@ export default function AdminSettings() {
     }
   };
 
-  // ---------- Grading Scales (local only for now) ----------
+  // ---------- Grading Scales ----------
   const openGradingModal = (scale?: GradingScale) => {
-    if (scale) setEditingScale(scale);
-    else setEditingScale({ id: Date.now().toString(), minScore: 0, maxScore: 100, grade: '', points: 0 });
+    if (scale) {
+      setEditingScale({ ...scale });
+    } else {
+      setEditingScale({ 
+        id: Date.now().toString(), 
+        minScore: null, 
+        maxScore: null, 
+        grade: '', 
+        points: null 
+      });
+    }
     setShowGradingModal(true);
   };
 
@@ -393,6 +399,14 @@ export default function AdminSettings() {
     if (!editingScale) return;
     if (editingScale.grade.trim() === '') {
       toast.error('Grade letter is required');
+      return;
+    }
+    if (editingScale.minScore === null || editingScale.minScore === undefined) {
+      toast.error('Min score is required');
+      return;
+    }
+    if (editingScale.maxScore === null || editingScale.maxScore === undefined) {
+      toast.error('Max score is required');
       return;
     }
     if (editingScale.minScore >= editingScale.maxScore) {
@@ -439,8 +453,17 @@ export default function AdminSettings() {
   };
 
   const openPromotionModal = (rule?: PromotionRule) => {
-    if (rule) setEditingPromotion(rule);
-    else setEditingPromotion({ id: Date.now().toString(), fromClass: '', toClass: '', minAverage: 50, isAutomatic: true });
+    if (rule) {
+      setEditingPromotion({ ...rule });
+    } else {
+      setEditingPromotion({ 
+        id: Date.now().toString(), 
+        fromClass: '', 
+        toClass: '', 
+        minAverage: null, 
+        isAutomatic: true 
+      });
+    }
     setShowPromotionModal(true);
   };
 
@@ -448,6 +471,10 @@ export default function AdminSettings() {
     if (!editingPromotion) return;
     if (!editingPromotion.fromClass.trim() || !editingPromotion.toClass.trim()) {
       toast.error('From Class and To Class are required');
+      return;
+    }
+    if (editingPromotion.minAverage === null || editingPromotion.minAverage === undefined) {
+      toast.error('Minimum average score is required');
       return;
     }
     if (editingPromotion.id && promotionRules.find(r => r.id === editingPromotion.id)) {
@@ -465,22 +492,18 @@ export default function AdminSettings() {
     setShowTermPicker(true);
   };
 
-  // Modified: pass the new term ID directly to saveAcademic
   const selectTerm = (termId: string, termName: string, academicYearName: string) => {
-    // Optimistically update UI
     setAcademic({
       ...academic,
       currentTermId: termId,
       currentTerm: `${termName} ${academicYearName}`,
     });
     setShowTermPicker(false);
-    // Pass the new term ID to avoid stale closure
     saveAcademic(termId);
   };
 
   // ---------- Render content ----------
   const renderContent = () => {
-    // Helper classes based on theme
     const inputBgClass = theme === 'dark' ? 'bg-gray-800/80' : 'bg-white';
     const inputTextClass = theme === 'dark' ? 'text-white' : 'text-gray-900';
     const labelTextClass = theme === 'dark' ? 'text-gray-300' : 'text-gray-900';
@@ -585,7 +608,7 @@ export default function AdminSettings() {
                       <tr key={rule.id} className="hover:bg-gray-50/80 dark:hover:bg-white/5 transition">
                         <td className={`px-6 py-4 text-sm font-medium ${tableCellTextClass}`}>{rule.fromClass}</td>
                         <td className={`px-6 py-4 text-sm ${tableCellTextClass}`}>{rule.toClass}</td>
-                        <td className={`px-6 py-4 text-sm ${tableCellTextClass}`}>{rule.minAverage}%</td>
+                        <td className={`px-6 py-4 text-sm ${tableCellTextClass}`}>{rule.minAverage !== null ? `${rule.minAverage}%` : '-'}</td>
                         <td className="px-6 py-4 text-sm">
                           <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${rule.isAutomatic ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
                             {rule.isAutomatic ? 'Auto' : 'Manual'}
@@ -675,10 +698,10 @@ export default function AdminSettings() {
                 <tbody>
                   {gradingScales.map(scale => (
                     <tr key={scale.id} className="hover:bg-gray-50/80 dark:hover:bg-white/5">
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.minScore}</td>
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.maxScore}</td>
+                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.minScore !== null ? scale.minScore : '-'}</td>
+                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.maxScore !== null ? scale.maxScore : '-'}</td>
                       <td className={`px-6 py-4 font-bold text-blue-600 dark:text-blue-400`}>{scale.grade}</td>
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.points}</td>
+                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.points !== null ? scale.points : '-'}</td>
                       <td className="px-6 py-4">
                         <button onClick={() => openGradingModal(scale)} className="text-blue-600 mr-3 dark:text-blue-400"><PencilIcon className="h-4 w-4" /></button>
                         <button onClick={() => deleteGradingScale(scale.id)} className="text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /></button>
@@ -845,7 +868,7 @@ export default function AdminSettings() {
           <p className="text-gray-600 dark:text-gray-400 mt-2 text-lg">Configure your school's preferences, security, and workflows</p>
         </motion.div>
 
-        {/* ========== TOP TABS – enhanced light mode ========== */}
+        {/* ========== TOP TABS ========== */}
         <div className="mb-8 overflow-x-auto scrollbar-hide">
           <div className={`flex gap-1 p-1 rounded-2xl shadow-lg min-w-max ${
             theme === 'dark'
@@ -877,7 +900,7 @@ export default function AdminSettings() {
           </div>
         </div>
 
-        {/* ========== CONTENT – crisp light mode background ========== */}
+        {/* ========== CONTENT ========== */}
         <AnimatePresence mode="wait">
           <motion.div
             key={activeCategory}
@@ -907,7 +930,7 @@ export default function AdminSettings() {
         </AnimatePresence>
       </div>
 
-      {/* ====== TERM PICKER MODAL – with active term matching the button style ====== */}
+      {/* ====== TERM PICKER MODAL ====== */}
       <AnimatePresence>
         {showTermPicker && (
           <>
@@ -994,7 +1017,7 @@ export default function AdminSettings() {
         )}
       </AnimatePresence>
 
-      {/* ====== MODALS – all labels now use proper light/dark contrast ====== */}
+      {/* ====== MODALS ====== */}
       <AnimatePresence>
         {showGradingModal && editingScale && (
           <Modal onClose={() => setShowGradingModal(false)} title="Grading Scale Entry" theme={theme}>
@@ -1004,8 +1027,9 @@ export default function AdminSettings() {
                   <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Min Score</label>
                   <input
                     type="number"
-                    value={editingScale.minScore}
-                    onChange={(e) => setEditingScale({ ...editingScale, minScore: parseInt(e.target.value) || 0 })}
+                    value={editingScale.minScore !== null ? editingScale.minScore : ''}
+                    onChange={(e) => setEditingScale({ ...editingScale, minScore: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
+                    placeholder="-"
                     className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
                   />
                 </div>
@@ -1013,8 +1037,9 @@ export default function AdminSettings() {
                   <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Max Score</label>
                   <input
                     type="number"
-                    value={editingScale.maxScore}
-                    onChange={(e) => setEditingScale({ ...editingScale, maxScore: parseInt(e.target.value) || 0 })}
+                    value={editingScale.maxScore !== null ? editingScale.maxScore : ''}
+                    onChange={(e) => setEditingScale({ ...editingScale, maxScore: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
+                    placeholder="-"
                     className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
                   />
                 </div>
@@ -1033,8 +1058,9 @@ export default function AdminSettings() {
                 <input
                   type="number"
                   step="0.1"
-                  value={editingScale.points}
-                  onChange={(e) => setEditingScale({ ...editingScale, points: parseFloat(e.target.value) || 0 })}
+                  value={editingScale.points !== null ? editingScale.points : ''}
+                  onChange={(e) => setEditingScale({ ...editingScale, points: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
+                  placeholder="-"
                   className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
                 />
               </div>
@@ -1113,8 +1139,9 @@ export default function AdminSettings() {
                 <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Minimum Average Score (%)</label>
                 <input
                   type="number"
-                  value={editingPromotion.minAverage}
-                  onChange={(e) => setEditingPromotion({ ...editingPromotion, minAverage: parseInt(e.target.value) || 0 })}
+                  value={editingPromotion.minAverage !== null ? editingPromotion.minAverage : ''}
+                  onChange={(e) => setEditingPromotion({ ...editingPromotion, minAverage: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
+                  placeholder="-"
                   className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
                 />
               </div>

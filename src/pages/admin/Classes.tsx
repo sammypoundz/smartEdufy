@@ -337,7 +337,10 @@ export default function AdminClasses() {
     setCurrentArmIndex(armIndex);
     setTeacherSearch('');
     setTeacherPage(1);
-    setTeacherModalOpen(true);
+    setTimeout(() => {
+      setTeacherModalOpen(true);
+      console.log('✅ teacherModalOpen set to true');
+    }, 10);
   };
 
   const selectTeacher = (teacherId: string) => {
@@ -545,6 +548,176 @@ export default function AdminClasses() {
             </>
           )}
         </AnimatePresence>
+
+        {/* Teacher Selection Modal - FIXED with flex centering for empty state */}
+        <AnimatePresence>
+          {teacherModalOpen && (
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+              onClick={() => setTeacherModalOpen(false)}
+            >
+              <motion.div
+                initial={{ scale: 0.9, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${
+                  theme === 'dark'
+                    ? 'bg-gray-800 border-gray-700'
+                    : 'bg-white border-gray-300'
+                }`}
+                style={{ maxHeight: '80vh' }}
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className={`p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                  <div className="flex justify-between items-center mb-4 sticky top-0 bg-inherit z-10 pb-2">
+                    <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      Select a Teacher
+                    </h3>
+                    <button
+                      onClick={() => setTeacherModalOpen(false)}
+                      className={`p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                      }`}
+                    >
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+
+                  {/* Search Input */}
+                  <div className="relative mb-4">
+                    <div className="relative">
+                      <MagnifyingGlassIcon
+                        className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${
+                          theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                      />
+                      <input
+                        type="text"
+                        value={teacherSearch}
+                        onChange={(e) => setTeacherSearch(e.target.value)}
+                        placeholder="Search teachers by name, email..."
+                        className={`w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
+                          theme === 'dark'
+                            ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-blue-500'
+                            : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-blue-400'
+                        }`}
+                      />
+                    </div>
+                    {teacherSearch && (
+                      <button
+                        onClick={() => setTeacherSearch('')}
+                        className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 ${
+                          theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                        }`}
+                      >
+                        <XMarkIcon className="h-4 w-4" />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Teacher List - Scrollable */}
+                  <div className="max-h-[50vh] overflow-y-auto space-y-2">
+                    {teachersLoading ? (
+                      <div className="flex justify-center py-8">
+                        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                      </div>
+                    ) : paginatedTeachers.length === 0 ? (
+                      <div className="text-center py-8">
+                        <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers available.'}
+                        </p>
+                        <button
+                          onClick={() => {
+                            setTeacherModalOpen(false);
+                            toast('Please create a teacher first in the Teachers section', {
+                              duration: 4000,
+                              icon: '👨‍🏫',
+                            });
+                          }}
+                          className={`mt-3 inline-flex items-center px-4 py-2 text-sm rounded-lg transition-colors ${
+                            theme === 'dark'
+                              ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                              : 'bg-blue-600 hover:bg-blue-700 text-white'
+                          }`}
+                        >
+                          <UserPlusIcon className="h-4 w-4 mr-2" />
+                          Create Teacher
+                        </button>
+                      </div>
+                    ) : (
+                      paginatedTeachers.map((teacher) => (
+                        <button
+                          key={teacher.id}
+                          onClick={() => selectTeacher(teacher.id)}
+                          className={`w-full text-left p-3 rounded-lg transition-colors ${
+                            theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                          }`}
+                        >
+                          <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                            {teacher.name}
+                          </p>
+                          <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {teacher.email}
+                          </p>
+                          {teacher.phone && (
+                            <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                              {teacher.phone}
+                            </p>
+                          )}
+                        </button>
+                      ))
+                    )}
+                  </div>
+
+                  {/* Pagination Controls - Sticky at bottom */}
+                  {!teachersLoading && totalFiltered > pageSize && (
+                    <div
+                      className={`flex items-center justify-between mt-4 pt-3 border-t sticky bottom-0 bg-inherit pb-2 ${
+                        theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+                      }`}
+                    >
+                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Showing {(teacherPage - 1) * pageSize + 1} -{' '}
+                        {Math.min(teacherPage * pageSize, totalFiltered)} of {totalFiltered}
+                      </span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => setTeacherPage((p) => Math.max(1, p - 1))}
+                          disabled={teacherPage === 1}
+                          className={`p-2 rounded-md transition-colors ${
+                            theme === 'dark'
+                              ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
+                              : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
+                          }`}
+                        >
+                          <ChevronLeftIcon className="h-5 w-5" />
+                        </button>
+                        <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                          {teacherPage} / {totalPages}
+                        </span>
+                        <button
+                          onClick={() => setTeacherPage((p) => Math.min(totalPages, p + 1))}
+                          disabled={teacherPage === totalPages}
+                          className={`p-2 rounded-md transition-colors ${
+                            theme === 'dark'
+                              ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
+                              : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
+                          }`}
+                        >
+                          <ChevronRightIcon className="h-5 w-5" />
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -729,29 +902,31 @@ export default function AdminClasses() {
         )}
       </AnimatePresence>
 
-      {/* Teacher Selection Modal - FIXED */}
+      {/* Teacher Selection Modal - FIXED with flex centering for main render */}
       <AnimatePresence>
         {teacherModalOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setTeacherModalOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]"
-            />
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            onClick={() => setTeacherModalOpen(false)}
+          >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl shadow-2xl z-[70] overflow-hidden border ${
+              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+              className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${
                 theme === 'dark'
                   ? 'bg-gray-800 border-gray-700'
                   : 'bg-white border-gray-300'
               }`}
+              style={{ maxHeight: '80vh' }}
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className={`p-6 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
-                <div className="flex justify-between items-center mb-4">
+              <div className={`p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                <div className="flex justify-between items-center mb-4 sticky top-0 bg-inherit z-10 pb-2">
                   <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                     Select a Teacher
                   </h3>
@@ -797,8 +972,8 @@ export default function AdminClasses() {
                   )}
                 </div>
 
-                {/* Teacher List */}
-                <div className="max-h-80 overflow-y-auto space-y-2">
+                {/* Teacher List - Scrollable */}
+                <div className="max-h-[50vh] overflow-y-auto space-y-2">
                   {teachersLoading ? (
                     <div className="flex justify-center py-8">
                       <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
@@ -851,10 +1026,10 @@ export default function AdminClasses() {
                   )}
                 </div>
 
-                {/* Pagination Controls */}
+                {/* Pagination Controls - Sticky at bottom */}
                 {!teachersLoading && totalFiltered > pageSize && (
                   <div
-                    className={`flex items-center justify-between mt-4 pt-3 border-t ${
+                    className={`flex items-center justify-between mt-4 pt-3 border-t sticky bottom-0 bg-inherit pb-2 ${
                       theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
                     }`}
                   >
@@ -893,7 +1068,7 @@ export default function AdminClasses() {
                 )}
               </div>
             </motion.div>
-          </>
+          </motion.div>
         )}
       </AnimatePresence>
     </div>

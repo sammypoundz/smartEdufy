@@ -14,6 +14,8 @@ import {
   UserPlusIcon,
   UserGroupIcon,
   BookOpenIcon,
+  MagnifyingGlassIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 
 // --- Types ---
@@ -100,7 +102,7 @@ export default function OpenArm() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('members');
 
-  // Modal states (all unchanged)
+  // Modal states
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
   const [showSkillModal, setShowSkillModal] = useState(false);
@@ -108,6 +110,9 @@ export default function OpenArm() {
   const [showAddStudentModal, setShowAddStudentModal] = useState(false);
   const [addStudentOption, setAddStudentOption] = useState<'create' | 'fromSchool' | null>(null);
   const [allStudents, setAllStudents] = useState<Student[]>([]);
+  const [filteredAllStudents, setFilteredAllStudents] = useState<Student[]>([]);
+  const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
+  const [studentSearchTerm, setStudentSearchTerm] = useState('');
   const [newStudentForm, setNewStudentForm] = useState({
     name: '',
     gender: 'male',
@@ -157,7 +162,7 @@ export default function OpenArm() {
   const [selectedFormTeacherId, setSelectedFormTeacherId] = useState<string>('');
   const [updatingFormTeacher, setUpdatingFormTeacher] = useState(false);
 
-  // ---------- Fetch functions (unchanged) ----------
+  // ---------- Fetch functions ----------
   const fetchClassName = async () => {
     if (!token || !classId) return;
     try {
@@ -443,9 +448,11 @@ export default function OpenArm() {
     loadAll();
   }, [classId, armId, token]);
 
-  // --- Handlers (unchanged) ---
+  // --- Handlers ---
   const handleOpenAddStudentModal = () => {
     setAddStudentOption(null);
+    setSelectedStudents(new Set());
+    setStudentSearchTerm('');
     setShowAddStudentModal(true);
   };
 
@@ -456,8 +463,54 @@ export default function OpenArm() {
         const currentStudentIds = new Set(students.map(s => s.id));
         const available = studentsData.filter((s: Student) => !currentStudentIds.has(s.id));
         setAllStudents(available);
+        setFilteredAllStudents(available);
+        setSelectedStudents(new Set());
+        setStudentSearchTerm('');
       });
     }
+  };
+
+  // Filter students based on search term
+  useEffect(() => {
+    if (addStudentOption === 'fromSchool') {
+      const search = studentSearchTerm.toLowerCase().trim();
+      if (!search) {
+        setFilteredAllStudents(allStudents);
+      } else {
+        const filtered = allStudents.filter(student =>
+          student.name.toLowerCase().includes(search) ||
+          (student.admissionNumber && student.admissionNumber.toLowerCase().includes(search))
+        );
+        setFilteredAllStudents(filtered);
+      }
+    }
+  }, [studentSearchTerm, allStudents, addStudentOption]);
+
+  // Toggle student selection
+  const toggleStudentSelection = (studentId: string) => {
+    const newSelected = new Set(selectedStudents);
+    if (newSelected.has(studentId)) {
+      newSelected.delete(studentId);
+    } else {
+      newSelected.add(studentId);
+    }
+    setSelectedStudents(newSelected);
+  };
+
+  // Select all filtered students
+  const selectAllFiltered = () => {
+    const allIds = filteredAllStudents.map(s => s.id);
+    const newSelected = new Set(selectedStudents);
+    allIds.forEach(id => newSelected.add(id));
+    setSelectedStudents(newSelected);
+  };
+
+  // Deselect all filtered students
+  const deselectAllFiltered = () => {
+    const allIds = filteredAllStudents.map(s => s.id);
+    const newSelected = new Set(selectedStudents);
+    allIds.forEach(id => newSelected.delete(id));
+    setSelectedStudents(newSelected);
   };
 
   const handleCreateStudent = async () => {
@@ -491,16 +544,42 @@ export default function OpenArm() {
     }
   };
 
-  const handleAddExistingStudent = async (student: Student) => {
+  // Multi-select handler for adding existing students
+  const handleAddExistingStudents = async () => {
+    if (selectedStudents.size === 0) {
+      toast.error('Please select at least one student');
+      return;
+    }
     setIsSubmitting(true);
     try {
-      const res = await api.patch(`/students/${student.id}`, { armId }, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success(`${student.name} added to this arm`);
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const studentId of selectedStudents) {
+        try {
+          const res = await api.patch(`/students/${studentId}`, { armId }, token);
+          if (res.ok) {
+            successCount++;
+          } else {
+            errorCount++;
+          }
+        } catch {
+          errorCount++;
+        }
+      }
+      
+      if (successCount > 0) {
+        toast.success(`Successfully added ${successCount} student(s) to this arm${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
+      } else {
+        toast.error(`Failed to add students to this arm`);
+      }
+      
       await fetchArmData();
       fetchAttendanceRecords(attendanceFilterStart, attendanceFilterEnd);
       setShowAddStudentModal(false);
       setAddStudentOption(null);
+      setSelectedStudents(new Set());
+      setStudentSearchTerm('');
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -729,7 +808,7 @@ export default function OpenArm() {
   const maleCount = students.filter(s => s.gender === 'male').length;
   const femaleCount = students.filter(s => s.gender === 'female').length;
 
-  // --- Render Tab Content (improved light mode) ---
+  // --- Render Tab Content ---
   const renderTabContent = () => {
     switch (activeTab) {
       case 'members':
@@ -1194,7 +1273,7 @@ export default function OpenArm() {
     );
   }
 
-  // ✅ FIXED: Clean title without duplication
+  // Clean title without duplication
   const displayTitle = armData.alias 
     ? `${armData.alias} (Arm ${armData.letter})` 
     : `${className} Arm ${armData.letter}`;
@@ -1289,9 +1368,9 @@ export default function OpenArm() {
         </motion.div>
       </div>
 
-      {/* ====== All Modals (unchanged) ====== */}
+      {/* ====== All Modals ====== */}
 
-      {/* Add Student Modal */}
+      {/* Add Student Modal - UPDATED with multi-select and search */}
       <AnimatePresence>
         {showAddStudentModal && (
           <>
@@ -1342,7 +1421,7 @@ export default function OpenArm() {
                         </div>
                         <div className="text-left">
                           <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Add from School</p>
-                          <p className="text-sm text-gray-500">Select an existing student not yet in this arm</p>
+                          <p className="text-sm text-gray-500">Select existing students not yet in this arm</p>
                         </div>
                       </div>
                       <PlusIcon className="h-5 w-5 text-gray-400 group-hover:text-green-500" />
@@ -1350,6 +1429,9 @@ export default function OpenArm() {
                   </div>
                 ) : (
                   <div className="p-6">
+                    <button onClick={() => setAddStudentOption(null)} className="mb-4 text-sm text-blue-600 hover:underline flex items-center">
+                      ← Back
+                    </button>
                     {addStudentOption === 'create' && (
                       <div className="mb-6">
                         <button
@@ -1361,9 +1443,6 @@ export default function OpenArm() {
                         </button>
                       </div>
                     )}
-                    <button onClick={() => setAddStudentOption(null)} className="mb-4 text-sm text-blue-600 hover:underline flex items-center">
-                      ← Back
-                    </button>
                     {addStudentOption === 'create' && (
                       <div className="space-y-4">
                         <div>
@@ -1409,24 +1488,99 @@ export default function OpenArm() {
                       </div>
                     )}
                     {addStudentOption === 'fromSchool' && (
-                      <div className="space-y-3 max-h-96 overflow-y-auto">
-                        {allStudents.length === 0 ? (
-                          <p className="text-center text-gray-500 py-8">No students available to add.</p>
-                        ) : (
-                          allStudents.map(student => (
-                            <div
-                              key={student.id}
-                              className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${theme === 'dark' ? 'hover:bg-white/10' : 'hover:bg-gray-100'}`}
-                              onClick={() => handleAddExistingStudent(student)}
+                      <div>
+                        {/* Search Input */}
+                        <div className="relative mb-4">
+                          <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                          <input
+                            type="text"
+                            value={studentSearchTerm}
+                            onChange={(e) => setStudentSearchTerm(e.target.value)}
+                            placeholder="Search students by name or admission number..."
+                            className={`w-full pl-10 pr-4 py-2 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`}
+                          />
+                        </div>
+
+                        {/* Select/Deselect All buttons */}
+                        {filteredAllStudents.length > 0 && (
+                          <div className="flex gap-2 mb-4">
+                            <button
+                              onClick={selectAllFiltered}
+                              className="px-3 py-1 text-xs rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
                             >
-                              <div>
-                                <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{student.name}</p>
-                                {student.admissionNumber && <p className="text-xs text-gray-500">Admission: {student.admissionNumber}</p>}
-                              </div>
-                              <PlusIcon className="h-5 w-5 text-blue-500" />
-                            </div>
-                          ))
+                              Select All ({filteredAllStudents.length})
+                            </button>
+                            <button
+                              onClick={deselectAllFiltered}
+                              className="px-3 py-1 text-xs rounded-lg bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-400 dark:hover:bg-gray-600 transition-colors"
+                            >
+                              Deselect All
+                            </button>
+                          </div>
                         )}
+
+                        {/* Student List */}
+                        <div className="space-y-2 max-h-80 overflow-y-auto">
+                          {filteredAllStudents.length === 0 ? (
+                            <p className="text-center text-gray-500 py-8">
+                              {studentSearchTerm ? 'No students match your search.' : 'No students available to add.'}
+                            </p>
+                          ) : (
+                            filteredAllStudents.map(student => {
+                              const isSelected = selectedStudents.has(student.id);
+                              return (
+                                <div
+                                  key={student.id}
+                                  onClick={() => toggleStudentSelection(student.id)}
+                                  className={`flex items-center justify-between p-3 rounded-lg cursor-pointer transition-colors ${
+                                    isSelected
+                                      ? theme === 'dark'
+                                        ? 'bg-blue-900/30 border border-blue-500'
+                                        : 'bg-blue-100 border border-blue-500'
+                                      : theme === 'dark'
+                                      ? 'hover:bg-white/10'
+                                      : 'hover:bg-gray-100'
+                                  }`}
+                                >
+                                  <div>
+                                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{student.name}</p>
+                                    {student.admissionNumber && <p className="text-xs text-gray-500">Admission: {student.admissionNumber}</p>}
+                                  </div>
+                                  {isSelected && (
+                                    <CheckIcon className="h-5 w-5 text-blue-500" />
+                                  )}
+                                </div>
+                              );
+                            })
+                          )}
+                        </div>
+
+                        {/* Action buttons */}
+                        <div className="mt-6 flex justify-end space-x-3">
+                          <button
+                            onClick={() => setShowAddStudentModal(false)}
+                            className={`px-4 py-2 rounded-lg ${theme === 'dark' ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            onClick={handleAddExistingStudents}
+                            disabled={isSubmitting || selectedStudents.size === 0}
+                            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Adding...
+                              </>
+                            ) : (
+                              <>
+                                <UserPlusIcon className="h-4 w-4" />
+                                Add {selectedStudents.size} Student{selectedStudents.size !== 1 ? 's' : ''}
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

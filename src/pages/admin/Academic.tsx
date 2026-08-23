@@ -68,7 +68,7 @@ export default function AdminAcademic() {
   const [isPromoting, setIsPromoting] = useState(false);
 
   // Grading scale state
-  const [gradingScales, setGradingScales] = useState<{ grade: string; min: number; max: number }[]>([]);
+  const [gradingScales, setGradingScales] = useState<{ grade: string; min: number | null; max: number | null }[]>([]);
   const [savingGrading, setSavingGrading] = useState(false);
   const [loadingGrading, setLoadingGrading] = useState(true);
   const [refreshKey, setRefreshKey] = useState(0);
@@ -112,7 +112,7 @@ export default function AdminAcademic() {
         const res = await api.get('/grading-scales', token);
         if (res.ok) {
           const rawData = await res.json();
-          console.log('📊 Raw grading scales response:', rawData); // <-- check console
+          console.log('📊 Raw grading scales response:', rawData);
 
           // Try to extract an array of grade objects
           let gradesArray: any[] = [];
@@ -137,16 +137,16 @@ export default function AdminAcademic() {
           const mapped = gradesArray.map((item: any) => {
             // Try common property names
             const grade = item.grade || item.letter || item.name || '';
-            const min = item.min ?? item.minScore ?? item.minimum ?? item.low ?? 0;
-            const max = item.max ?? item.maxScore ?? item.maximum ?? item.high ?? 100;
-            return { grade: String(grade), min: Number(min), max: Number(max) };
+            const min = item.min !== undefined ? item.min : (item.minScore !== undefined ? item.minScore : (item.minimum !== undefined ? item.minimum : (item.low !== undefined ? item.low : null)));
+            const max = item.max !== undefined ? item.max : (item.maxScore !== undefined ? item.maxScore : (item.maximum !== undefined ? item.maximum : (item.high !== undefined ? item.high : null)));
+            return { grade: String(grade), min: min !== null ? Number(min) : null, max: max !== null ? Number(max) : null };
           }).filter(g => g.grade.trim() !== ''); // remove entries without a grade letter
 
           if (mapped.length > 0) {
             setGradingScales(mapped);
             toast.success('Grading scales loaded');
           } else {
-            // No valid grades found – use defaults
+            // No valid grades found – use defaults with null values
             console.warn('No grading scales found, using defaults');
             setGradingScales([
               { grade: 'A', min: 70, max: 100 },
@@ -277,9 +277,30 @@ export default function AdminAcademic() {
 
   // Save grading scales
   const handleSaveGradingScales = async () => {
+    // Validate before saving
+    for (const scale of gradingScales) {
+      if (!scale.grade.trim()) {
+        toast.error('Grade letter is required for all rows');
+        return;
+      }
+      if (scale.min === null || scale.min === undefined || isNaN(scale.min)) {
+        toast.error(`Min score is required for grade "${scale.grade}"`);
+        return;
+      }
+      if (scale.max === null || scale.max === undefined || isNaN(scale.max)) {
+        toast.error(`Max score is required for grade "${scale.grade}"`);
+        return;
+      }
+    }
     setSavingGrading(true);
     try {
-      const res = await api.post('/grading-scales/bulk', { scales: gradingScales }, token);
+      // Convert null values to 0 before saving
+      const payload = gradingScales.map(scale => ({
+        grade: scale.grade,
+        min: scale.min ?? 0,
+        max: scale.max ?? 0,
+      }));
+      const res = await api.post('/grading-scales/bulk', { scales: payload }, token);
       if (!res.ok) throw new Error(await res.text());
       toast.success('Grading scales saved');
       setRefreshKey(prev => prev + 1);
@@ -291,7 +312,7 @@ export default function AdminAcademic() {
   };
 
   // Update a single grading scale field locally
-  const updateGradingScale = (index: number, field: 'min' | 'max' | 'grade', value: string | number) => {
+  const updateGradingScale = (index: number, field: 'min' | 'max' | 'grade', value: string | number | null) => {
     const updated = [...gradingScales];
     updated[index] = { ...updated[index], [field]: value };
     setGradingScales(updated);
@@ -300,7 +321,7 @@ export default function AdminAcademic() {
   // Add a new grade row
   const addGradeRow = () => {
     const newGrade = `Grade${gradingScales.length + 1}`;
-    setGradingScales([...gradingScales, { grade: newGrade, min: 0, max: 100 }]);
+    setGradingScales([...gradingScales, { grade: newGrade, min: null, max: null }]);
   };
 
   // Remove a grade row
@@ -482,16 +503,24 @@ export default function AdminAcademic() {
                             <td className="whitespace-nowrap px-3 py-3 text-sm">
                               <input
                                 type="number"
-                                value={scale.min}
-                                onChange={(e) => updateGradingScale(idx, 'min', parseInt(e.target.value) || 0)}
+                                value={scale.min !== null && scale.min !== undefined ? scale.min : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? null : parseInt(e.target.value);
+                                  updateGradingScale(idx, 'min', val);
+                                }}
+                                placeholder="-"
                                 className={`w-20 rounded-xl border-0 bg-transparent px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
                               />
                             </td>
                             <td className="whitespace-nowrap px-3 py-3 text-sm">
                               <input
                                 type="number"
-                                value={scale.max}
-                                onChange={(e) => updateGradingScale(idx, 'max', parseInt(e.target.value) || 0)}
+                                value={scale.max !== null && scale.max !== undefined ? scale.max : ''}
+                                onChange={(e) => {
+                                  const val = e.target.value === '' ? null : parseInt(e.target.value);
+                                  updateGradingScale(idx, 'max', val);
+                                }}
+                                placeholder="-"
                                 className={`w-20 rounded-xl border-0 bg-transparent px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
                               />
                             </td>

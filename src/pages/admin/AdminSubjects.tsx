@@ -14,6 +14,7 @@ import {
   MagnifyingGlassIcon,
   UserGroupIcon,
   BookOpenIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 
 // ============================================================
@@ -110,8 +111,12 @@ export default function AdminSubjects() {
   const [currentArmSubject, setCurrentArmSubject] =
     useState<ArmSubject | null>(null);
 
-  const [selectedSubjectId, setSelectedSubjectId] = useState('');
+  // Removed unused selectedSubjectId
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
+
+  // Multi-select state
+  const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
+  const [selectAll, setSelectAll] = useState(false);
 
   const [submittingArmAction, setSubmittingArmAction] = useState(false);
 
@@ -439,23 +444,58 @@ export default function AdminSubjects() {
   };
 
   // ==========================================================
-  // ADD SUBJECT TO ARM
+  // GET AVAILABLE SUBJECTS (not already assigned to arm)
+  // ==========================================================
+
+  const getAvailableSubjects = () => {
+    const assignedSubjectIds = new Set(
+      armSubjects.map((as) => as.subjectId)
+    );
+
+    return subjects.filter(
+      (subject) => !assignedSubjectIds.has(subject.id)
+    );
+  };
+
+  // ==========================================================
+  // ADD SUBJECT TO ARM - MULTI SELECT
   // ==========================================================
 
   const openAddArmSubjectModal = () => {
-    setSelectedSubjectId('');
+    setSelectedSubjectIds([]);
+    setSelectAll(false);
     setSelectedTeacherId('');
     setShowAddArmSubjectModal(true);
   };
 
-  const handleAddArmSubject = async () => {
+  const handleToggleSubjectSelection = (subjectId: string) => {
+    setSelectedSubjectIds((prev) => {
+      if (prev.includes(subjectId)) {
+        return prev.filter((id) => id !== subjectId);
+      } else {
+        return [...prev, subjectId];
+      }
+    });
+  };
+
+  const handleToggleSelectAll = () => {
+    const availableSubjects = getAvailableSubjects();
+    if (selectAll) {
+      setSelectedSubjectIds([]);
+    } else {
+      setSelectedSubjectIds(availableSubjects.map((s) => s.id));
+    }
+    setSelectAll(!selectAll);
+  };
+
+  const handleAddArmSubjects = async () => {
     if (!selectedArmId) {
       toast.error('Please select an arm');
       return;
     }
 
-    if (!selectedSubjectId) {
-      toast.error('Please select a subject');
+    if (selectedSubjectIds.length === 0) {
+      toast.error('Please select at least one subject');
       return;
     }
 
@@ -467,33 +507,59 @@ export default function AdminSubjects() {
     setSubmittingArmAction(true);
 
     try {
-      const res = await api.post(
-        `/arms/${selectedArmId}/subjects`,
-        {
-          subjectId: selectedSubjectId,
-          teacherId: selectedTeacherId || undefined,
-        },
-        token
+      // Process each selected subject
+      const results = await Promise.allSettled(
+        selectedSubjectIds.map(async (subjectId) => {
+          // Check if already assigned (frontend check)
+          const isDuplicate = armSubjects.some(
+            (as) => as.subjectId === subjectId
+          );
+
+          if (isDuplicate) {
+            const subjectName = subjects.find(
+              (s) => s.id === subjectId
+            )?.name;
+            throw new Error(`"${subjectName || 'Subject'}" is already assigned`);
+          }
+
+          const res = await api.post(
+            `/arms/${selectedArmId}/subjects`,
+            {
+              subjectId: subjectId,
+              teacherId: selectedTeacherId || undefined,
+            },
+            token
+          );
+
+          if (!res.ok) {
+            throw new Error(await res.text());
+          }
+
+          return subjectId;
+        })
       );
 
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
+      // Count successes and failures
+      const succeeded = results.filter((r) => r.status === 'fulfilled').length;
+      const failed = results.filter((r) => r.status === 'rejected').length;
 
-      toast.success('Subject added to arm');
+      if (succeeded > 0 && failed === 0) {
+        toast.success(`${succeeded} subject(s) added successfully!`);
+      } else if (succeeded > 0 && failed > 0) {
+        toast.success(`${succeeded} subject(s) added, ${failed} failed.`);
+      } else {
+        toast.error('Failed to add subjects. Please try again.');
+      }
 
       await loadArmSubjects();
 
       setShowAddArmSubjectModal(false);
-
-      setSelectedSubjectId('');
+      setSelectedSubjectIds([]);
+      setSelectAll(false);
       setSelectedTeacherId('');
     } catch (error: any) {
       console.error(error);
-
-      toast.error(
-        error?.message || 'Failed to add subject'
-      );
+      toast.error(error?.message || 'Failed to add subjects');
     } finally {
       setSubmittingArmAction(false);
     }
@@ -1077,7 +1143,7 @@ export default function AdminSubjects() {
                   className="inline-flex items-center justify-center px-3 py-1.5 rounded-lg bg-blue-600 text-white text-sm hover:bg-blue-700 transition"
                 >
                   <PlusIcon className="h-4 w-4 mr-1" />
-                  Add Subject
+                  Add Subjects
                 </button>
 
               </div>
@@ -1116,7 +1182,7 @@ export default function AdminSubjects() {
                     onClick={openAddArmSubjectModal}
                     className="mt-3 text-blue-600 hover:underline"
                   >
-                    Add a subject
+                    Add subjects
                   </button>
                 </div>
 
@@ -1431,20 +1497,21 @@ export default function AdminSubjects() {
       </AnimatePresence>
 
       {/* ======================================================
-          ADD SUBJECT TO ARM MODAL
+          ADD SUBJECTS TO ARM MODAL - MULTI SELECT
       ====================================================== */}
 
       <AnimatePresence>
         {showAddArmSubjectModal && (
           <Modal
-            onClose={() =>
-              setShowAddArmSubjectModal(false)
-            }
-            title="Add Subject to Arm"
+            onClose={() => {
+              setShowAddArmSubjectModal(false);
+              setSelectedSubjectIds([]);
+              setSelectAll(false);
+            }}
+            title="Add Subjects to Arm"
             theme={theme}
           >
             <div className="space-y-4">
-
               <div>
                 <label
                   className={`block text-sm font-medium mb-1 ${
@@ -1453,54 +1520,13 @@ export default function AdminSubjects() {
                       : 'text-gray-700'
                   }`}
                 >
-                  Subject
-                </label>
-
-                <select
-                  value={selectedSubjectId}
-                  onChange={(e) =>
-                    setSelectedSubjectId(
-                      e.target.value
-                    )
-                  }
-                  className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
-                    theme === 'dark'
-                      ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500'
-                      : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'
-                  }`}
-                >
-                  <option value="">
-                    -- Select a subject --
-                  </option>
-
-                  {subjects.map((subject) => (
-                    <option
-                      key={subject.id}
-                      value={subject.id}
-                    >
-                      {subject.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div>
-                <label
-                  className={`block text-sm font-medium mb-1 ${
-                    theme === 'dark'
-                      ? 'text-gray-300'
-                      : 'text-gray-700'
-                  }`}
-                >
-                  Teacher (optional)
+                  Teacher (optional - will be assigned to all selected subjects)
                 </label>
 
                 <select
                   value={selectedTeacherId}
                   onChange={(e) =>
-                    setSelectedTeacherId(
-                      e.target.value
-                    )
+                    setSelectedTeacherId(e.target.value)
                   }
                   className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
                     theme === 'dark'
@@ -1523,30 +1549,142 @@ export default function AdminSubjects() {
                 </select>
               </div>
 
-              <div className="flex justify-end gap-3 pt-4">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label
+                    className={`block text-sm font-medium ${
+                      theme === 'dark'
+                        ? 'text-gray-300'
+                        : 'text-gray-700'
+                    }`}
+                  >
+                    Select Subjects
+                  </label>
 
+                  <button
+                    onClick={handleToggleSelectAll}
+                    className={`text-sm px-3 py-1 rounded-lg transition ${
+                      theme === 'dark'
+                        ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10'
+                        : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                    }`}
+                  >
+                    {selectAll ? 'Deselect All' : 'Select All'}
+                  </button>
+                </div>
+
+                <div
+                  className={`max-h-60 overflow-y-auto rounded-lg border ${
+                    theme === 'dark'
+                      ? 'bg-gray-800 border-gray-700'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  {getAvailableSubjects().length === 0 ? (
+                    <div
+                      className={`p-4 text-center ${
+                        theme === 'dark'
+                          ? 'text-yellow-400'
+                          : 'text-yellow-600'
+                      }`}
+                    >
+                      ⚠️ All subjects are already assigned to this arm.
+                    </div>
+                  ) : (
+                    getAvailableSubjects().map((subject) => {
+                      const isChecked = selectedSubjectIds.includes(subject.id);
+                      return (
+                        <label
+                          key={subject.id}
+                          className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition ${
+                            theme === 'dark'
+                              ? 'hover:bg-white/5'
+                              : 'hover:bg-gray-100'
+                          } ${
+                            isChecked
+                              ? theme === 'dark'
+                                ? 'bg-blue-900/20'
+                                : 'bg-blue-50'
+                              : ''
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => handleToggleSubjectSelection(subject.id)}
+                            className={`w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500 ${
+                              theme === 'dark'
+                                ? 'bg-gray-700 border-gray-600'
+                                : 'bg-white'
+                            }`}
+                          />
+                          <div className="flex-1">
+                            <span
+                              className={`text-sm font-medium ${
+                                theme === 'dark'
+                                  ? 'text-white'
+                                  : 'text-gray-900'
+                              }`}
+                            >
+                              {subject.name}
+                            </span>
+                            {subject.description && (
+                              <span
+                                className={`ml-2 text-xs ${
+                                  theme === 'dark'
+                                    ? 'text-gray-400'
+                                    : 'text-gray-500'
+                                }`}
+                              >
+                                - {subject.description}
+                              </span>
+                            )}
+                          </div>
+                          {isChecked && (
+                            <CheckIcon className="h-5 w-5 text-blue-600 dark:text-blue-400" />
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div
+                  className={`mt-2 text-sm ${
+                    theme === 'dark'
+                      ? 'text-gray-400'
+                      : 'text-gray-500'
+                  }`}
+                >
+                  {selectedSubjectIds.length} subject(s) selected
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3 pt-4">
                 <button
-                  onClick={() =>
-                    setShowAddArmSubjectModal(false)
-                  }
+                  onClick={() => {
+                    setShowAddArmSubjectModal(false);
+                    setSelectedSubjectIds([]);
+                    setSelectAll(false);
+                  }}
                   className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
                 >
                   Cancel
                 </button>
 
                 <button
-                  onClick={handleAddArmSubject}
+                  onClick={handleAddArmSubjects}
                   disabled={
                     submittingArmAction ||
-                    !selectedSubjectId
+                    selectedSubjectIds.length === 0 ||
+                    getAvailableSubjects().length === 0
                   }
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition"
                 >
                   {submittingArmAction
-                    ? 'Adding...'
-                    : 'Add Subject'}
+                    ? `Adding ${selectedSubjectIds.length} subject(s)...`
+                    : `Add ${selectedSubjectIds.length} Subject${selectedSubjectIds.length !== 1 ? 's' : ''}`}
                 </button>
-
               </div>
             </div>
           </Modal>

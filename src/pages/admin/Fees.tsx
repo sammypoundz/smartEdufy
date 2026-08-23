@@ -176,7 +176,7 @@ export default function AdminFees() {
     breakdown: [
       {
         name: 'Tuition',
-        amount: 0,
+        amount: null as number | null,
       },
     ],
     deadline: '',
@@ -568,7 +568,7 @@ export default function AdminFees() {
       breakdown: [
         {
           name: 'Tuition',
-          amount: 0,
+          amount: null,
         },
       ],
       deadline: '',
@@ -585,7 +585,10 @@ export default function AdminFees() {
     setFeeForm({
       className: fee.className,
       term: fee.term,
-      breakdown: fee.breakdown,
+      breakdown: fee.breakdown.map(item => ({
+        name: item.name,
+        amount: item.amount,
+      })),
       deadline:
         fee.deadline.split('T')[0],
     });
@@ -600,7 +603,7 @@ export default function AdminFees() {
         ...prev.breakdown,
         {
           name: '',
-          amount: 0,
+          amount: null,
         },
       ],
     }));
@@ -621,7 +624,7 @@ export default function AdminFees() {
   const updateBreakdown = (
     index: number,
     field: 'name' | 'amount',
-    value: string | number
+    value: string | number | null
   ) => {
     const newBreakdown = [
       ...feeForm.breakdown,
@@ -658,6 +661,18 @@ export default function AdminFees() {
       return;
     }
 
+    // Validate that all breakdown items have names and amounts
+    for (const item of feeForm.breakdown) {
+      if (!item.name.trim()) {
+        toast.error('All breakdown items must have a name');
+        return;
+      }
+      if (item.amount === null || item.amount === undefined || item.amount <= 0) {
+        toast.error(`Please enter a valid amount for "${item.name}"`);
+        return;
+      }
+    }
+
     setSubmitting(true);
 
     try {
@@ -666,7 +681,10 @@ export default function AdminFees() {
           feeForm.className,
         term: feeForm.term,
         breakdown:
-          feeForm.breakdown,
+          feeForm.breakdown.map(item => ({
+            name: item.name,
+            amount: item.amount ?? 0,
+          })),
         deadline:
           new Date(
             feeForm.deadline
@@ -2450,19 +2468,14 @@ export default function AdminFees() {
                             <input
                               type="number"
                               min="0"
-                              value={
-                                item.amount
-                              }
+                              value={item.amount !== null && item.amount !== undefined ? item.amount : ''}
                               onChange={(
                                 e
                               ) =>
                                 updateBreakdown(
                                   idx,
                                   'amount',
-                                  Number(
-                                    e.target
-                                      .value
-                                  )
+                                  e.target.value === '' ? null : Number(e.target.value)
                                 )
                               }
                               placeholder="Amount"
