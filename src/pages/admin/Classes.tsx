@@ -16,6 +16,7 @@ import {
   MagnifyingGlassIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  UserPlusIcon,
 } from '@heroicons/react/24/outline';
 
 interface Teacher {
@@ -83,6 +84,7 @@ export default function AdminClasses() {
       if (res.ok) {
         const data = await res.json();
         setTeachers(data);
+        console.log('✅ Teachers loaded:', data.length);
       } else {
         console.error('Failed to fetch teachers', await res.text());
         setTeachers([]);
@@ -156,7 +158,6 @@ export default function AdminClasses() {
     return 0;
   };
 
-  // SIMPLIFIED openPanel with more debugging
   const openPanel = (cls: ClassType | null = null) => {
     console.log('🟢 openPanel called!', { cls, token, isPanelOpen });
     
@@ -176,14 +177,6 @@ export default function AdminClasses() {
       
       console.log('Setting isPanelOpen to true');
       setIsPanelOpen(true);
-      
-      // Log the state after setting
-      setTimeout(() => {
-        console.log('State after openPanel:', { 
-          isPanelOpen, 
-          selectedClass: selectedClass?.name || 'null' 
-        });
-      }, 100);
     } catch (err) {
       console.error('Error in openPanel:', err);
     }
@@ -333,6 +326,14 @@ export default function AdminClasses() {
   };
 
   const openTeacherModal = (armIndex: number) => {
+    console.log('🟢 Opening teacher modal for arm index:', armIndex);
+    console.log('Teachers available:', teachers.length);
+    
+    if (teachers.length === 0) {
+      toast.error('No teachers available. Please create a teacher first.');
+      return;
+    }
+    
     setCurrentArmIndex(armIndex);
     setTeacherSearch('');
     setTeacherPage(1);
@@ -340,6 +341,7 @@ export default function AdminClasses() {
   };
 
   const selectTeacher = (teacherId: string) => {
+    console.log('🟢 Selecting teacher:', teacherId);
     if (currentArmIndex !== null && selectedClass) {
       const selectedTeacher = teachers.find(t => t.id === teacherId);
       if (selectedTeacher) {
@@ -350,6 +352,7 @@ export default function AdminClasses() {
           teacher: { name: selectedTeacher.name },
         };
         setSelectedClass({ ...selectedClass, arms: updatedArms });
+        toast.success(`Teacher ${selectedTeacher.name} assigned to arm`);
       }
     }
     setTeacherModalOpen(false);
@@ -434,7 +437,7 @@ export default function AdminClasses() {
           </div>
         </div>
 
-        {/* Panel - Always render but control visibility with isPanelOpen */}
+        {/* Panel */}
         <AnimatePresence>
           {isPanelOpen && selectedClass && (
             <>
@@ -451,7 +454,6 @@ export default function AdminClasses() {
                 exit={{ x: '100%' }} 
                 transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
                 className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
-                style={{ border: '3px solid red' }} // TEMPORARY: Make it visible
               >
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-6">
@@ -512,7 +514,7 @@ export default function AdminClasses() {
                                   <button
                                     type="button"
                                     onClick={() => openTeacherModal(index)}
-                                    className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                                    className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
                                   >
                                     Select
                                   </button>
@@ -643,7 +645,6 @@ export default function AdminClasses() {
               exit={{ x: '100%' }} 
               transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
               className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
-              style={{ border: '3px solid red' }} // TEMPORARY: Make it visible
             >
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
@@ -696,7 +697,7 @@ export default function AdminClasses() {
                                 <button
                                   type="button"
                                   onClick={() => openTeacherModal(index)}
-                                  className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                                  className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
                                 >
                                   Select
                                 </button>
@@ -728,7 +729,7 @@ export default function AdminClasses() {
         )}
       </AnimatePresence>
 
-      {/* Teacher Selection Modal */}
+      {/* Teacher Selection Modal - FIXED */}
       <AnimatePresence>
         {teacherModalOpen && (
           <>
@@ -737,13 +738,13 @@ export default function AdminClasses() {
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setTeacherModalOpen(false)}
-              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50"
+              className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[60]"
             />
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className={`fixed left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl shadow-2xl z-50 overflow-hidden border ${
+              className={`fixed left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl shadow-2xl z-[70] overflow-hidden border ${
                 theme === 'dark'
                   ? 'bg-gray-800 border-gray-700'
                   : 'bg-white border-gray-300'
@@ -805,11 +806,25 @@ export default function AdminClasses() {
                   ) : paginatedTeachers.length === 0 ? (
                     <div className="text-center py-8">
                       <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers found.'}
+                        {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers available.'}
                       </p>
-                      <p className={`text-sm mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                        You can create a teacher first, or leave the arm without a teacher.
-                      </p>
+                      <button
+                        onClick={() => {
+                          setTeacherModalOpen(false);
+                          toast('Please create a teacher first in the Teachers section', {
+                            duration: 4000,
+                            icon: '👨‍🏫',
+                          });
+                        }}
+                        className={`mt-3 inline-flex items-center px-4 py-2 text-sm rounded-lg transition-colors ${
+                          theme === 'dark'
+                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                            : 'bg-blue-600 hover:bg-blue-700 text-white'
+                        }`}
+                      >
+                        <UserPlusIcon className="h-4 w-4 mr-2" />
+                        Create Teacher
+                      </button>
                     </div>
                   ) : (
                     paginatedTeachers.map((teacher) => (
