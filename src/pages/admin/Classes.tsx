@@ -85,9 +85,11 @@ export default function AdminClasses() {
         setTeachers(data);
       } else {
         console.error('Failed to fetch teachers', await res.text());
+        setTeachers([]);
       }
     } catch (err) {
       console.error('Failed to fetch teachers', err);
+      setTeachers([]);
     } finally {
       setTeachersLoading(false);
     }
@@ -154,23 +156,50 @@ export default function AdminClasses() {
     return 0;
   };
 
+  // SIMPLIFIED openPanel with more debugging
   const openPanel = (cls: ClassType | null = null) => {
-    if (cls) {
-      const clonedArms = cls.arms.map(arm => ({ ...arm }));
-      setSelectedClass({ ...cls, arms: clonedArms });
-    } else {
-      setSelectedClass({ id: '', name: '', arms: [] });
+    console.log('🟢 openPanel called!', { cls, token, isPanelOpen });
+    
+    try {
+      if (cls) {
+        console.log('Editing existing class:', cls.name);
+        const clonedArms = cls.arms.map(arm => ({ ...arm }));
+        setSelectedClass({ ...cls, arms: clonedArms });
+      } else {
+        console.log('Creating new class');
+        setSelectedClass({ 
+          id: '', 
+          name: '', 
+          arms: [] 
+        });
+      }
+      
+      console.log('Setting isPanelOpen to true');
+      setIsPanelOpen(true);
+      
+      // Log the state after setting
+      setTimeout(() => {
+        console.log('State after openPanel:', { 
+          isPanelOpen, 
+          selectedClass: selectedClass?.name || 'null' 
+        });
+      }, 100);
+    } catch (err) {
+      console.error('Error in openPanel:', err);
     }
-    setIsPanelOpen(true);
   };
 
   const closePanel = () => {
+    console.log('Closing panel');
     setIsPanelOpen(false);
     setSelectedClass(null);
   };
 
   const saveClass = async () => {
-    if (!selectedClass) return;
+    if (!selectedClass) {
+      toast.error('No class selected');
+      return;
+    }
     if (!selectedClass.name.trim()) {
       toast.error('Please enter a class name');
       return;
@@ -339,7 +368,7 @@ export default function AdminClasses() {
     );
   }
 
-  if (error) {
+  if (error && classes.length === 0) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
         <div className={`text-center max-w-md p-8 rounded-2xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
@@ -357,6 +386,7 @@ export default function AdminClasses() {
     );
   }
 
+  // Empty state
   if (classes.length === 0) {
     return (
       <div className={`min-h-screen px-4 sm:px-6 lg:px-8 py-8 ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
@@ -376,7 +406,13 @@ export default function AdminClasses() {
                 Manage classes and their arms. Each arm can have its own teacher and alias.
               </p>
             </div>
-            <button onClick={() => openPanel()} className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200">
+            <button 
+              onClick={() => {
+                console.log('🟢 Add Class button clicked!');
+                openPanel();
+              }} 
+              className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
+            >
               <PlusIcon className="h-5 w-5 mr-2" />
               Add Class
             </button>
@@ -386,7 +422,10 @@ export default function AdminClasses() {
             <h3 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>No Classes Yet</h3>
             <p className={`text-center mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Get started by creating your first class.</p>
             <button
-              onClick={() => openPanel()}
+              onClick={() => {
+                console.log('🟢 Create Class button clicked!');
+                openPanel();
+              }}
               className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               <PlusIcon className="h-5 w-5 mr-2" />
@@ -394,6 +433,116 @@ export default function AdminClasses() {
             </button>
           </div>
         </div>
+
+        {/* Panel - Always render but control visibility with isPanelOpen */}
+        <AnimatePresence>
+          {isPanelOpen && selectedClass && (
+            <>
+              <motion.div 
+                initial={{ opacity: 0 }} 
+                animate={{ opacity: 1 }} 
+                exit={{ opacity: 0 }} 
+                onClick={closePanel} 
+                className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
+              />
+              <motion.div 
+                initial={{ x: '100%' }} 
+                animate={{ x: 0 }} 
+                exit={{ x: '100%' }} 
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
+                className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
+                style={{ border: '3px solid red' }} // TEMPORARY: Make it visible
+              >
+                <div className="p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      {selectedClass.id ? 'Edit Class' : 'New Class'}
+                    </h3>
+                    <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                  <div className="space-y-6">
+                    <div>
+                      <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
+                      <input 
+                        type="text" 
+                        value={selectedClass.name} 
+                        onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })} 
+                        className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`} 
+                        placeholder="e.g. Primary 3" 
+                      />
+                    </div>
+
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Arms</label>
+                        <button onClick={addArm} className={`inline-flex items-center text-sm ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
+                          <PlusIcon className="h-4 w-4 mr-1" /> Add Arm
+                        </button>
+                      </div>
+                      <div className="space-y-4">
+                        {selectedClass.arms.map((arm, index) => (
+                          <div key={index} className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                            <div className="flex justify-between items-center mb-2">
+                              <span className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>Arm {arm.letter || '?'}</span>
+                              <button onClick={() => removeArm(index)} className={`p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
+                                <XMarkIcon className="h-4 w-4" />
+                              </button>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Letter</label>
+                                <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
+                              </div>
+                              <div>
+                                <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Alias (optional)</label>
+                                <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
+                              </div>
+                              <div className="col-span-2">
+                                <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Teacher</label>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <input
+                                    type="text"
+                                    value={arm.teacherId ? teachers.find(t => t.id === arm.teacherId)?.name || arm.teacherId : ''}
+                                    readOnly
+                                    className={`flex-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
+                                    placeholder="No teacher selected"
+                                  />
+                                  <button
+                                    type="button"
+                                    onClick={() => openTeacherModal(index)}
+                                    className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors"
+                                  >
+                                    Select
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                        {selectedClass.arms.length === 0 && <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>No arms added yet. Click "Add Arm" to create one.</p>}
+                      </div>
+                    </div>
+
+                    <div className="pt-4">
+                      <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-2 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
+                        {isSaving ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                            Saving...
+                          </>
+                        ) : (
+                          selectedClass.id ? 'Update Class' : 'Create Class'
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     );
   }
@@ -418,7 +567,13 @@ export default function AdminClasses() {
               Manage classes and their arms. Each arm can have its own teacher and alias.
             </p>
           </div>
-          <button onClick={() => openPanel()} className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200">
+          <button 
+            onClick={() => {
+              console.log('🟢 Add Class button clicked!');
+              openPanel();
+            }} 
+            className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
+          >
             <PlusIcon className="h-5 w-5 mr-2" />
             Add Class
           </button>
@@ -477,12 +632,19 @@ export default function AdminClasses() {
         </motion.div>
       </div>
 
-      {/* ---------- Slide‑over panel (unchanged) ---------- */}
+      {/* ---------- Slide‑over panel ---------- */}
       <AnimatePresence>
         {isPanelOpen && selectedClass && (
           <>
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePanel} className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" />
-            <motion.div initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }} className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}>
+            <motion.div 
+              initial={{ x: '100%' }} 
+              animate={{ x: 0 }} 
+              exit={{ x: '100%' }} 
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
+              className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
+              style={{ border: '3px solid red' }} // TEMPORARY: Make it visible
+            >
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedClass.id ? 'Edit Class' : 'New Class'}</h3>
@@ -566,10 +728,7 @@ export default function AdminClasses() {
         )}
       </AnimatePresence>
 
-      {/* ============================================================
-          UPDATED Teacher Selection Modal – white background in light
-          mode, dark in dark mode (using theme state directly)
-          ============================================================ */}
+      {/* Teacher Selection Modal */}
       <AnimatePresence>
         {teacherModalOpen && (
           <>
@@ -584,14 +743,12 @@ export default function AdminClasses() {
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              // Background and border set explicitly with the theme state
               className={`fixed left-1/2 top-[45%] -translate-x-1/2 -translate-y-1/2 w-full max-w-md rounded-2xl shadow-2xl z-50 overflow-hidden border ${
                 theme === 'dark'
                   ? 'bg-gray-800 border-gray-700'
                   : 'bg-white border-gray-300'
               }`}
             >
-              {/* Inner container also gets the same background for safety */}
               <div className={`p-6 ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
                 <div className="flex justify-between items-center mb-4">
                   <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
@@ -646,9 +803,14 @@ export default function AdminClasses() {
                       <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
                     </div>
                   ) : paginatedTeachers.length === 0 ? (
-                    <p className={`text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers found.'}
-                    </p>
+                    <div className="text-center py-8">
+                      <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers found.'}
+                      </p>
+                      <p className={`text-sm mt-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                        You can create a teacher first, or leave the arm without a teacher.
+                      </p>
+                    </div>
                   ) : (
                     paginatedTeachers.map((teacher) => (
                       <button
