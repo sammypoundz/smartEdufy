@@ -17,6 +17,7 @@ import {
   ChevronLeftIcon,
   ChevronRightIcon,
   UserPlusIcon,
+  UserGroupIcon,
 } from '@heroicons/react/24/outline';
 
 interface Teacher {
@@ -156,6 +157,11 @@ export default function AdminClasses() {
     if (arm._count?.students !== undefined) return arm._count.students;
     if (arm.students) return arm.students.length;
     return 0;
+  };
+
+  // ✅ NEW: Calculate total students for a class
+  const getTotalStudents = (cls: ClassType): number => {
+    return cls.arms.reduce((total, arm) => total + getStudentCount(arm), 0);
   };
 
   const openPanel = (cls: ClassType | null = null) => {
@@ -755,55 +761,71 @@ export default function AdminClasses() {
         </div>
 
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {classes.map((cls) => (
-            <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
-              <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
-              <div className="relative z-10">
-                <div className="flex items-center justify-between">
-                  <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
-                  <div className="flex space-x-1">
-                    <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
-                      <PencilIcon className="h-4 w-4" />
-                    </button>
-                    <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                      {isDeleting === cls.id ? (
-                        <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <TrashIcon className="h-4 w-4" />
-                      )}
-                    </button>
+          {classes.map((cls) => {
+            const totalStudents = getTotalStudents(cls);
+            return (
+              <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
+                      {/* ✅ Display total students */}
+                      <div className="flex items-center mt-1">
+                        <UserGroupIcon className={`h-4 w-4 mr-1 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
+                        <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
+                          {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'} Total
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex space-x-1">
+                      <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
+                        <PencilIcon className="h-4 w-4" />
+                      </button>
+                      <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                        {isDeleting === cls.id ? (
+                          <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <TrashIcon className="h-4 w-4" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {cls.arms.map((arm) => (
+                      <div
+                        key={arm.id}
+                        onClick={() => navigate(`/admin/class/${cls.id}/arm/${arm.id}`)}
+                        className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/40 hover:bg-white/60'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                              Arm {arm.letter}
+                            </span>
+                            {arm.alias && (
+                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                                {arm.alias}
+                              </span>
+                            )}
+                          </div>
+                          {/* ✅ Show student count per arm */}
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>
+                            {getStudentCount(arm)} students
+                          </span>
+                        </div>
+                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Teacher: {getTeacherName(arm)}
+                        </p>
+                      </div>
+                    ))}
                   </div>
                 </div>
-
-                <div className="mt-4 space-y-3">
-                  {cls.arms.map((arm) => (
-                    <div
-                      key={arm.id}
-                      onClick={() => navigate(`/admin/class/${cls.id}/arm/${arm.id}`)}
-                      className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/40 hover:bg-white/60'}`}
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                            Arm {arm.letter}
-                          </span>
-                          {arm.alias && (
-                            <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
-                              {arm.alias}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                        Teacher: {getTeacherName(arm)} · Students: {getStudentCount(arm)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className={`absolute -top-6 -right-6 w-32 h-32 rounded-full blur-2xl transition-all group-hover:scale-110 ${theme === 'dark' ? 'bg-blue-500/20 group-hover:bg-blue-500/30' : 'bg-blue-200/30 group-hover:bg-blue-300/40'}`} />
-            </motion.div>
-          ))}
+                <div className={`absolute -top-6 -right-6 w-32 h-32 rounded-full blur-2xl transition-all group-hover:scale-110 ${theme === 'dark' ? 'bg-blue-500/20 group-hover:bg-blue-500/30' : 'bg-blue-200/30 group-hover:bg-blue-300/40'}`} />
+              </motion.div>
+            );
+          })}
         </motion.div>
       </div>
 
