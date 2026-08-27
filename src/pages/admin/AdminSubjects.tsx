@@ -210,12 +210,41 @@ export default function AdminSubjects() {
   };
 
   // ==========================================================
-  // CREATE / UPDATE SUBJECT
+  // CHECK FOR DUPLICATE SUBJECT
+  // ==========================================================
+
+  const checkDuplicateSubject = (name: string, excludeId?: string): boolean => {
+    const trimmedName = name.trim().toLowerCase();
+    
+    return subjects.some((subject) => {
+      // If editing, exclude the current subject from the check
+      if (excludeId && subject.id === excludeId) {
+        return false;
+      }
+      return subject.name.toLowerCase() === trimmedName;
+    });
+  };
+
+  // ==========================================================
+  // CREATE / UPDATE SUBJECT (with duplicate check)
   // ==========================================================
 
   const handleSaveSubject = async () => {
-    if (!subjectForm.name.trim()) {
+    const trimmedName = subjectForm.name.trim();
+    
+    if (!trimmedName) {
       toast.error('Subject name is required');
+      return;
+    }
+
+    // ✅ Check for duplicate subject name
+    const duplicateExists = checkDuplicateSubject(
+      trimmedName,
+      editingSubject?.id
+    );
+
+    if (duplicateExists) {
+      toast.error(`A subject named "${trimmedName}" already exists. Please use a different name.`);
       return;
     }
 
@@ -233,7 +262,7 @@ export default function AdminSubjects() {
         res = await api.put(
           `/subjects/${editingSubject.id}`,
           {
-            name: subjectForm.name.trim(),
+            name: trimmedName,
             description:
               subjectForm.description.trim() || undefined,
           },
@@ -243,7 +272,7 @@ export default function AdminSubjects() {
         res = await api.post(
           '/subjects',
           {
-            name: subjectForm.name.trim(),
+            name: trimmedName,
             description:
               subjectForm.description.trim() || undefined,
           },
@@ -1358,8 +1387,7 @@ export default function AdminSubjects() {
                   >
                     To assign different subjects to individual
                     students, such as a student who takes a subject
-                    not offered by the arm or drops a subject, go to
-                    the student's profile and edit their subject
+                    not offered by the arm or drops a subject, go to                    the student's profile and edit their subject
                     offerings.
                   </p>
 
@@ -1432,6 +1460,27 @@ export default function AdminSubjects() {
                   }`}
                   placeholder="e.g., Mathematics"
                 />
+                
+                {/* ✅ Show duplicate warning in real-time */}
+                {subjectForm.name.trim() && (
+                  <p
+                    className={`mt-1 text-sm ${
+                      checkDuplicateSubject(
+                        subjectForm.name.trim(),
+                        editingSubject?.id
+                      )
+                        ? 'text-red-500'
+                        : 'text-green-500'
+                    }`}
+                  >
+                    {checkDuplicateSubject(
+                      subjectForm.name.trim(),
+                      editingSubject?.id
+                    )
+                      ? '⚠️ A subject with this name already exists'
+                      : '✓ Subject name is available'}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -1479,7 +1528,11 @@ export default function AdminSubjects() {
                   onClick={handleSaveSubject}
                   disabled={
                     submittingSubject ||
-                    !subjectForm.name.trim()
+                    !subjectForm.name.trim() ||
+                    checkDuplicateSubject(
+                      subjectForm.name.trim(),
+                      editingSubject?.id
+                    )
                   }
                   className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition"
                 >
