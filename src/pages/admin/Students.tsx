@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
@@ -120,24 +121,24 @@ export default function Students() {
   // Helper function to get arm display name
   const getArmDisplayName = (arm: { id: string; letter: string; alias?: string } | undefined): string => {
     if (!arm) return '-';
-    
+
     // If the arm already has an alias, use it
     if (arm.alias) {
       return `Arm ${arm.letter} (${arm.alias})`;
     }
-    
+
     // Look up the alias from the classes data
     const alias = armAliasMap.get(arm.id);
     if (alias) {
       return `Arm ${arm.letter} (${alias})`;
     }
-    
+
     return `Arm ${arm.letter}`;
   };
 
-  // For dropdowns - shows only the letter
-  const formatArmDropdown = (letter: string): string => {
-    return `Arm ${letter}`;
+  // For dropdowns - shows the arm with its alias when available
+  const formatArmDropdown = (arm: { id: string; letter: string; alias?: string }): string => {
+    return formatArm(arm, armAliasMap);
   };
 
   // Fetch data
@@ -251,7 +252,7 @@ export default function Students() {
     const className = selectedClass?.name?.replace(/\s+/g, '') || 'Class';
     const armLetter = selectedArm?.letter || '';
     const fileName = armLetter ? `${className}_Arm${armLetter}_studentsSheet.xlsx` : `${className}_studentsSheet.xlsx`;
-    
+
     const templateData = [
       { name: 'John Doe', gender: 'male', admissionNumber: 'ADM001', classId: bulkClassId, armId: bulkArmId || '' },
     ];
@@ -630,7 +631,7 @@ export default function Students() {
               >
                 <option value="">All Arms</option>
                 {classes.find(c => c.id === selectedClassId)?.arms?.map((arm) => (
-                  <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
+                  <option key={arm.id} value={arm.id}>{formatArmDropdown(arm)}</option>
                 ))}
               </select>
             )}
@@ -802,7 +803,7 @@ export default function Students() {
                   >
                     <option value="">Select Arm</option>
                     {classes.find(c => c.id === newStudentForm.classId)?.arms?.map((arm) => (
-                      <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
+                      <option key={arm.id} value={arm.id}>{formatArmDropdown(arm)}</option>
                     ))}
                   </select>
                 </div>
@@ -860,7 +861,7 @@ export default function Students() {
                       >
                         <option value="">-- No default arm --</option>
                         {classes.find(c => c.id === bulkClassId)?.arms?.map((arm) => (
-                          <option key={arm.id} value={arm.id}>{formatArmDropdown(arm.letter)}</option>
+                          <option key={arm.id} value={arm.id}>{formatArmDropdown(arm)}</option>
                         ))}
                       </select>
                     </div>
@@ -979,11 +980,11 @@ export default function Students() {
       {/* View All Students Modal - FULLSCREEN */}
       <AnimatePresence>
         {showAllModal && (
-          <CenteredModal 
-            onClose={() => setShowAllModal(false)} 
-            title="All Students" 
-            theme={theme} 
-            size="fullscreen" 
+          <CenteredModal
+            onClose={() => setShowAllModal(false)}
+            title="All Students"
+            theme={theme}
+            size="fullscreen"
             className="modal-content"
           >
             <div className="space-y-4">

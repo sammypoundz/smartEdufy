@@ -58,7 +58,7 @@ const item = {
 
 export default function AdminClasses() {
   const { theme } = useTheme();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [classes, setClasses] = useState<ClassType[]>([]);
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
@@ -77,8 +77,11 @@ export default function AdminClasses() {
   const [teacherPage, setTeacherPage] = useState(1);
   const pageSize = 5;
 
+  // Check if user is admin
+  const isAdmin = user?.role === 'ADMIN';
+
   const fetchTeachers = async () => {
-    if (!token) return;
+    if (!token || !isAdmin) return;
     setTeachersLoading(true);
     try {
       const res = await api.get('/teachers', token);
@@ -103,12 +106,32 @@ export default function AdminClasses() {
     setLoading(true);
     setError(null);
     try {
-      const res = await api.get('/classes', token);
-      if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+      let res;
+
+      if (isAdmin) {
+        // Admin fetches all classes
+        res = await api.get('/classes', token);
+      } else {
+        // Teacher fetches only their assigned classes (class-teacher arms
+        // + arms where they teach subjects) via a dedicated endpoint
+        res = await api.get('/classes/teacher/classes', token);
+      }
+
+      if (!res) {
+        setError('No response from server');
+        setLoading(false);
+        return;
+      }
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(`HTTP ${res.status}: ${errorText}`);
+      }
       const data = await res.json();
+      console.log('✅ Classes loaded:', data.length);
       setClasses(data);
     } catch (err: any) {
-      console.error(err);
+      console.error('❌ Failed to fetch classes:', err);
       setError(err.message || 'Could not load classes. Please check your network connection.');
       toast.error('Could not load classes');
     } finally {
@@ -118,12 +141,14 @@ export default function AdminClasses() {
 
   useEffect(() => {
     fetchClasses();
-    fetchTeachers();
-  }, [token]);
+    if (isAdmin) {
+      fetchTeachers();
+    }
+  }, [token, isAdmin]);
 
-  // Filter & paginate teachers
+  // Filter & paginate teachers (only for admin)
   const filteredTeachers = useMemo(() => {
-    if (!teacherSearch.trim()) return teachers;
+    if (!isAdmin || !teacherSearch.trim()) return teachers;
     const q = teacherSearch.toLowerCase();
     return teachers.filter(
       (t) =>
@@ -131,14 +156,15 @@ export default function AdminClasses() {
         t.email.toLowerCase().includes(q) ||
         (t.phone && t.phone.includes(q))
     );
-  }, [teachers, teacherSearch]);
+  }, [teachers, teacherSearch, isAdmin]);
 
   const totalFiltered = filteredTeachers.length;
   const totalPages = Math.ceil(totalFiltered / pageSize) || 1;
   const paginatedTeachers = useMemo(() => {
+    if (!isAdmin) return [];
     const start = (teacherPage - 1) * pageSize;
     return filteredTeachers.slice(start, start + pageSize);
-  }, [filteredTeachers, teacherPage, pageSize]);
+  }, [filteredTeachers, teacherPage, pageSize, isAdmin]);
 
   useEffect(() => {
     setTeacherPage(1);
@@ -159,14 +185,19 @@ export default function AdminClasses() {
     return 0;
   };
 
-  // ✅ NEW: Calculate total students for a class
   const getTotalStudents = (cls: ClassType): number => {
     return cls.arms.reduce((total, arm) => total + getStudentCount(arm), 0);
   };
 
   const openPanel = (cls: ClassType | null = null) => {
+    // Only admin can open the panel
+    if (!isAdmin) {
+      toast.error('You do not have permission to manage classes');
+      return;
+    }
+
     console.log('🟢 openPanel called!', { cls, token, isPanelOpen });
-    
+
     try {
       if (cls) {
         console.log('Editing existing class:', cls.name);
@@ -174,13 +205,13 @@ export default function AdminClasses() {
         setSelectedClass({ ...cls, arms: clonedArms });
       } else {
         console.log('Creating new class');
-        setSelectedClass({ 
-          id: '', 
-          name: '', 
-          arms: [] 
+        setSelectedClass({
+          id: '',
+          name: '',
+          arms: []
         });
       }
-      
+
       console.log('Setting isPanelOpen to true');
       setIsPanelOpen(true);
     } catch (err) {
@@ -274,6 +305,13 @@ export default function AdminClasses() {
 
   const deleteClass = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
+
+    // Only admin can delete
+    if (!isAdmin) {
+      toast.error('You do not have permission to delete classes');
+      return;
+    }
+
     const result = await Swal.fire({
       title: 'Are you sure?',
       text: "You won't be able to revert this!",
@@ -332,14 +370,19 @@ export default function AdminClasses() {
   };
 
   const openTeacherModal = (armIndex: number) => {
+    if (!isAdmin) {
+      toast.error('You do not have permission to assign teachers');
+      return;
+    }
+
     console.log('🟢 Opening teacher modal for arm index:', armIndex);
     console.log('Teachers available:', teachers.length);
-    
+
     if (teachers.length === 0) {
       toast.error('No teachers available. Please create a teacher first.');
       return;
     }
-    
+
     setCurrentArmIndex(armIndex);
     setTeacherSearch('');
     setTeacherPage(1);
@@ -368,6 +411,15 @@ export default function AdminClasses() {
     setCurrentArmIndex(null);
   };
 
+  // ----- Helper to get the arm navigation path based on role -----
+  const getArmNavigationPath = (classId: string, armId: string) => {
+    if (isAdmin) {
+      return `/admin/class/${classId}/arm/${armId}`;
+    } else {
+      return `/teacher/class/${classId}/arm/${armId}`;
+    }
+  };
+
   // ----- Loading / error / empty states -----
   if (loading) {
     return (
@@ -385,7 +437,7 @@ export default function AdminClasses() {
       <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
         <div className={`text-center max-w-md p-8 rounded-2xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
           <ExclamationTriangleIcon className="w-16 h-16 text-red-500 mx-auto mb-4" />
-          <h3 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Network Error</h3>
+          <h3 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Error</h3>
           <p className={`mb-6 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{error}</p>
           <button
             onClick={() => fetchClasses()}
@@ -412,63 +464,462 @@ export default function AdminClasses() {
           <div className="sm:flex sm:items-center sm:justify-between mb-8">
             <div>
               <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
-                Class Management
+                {isAdmin ? 'Class Management' : 'My Classes'}
               </h2>
               <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Manage classes and their arms. Each arm can have its own teacher and alias.
+                {isAdmin
+                  ? 'Manage classes and their arms. Each arm can have its own teacher and alias.'
+                  : 'Classes you are assigned to teach'
+                }
               </p>
             </div>
-            <button 
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  console.log('🟢 Add Class button clicked!');
+                  openPanel();
+                }}
+                className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                Add Class
+              </button>
+            )}
+          </div>
+          <div className={`flex flex-col items-center justify-center py-20 rounded-2xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+            <AcademicCapIcon className={`w-24 h-24 mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
+            <h3 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+              {isAdmin ? 'No Classes Yet' : 'No Classes Assigned'}
+            </h3>
+            <p className={`text-center max-w-md ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+              {isAdmin
+                ? 'Get started by creating your first class.'
+                : 'You haven\'t been assigned to any classes yet. Please contact the school administrator.'
+              }
+            </p>
+            {isAdmin && (
+              <button
+                onClick={() => {
+                  console.log('🟢 Create Class button clicked!');
+                  openPanel();
+                }}
+                className="mt-4 inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                Create Class
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Panel - Only for admin */}
+        {isAdmin && (
+          <AnimatePresence>
+            {isPanelOpen && selectedClass && (
+              <>
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  onClick={closePanel}
+                  className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
+                />
+                <motion.div
+                  initial={{ x: '100%' }}
+                  animate={{ x: 0 }}
+                  exit={{ x: '100%' }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                  className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
+                >
+                  <div className="p-6">
+                    <div className="flex items-center justify-between mb-6">
+                      <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        {selectedClass.id ? 'Edit Class' : 'New Class'}
+                      </h3>
+                      <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+                    <div className="space-y-6">
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
+                        <input
+                          type="text"
+                          value={selectedClass.name}
+                          onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })}
+                          className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`}
+                          placeholder="e.g. Primary 3"
+                        />
+                      </div>
+
+                      <div>
+                        <div className="flex items-center justify-between mb-2">
+                          <label className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Arms</label>
+                          <button onClick={addArm} className={`inline-flex items-center text-sm ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
+                            <PlusIcon className="h-4 w-4 mr-1" /> Add Arm
+                          </button>
+                        </div>
+                        <div className="space-y-4">
+                          {selectedClass.arms.map((arm, index) => (
+                            <div key={index} className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
+                              <div className="flex justify-between items-center mb-2">
+                                <span className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>Arm {arm.letter || '?'}</span>
+                                <button onClick={() => removeArm(index)} className={`p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
+                                  <XMarkIcon className="h-4 w-4" />
+                                </button>
+                              </div>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div>
+                                  <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Letter</label>
+                                  <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
+                                </div>
+                                <div>
+                                  <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Alias (optional)</label>
+                                  <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
+                                </div>
+                                <div className="col-span-2">
+                                  <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Teacher</label>
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <input
+                                      type="text"
+                                      value={arm.teacherId ? teachers.find(t => t.id === arm.teacherId)?.name || arm.teacherId : ''}
+                                      readOnly
+                                      className={`flex-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
+                                      placeholder="No teacher selected"
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => openTeacherModal(index)}
+                                      className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
+                                    >
+                                      Select
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                          {selectedClass.arms.length === 0 && <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>No arms added yet. Click "Add Arm" to create one.</p>}
+                        </div>
+                      </div>
+
+                      <div className="pt-4">
+                        <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-2 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
+                          {isSaving ? (
+                            <>
+                              <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                              Saving...
+                            </>
+                          ) : (
+                            selectedClass.id ? 'Update Class' : 'Create Class'
+                          )}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        )}
+
+        {/* Teacher Selection Modal - Only for admin */}
+        {isAdmin && (
+          <AnimatePresence>
+            {teacherModalOpen && (
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+                onClick={() => setTeacherModalOpen(false)}
+              >
+                <motion.div
+                  initial={{ scale: 0.9, opacity: 0 }}
+                  animate={{ scale: 1, opacity: 1 }}
+                  exit={{ scale: 0.9, opacity: 0 }}
+                  transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+                  className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${
+                    theme === 'dark'
+                      ? 'bg-gray-800 border-gray-700'
+                      : 'bg-white border-gray-300'
+                  }`}
+                  style={{ maxHeight: '80vh' }}
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  <div className={`p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                    <div className="flex justify-between items-center mb-4 sticky top-0 bg-inherit z-10 pb-2">
+                      <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        Select a Teacher
+                      </h3>
+                      <button
+                        onClick={() => setTeacherModalOpen(false)}
+                        className={`p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
+                          theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                        }`}
+                      >
+                        <XMarkIcon className="h-5 w-5" />
+                      </button>
+                    </div>
+
+                    {/* Search Input */}
+                    <div className="relative mb-4">
+                      <div className="relative">
+                        <MagnifyingGlassIcon
+                          className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${
+                            theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                          }`}
+                        />
+                        <input
+                          type="text"
+                          value={teacherSearch}
+                          onChange={(e) => setTeacherSearch(e.target.value)}
+                          placeholder="Search teachers by name, email..."
+                          className={`w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
+                            theme === 'dark'
+                              ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-blue-500'
+                              : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-blue-400'
+                          }`}
+                        />
+                      </div>
+                      {teacherSearch && (
+                        <button
+                          onClick={() => setTeacherSearch('')}
+                          className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 ${
+                            theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                          }`}
+                        >
+                          <XMarkIcon className="h-4 w-4" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Teacher List - Scrollable */}
+                    <div className="max-h-[50vh] overflow-y-auto space-y-2">
+                      {teachersLoading ? (
+                        <div className="flex justify-center py-8">
+                          <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                        </div>
+                      ) : paginatedTeachers.length === 0 ? (
+                        <div className="text-center py-8">
+                          <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                            {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers available.'}
+                          </p>
+                          <button
+                            onClick={() => {
+                              setTeacherModalOpen(false);
+                              toast('Please create a teacher first in the Teachers section', {
+                                duration: 4000,
+                                icon: '👨‍🏫',
+                              });
+                            }}
+                            className={`mt-3 inline-flex items-center px-4 py-2 text-sm rounded-lg transition-colors ${
+                              theme === 'dark'
+                                ? 'bg-blue-600 hover:bg-blue-700 text-white'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white'
+                            }`}
+                          >
+                            <UserPlusIcon className="h-4 w-4 mr-2" />
+                            Create Teacher
+                          </button>
+                        </div>
+                      ) : (
+                        paginatedTeachers.map((teacher) => (
+                          <button
+                            key={teacher.id}
+                            onClick={() => selectTeacher(teacher.id)}
+                            className={`w-full text-left p-3 rounded-lg transition-colors ${
+                              theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
+                            }`}
+                          >
+                            <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                              {teacher.name}
+                            </p>
+                            <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {teacher.email}
+                            </p>
+                            {teacher.phone && (
+                              <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                                {teacher.phone}
+                              </p>
+                            )}
+                          </button>
+                        ))
+                      )}
+                    </div>
+
+                    {/* Pagination Controls - Sticky at bottom */}
+                    {!teachersLoading && totalFiltered > pageSize && (
+                      <div
+                        className={`flex items-center justify-between mt-4 pt-3 border-t sticky bottom-0 bg-inherit pb-2 ${
+                          theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
+                        }`}
+                      >
+                        <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Showing {(teacherPage - 1) * pageSize + 1} -{' '}
+                          {Math.min(teacherPage * pageSize, totalFiltered)} of {totalFiltered}
+                        </span>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            onClick={() => setTeacherPage((p) => Math.max(1, p - 1))}
+                            disabled={teacherPage === 1}
+                            className={`p-2 rounded-md transition-colors ${
+                              theme === 'dark'
+                                ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
+                                : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
+                            }`}
+                          >
+                            <ChevronLeftIcon className="h-5 w-5" />
+                          </button>
+                          <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                            {teacherPage} / {totalPages}
+                          </span>
+                          <button
+                            onClick={() => setTeacherPage((p) => Math.min(totalPages, p + 1))}
+                            disabled={teacherPage === totalPages}
+                            className={`p-2 rounded-md transition-colors ${
+                              theme === 'dark'
+                                ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
+                                : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
+                            }`}
+                          >
+                            <ChevronRightIcon className="h-5 w-5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        )}
+      </div>
+    );
+  }
+
+  // ---------- Main render ----------
+  return (
+    <div className={`min-h-screen px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
+      {theme === 'dark' && (
+        <div className="fixed inset-0 z-0">
+          <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `linear-gradient(rgba(59,130,246,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.1) 1px,transparent 1px)`, backgroundSize: '60px 60px' }} />
+          <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20" />
+        </div>
+      )}
+
+      <div className="relative z-10 max-w-7xl mx-auto">
+        <div className="sm:flex sm:items-center sm:justify-between mb-8">
+          <div>
+            <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
+              {isAdmin ? 'Class Management' : 'My Classes'}
+            </h2>
+            <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+              {isAdmin
+                ? 'Manage classes and their arms. Each arm can have its own teacher and alias.'
+                : 'Classes you are assigned to teach'
+              }
+            </p>
+          </div>
+          {isAdmin && (
+            <button
               onClick={() => {
                 console.log('🟢 Add Class button clicked!');
                 openPanel();
-              }} 
+              }}
               className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
             >
               <PlusIcon className="h-5 w-5 mr-2" />
               Add Class
             </button>
-          </div>
-          <div className={`flex flex-col items-center justify-center py-20 rounded-2xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
-            <AcademicCapIcon className={`w-24 h-24 mb-4 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-400'}`} />
-            <h3 className={`text-xl font-medium mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>No Classes Yet</h3>
-            <p className={`text-center mb-6 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Get started by creating your first class.</p>
-            <button
-              onClick={() => {
-                console.log('🟢 Create Class button clicked!');
-                openPanel();
-              }}
-              className="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Create Class
-            </button>
-          </div>
+          )}
         </div>
 
-        {/* Panel */}
+        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {classes.map((cls) => {
+            const totalStudents = getTotalStudents(cls);
+            return (
+              <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
+                <div className="relative z-10">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
+                      <div className="flex items-center mt-1">
+                        <UserGroupIcon className={`h-4 w-4 mr-1 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
+                        <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
+                          {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'} Total
+                        </span>
+                      </div>
+                    </div>
+                    {isAdmin && (
+                      <div className="flex space-x-1">
+                        <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
+                          <PencilIcon className="h-4 w-4" />
+                        </button>
+                        <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                          {isDeleting === cls.id ? (
+                            <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <TrashIcon className="h-4 w-4" />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {cls.arms.map((arm) => (
+                      <div
+                        key={arm.id}
+                        onClick={() => navigate(getArmNavigationPath(cls.id, arm.id))}
+                        className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/40 hover:bg-white/60'}`}
+                      >
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center">
+                            <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                              Arm {arm.letter}
+                            </span>
+                            {arm.alias && (
+                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                                {arm.alias}
+                              </span>
+                            )}
+                          </div>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>
+                            {getStudentCount(arm)} students
+                          </span>
+                        </div>
+                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                          Teacher: {getTeacherName(arm)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div className={`absolute -top-6 -right-6 w-32 h-32 rounded-full blur-2xl transition-all group-hover:scale-110 ${theme === 'dark' ? 'bg-blue-500/20 group-hover:bg-blue-500/30' : 'bg-blue-200/30 group-hover:bg-blue-300/40'}`} />
+              </motion.div>
+            );
+          })}
+        </motion.div>
+      </div>
+
+      {/* ---------- Slide‑over panel - Only for admin ---------- */}
+      {isAdmin && (
         <AnimatePresence>
           {isPanelOpen && selectedClass && (
             <>
-              <motion.div 
-                initial={{ opacity: 0 }} 
-                animate={{ opacity: 1 }} 
-                exit={{ opacity: 0 }} 
-                onClick={closePanel} 
-                className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" 
-              />
-              <motion.div 
-                initial={{ x: '100%' }} 
-                animate={{ x: 0 }} 
-                exit={{ x: '100%' }} 
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePanel} className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" />
+              <motion.div
+                initial={{ x: '100%' }}
+                animate={{ x: 0 }}
+                exit={{ x: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
                 className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
               >
                 <div className="p-6">
                   <div className="flex items-center justify-between mb-6">
-                    <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {selectedClass.id ? 'Edit Class' : 'New Class'}
-                    </h3>
+                    <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedClass.id ? 'Edit Class' : 'New Class'}</h3>
                     <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
                       <XMarkIcon className="h-5 w-5" />
                     </button>
@@ -476,13 +927,7 @@ export default function AdminClasses() {
                   <div className="space-y-6">
                     <div>
                       <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
-                      <input 
-                        type="text" 
-                        value={selectedClass.name} 
-                        onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })} 
-                        className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`} 
-                        placeholder="e.g. Primary 3" 
-                      />
+                      <input type="text" value={selectedClass.name} onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })} className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`} placeholder="e.g. Primary 3" />
                     </div>
 
                     <div>
@@ -554,8 +999,10 @@ export default function AdminClasses() {
             </>
           )}
         </AnimatePresence>
+      )}
 
-        {/* Teacher Selection Modal - FIXED with flex centering for empty state */}
+      {/* Teacher Selection Modal - Only for admin */}
+      {isAdmin && (
         <AnimatePresence>
           {teacherModalOpen && (
             <motion.div
@@ -724,375 +1171,7 @@ export default function AdminClasses() {
             </motion.div>
           )}
         </AnimatePresence>
-      </div>
-    );
-  }
-
-  // ---------- Main render ----------
-  return (
-    <div className={`min-h-screen px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
-      {theme === 'dark' && (
-        <div className="fixed inset-0 z-0">
-          <div className="absolute inset-0 opacity-20" style={{ backgroundImage: `linear-gradient(rgba(59,130,246,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.1) 1px,transparent 1px)`, backgroundSize: '60px 60px' }} />
-          <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20" />
-        </div>
       )}
-
-      <div className="relative z-10 max-w-7xl mx-auto">
-        <div className="sm:flex sm:items-center sm:justify-between mb-8">
-          <div>
-            <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
-              Class Management
-            </h2>
-            <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-              Manage classes and their arms. Each arm can have its own teacher and alias.
-            </p>
-          </div>
-          <button 
-            onClick={() => {
-              console.log('🟢 Add Class button clicked!');
-              openPanel();
-            }} 
-            className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
-          >
-            <PlusIcon className="h-5 w-5 mr-2" />
-            Add Class
-          </button>
-        </div>
-
-        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {classes.map((cls) => {
-            const totalStudents = getTotalStudents(cls);
-            return (
-              <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
-                <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
-                <div className="relative z-10">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
-                      {/* ✅ Display total students */}
-                      <div className="flex items-center mt-1">
-                        <UserGroupIcon className={`h-4 w-4 mr-1 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
-                          {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'} Total
-                        </span>
-                      </div>
-                    </div>
-                    <div className="flex space-x-1">
-                      <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
-                        <PencilIcon className="h-4 w-4" />
-                      </button>
-                      <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
-                        {isDeleting === cls.id ? (
-                          <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
-                        ) : (
-                          <TrashIcon className="h-4 w-4" />
-                        )}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="mt-4 space-y-3">
-                    {cls.arms.map((arm) => (
-                      <div
-                        key={arm.id}
-                        onClick={() => navigate(`/admin/class/${cls.id}/arm/${arm.id}`)}
-                        className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/40 hover:bg-white/60'}`}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                              Arm {arm.letter}
-                            </span>
-                            {arm.alias && (
-                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
-                                {arm.alias}
-                              </span>
-                            )}
-                          </div>
-                          {/* ✅ Show student count per arm */}
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>
-                            {getStudentCount(arm)} students
-                          </span>
-                        </div>
-                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                          Teacher: {getTeacherName(arm)}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className={`absolute -top-6 -right-6 w-32 h-32 rounded-full blur-2xl transition-all group-hover:scale-110 ${theme === 'dark' ? 'bg-blue-500/20 group-hover:bg-blue-500/30' : 'bg-blue-200/30 group-hover:bg-blue-300/40'}`} />
-              </motion.div>
-            );
-          })}
-        </motion.div>
-      </div>
-
-      {/* ---------- Slide‑over panel ---------- */}
-      <AnimatePresence>
-        {isPanelOpen && selectedClass && (
-          <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePanel} className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" />
-            <motion.div 
-              initial={{ x: '100%' }} 
-              animate={{ x: 0 }} 
-              exit={{ x: '100%' }} 
-              transition={{ type: 'spring', damping: 25, stiffness: 200 }} 
-              className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
-            >
-              <div className="p-6">
-                <div className="flex items-center justify-between mb-6">
-                  <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedClass.id ? 'Edit Class' : 'New Class'}</h3>
-                  <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                </div>
-                <div className="space-y-6">
-                  <div>
-                    <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
-                    <input type="text" value={selectedClass.name} onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })} className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`} placeholder="e.g. Primary 3" />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Arms</label>
-                      <button onClick={addArm} className={`inline-flex items-center text-sm ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
-                        <PlusIcon className="h-4 w-4 mr-1" /> Add Arm
-                      </button>
-                    </div>
-                    <div className="space-y-4">
-                      {selectedClass.arms.map((arm, index) => (
-                        <div key={index} className={`p-4 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700' : 'bg-gray-50 border-gray-200'}`}>
-                          <div className="flex justify-between items-center mb-2">
-                            <span className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>Arm {arm.letter || '?'}</span>
-                            <button onClick={() => removeArm(index)} className={`p-1 rounded-full hover:bg-red-100 dark:hover:bg-red-900/30 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
-                              <XMarkIcon className="h-4 w-4" />
-                            </button>
-                          </div>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Letter</label>
-                              <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
-                            </div>
-                            <div>
-                              <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Alias (optional)</label>
-                              <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
-                            </div>
-                            <div className="col-span-2">
-                              <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Teacher</label>
-                              <div className="flex items-center gap-2 mt-1">
-                                <input
-                                  type="text"
-                                  value={arm.teacherId ? teachers.find(t => t.id === arm.teacherId)?.name || arm.teacherId : ''}
-                                  readOnly
-                                  className={`flex-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
-                                  placeholder="No teacher selected"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => openTeacherModal(index)}
-                                  className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
-                                >
-                                  Select
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                      {selectedClass.arms.length === 0 && <p className={`text-sm ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>No arms added yet. Click "Add Arm" to create one.</p>}
-                    </div>
-                  </div>
-
-                  <div className="pt-4">
-                    <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-2 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
-                      {isSaving ? (
-                        <>
-                          <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
-                          Saving...
-                        </>
-                      ) : (
-                        selectedClass.id ? 'Update Class' : 'Create Class'
-                      )}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
-
-      {/* Teacher Selection Modal - FIXED with flex centering for main render */}
-      <AnimatePresence>
-        {teacherModalOpen && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
-            onClick={() => setTeacherModalOpen(false)}
-          >
-            <motion.div
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${
-                theme === 'dark'
-                  ? 'bg-gray-800 border-gray-700'
-                  : 'bg-white border-gray-300'
-              }`}
-              style={{ maxHeight: '80vh' }}
-              onClick={(e) => e.stopPropagation()}
-            >
-              <div className={`p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
-                <div className="flex justify-between items-center mb-4 sticky top-0 bg-inherit z-10 pb-2">
-                  <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                    Select a Teacher
-                  </h3>
-                  <button
-                    onClick={() => setTeacherModalOpen(false)}
-                    className={`p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                    }`}
-                  >
-                    <XMarkIcon className="h-5 w-5" />
-                  </button>
-                </div>
-
-                {/* Search Input */}
-                <div className="relative mb-4">
-                  <div className="relative">
-                    <MagnifyingGlassIcon
-                      className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 ${
-                        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                      }`}
-                    />
-                    <input
-                      type="text"
-                      value={teacherSearch}
-                      onChange={(e) => setTeacherSearch(e.target.value)}
-                      placeholder="Search teachers by name, email..."
-                      className={`w-full pl-10 pr-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
-                        theme === 'dark'
-                          ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400 focus:ring-blue-500'
-                          : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-blue-400'
-                      }`}
-                    />
-                  </div>
-                  {teacherSearch && (
-                    <button
-                      onClick={() => setTeacherSearch('')}
-                      className={`absolute right-3 top-1/2 -translate-y-1/2 p-1 rounded-full hover:bg-gray-200 dark:hover:bg-gray-600 ${
-                        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                      }`}
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Teacher List - Scrollable */}
-                <div className="max-h-[50vh] overflow-y-auto space-y-2">
-                  {teachersLoading ? (
-                    <div className="flex justify-center py-8">
-                      <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                    </div>
-                  ) : paginatedTeachers.length === 0 ? (
-                    <div className="text-center py-8">
-                      <p className={`${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        {teacherSearch.trim() ? 'No teachers match your search.' : 'No teachers available.'}
-                      </p>
-                      <button
-                        onClick={() => {
-                          setTeacherModalOpen(false);
-                          toast('Please create a teacher first in the Teachers section', {
-                            duration: 4000,
-                            icon: '👨‍🏫',
-                          });
-                        }}
-                        className={`mt-3 inline-flex items-center px-4 py-2 text-sm rounded-lg transition-colors ${
-                          theme === 'dark'
-                            ? 'bg-blue-600 hover:bg-blue-700 text-white'
-                            : 'bg-blue-600 hover:bg-blue-700 text-white'
-                        }`}
-                      >
-                        <UserPlusIcon className="h-4 w-4 mr-2" />
-                        Create Teacher
-                      </button>
-                    </div>
-                  ) : (
-                    paginatedTeachers.map((teacher) => (
-                      <button
-                        key={teacher.id}
-                        onClick={() => selectTeacher(teacher.id)}
-                        className={`w-full text-left p-3 rounded-lg transition-colors ${
-                          theme === 'dark' ? 'hover:bg-gray-700' : 'hover:bg-gray-100'
-                        }`}
-                      >
-                        <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                          {teacher.name}
-                        </p>
-                        <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                          {teacher.email}
-                        </p>
-                        {teacher.phone && (
-                          <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {teacher.phone}
-                          </p>
-                        )}
-                      </button>
-                    ))
-                  )}
-                </div>
-
-                {/* Pagination Controls - Sticky at bottom */}
-                {!teachersLoading && totalFiltered > pageSize && (
-                  <div
-                    className={`flex items-center justify-between mt-4 pt-3 border-t sticky bottom-0 bg-inherit pb-2 ${
-                      theme === 'dark' ? 'border-gray-700' : 'border-gray-200'
-                    }`}
-                  >
-                    <span className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      Showing {(teacherPage - 1) * pageSize + 1} -{' '}
-                      {Math.min(teacherPage * pageSize, totalFiltered)} of {totalFiltered}
-                    </span>
-                    <div className="flex items-center space-x-2">
-                      <button
-                        onClick={() => setTeacherPage((p) => Math.max(1, p - 1))}
-                        disabled={teacherPage === 1}
-                        className={`p-2 rounded-md transition-colors ${
-                          theme === 'dark'
-                            ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
-                            : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
-                        }`}
-                      >
-                        <ChevronLeftIcon className="h-5 w-5" />
-                      </button>
-                      <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                        {teacherPage} / {totalPages}
-                      </span>
-                      <button
-                        onClick={() => setTeacherPage((p) => Math.min(totalPages, p + 1))}
-                        disabled={teacherPage === totalPages}
-                        className={`p-2 rounded-md transition-colors ${
-                          theme === 'dark'
-                            ? 'hover:bg-gray-700 text-gray-300 disabled:text-gray-600 disabled:hover:bg-transparent'
-                            : 'hover:bg-gray-200 text-gray-700 disabled:text-gray-400 disabled:hover:bg-transparent'
-                        }`}
-                      >
-                        <ChevronRightIcon className="h-5 w-5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
     </div>
   );
 }

@@ -1,8 +1,9 @@
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
+import toast from 'react-hot-toast';
 import {
   HomeIcon,
   AcademicCapIcon,
@@ -22,48 +23,84 @@ import {
   ChevronDoubleRightIcon,
   ChevronDownIcon,
   XMarkIcon,
+  UserGroupIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline';
 
-// ---------- Correct Types ----------
-interface TeacherProfile {
-  id: string;
-  name: string;
-  // ✅ Backend returns "arms"
-  arms?: Array<{
-    id: string;
-    letter: string;
-    class: { id: string; name: string };
-  }>;
-  // ✅ Backend returns "subjectArms" (not "subjects")
-  subjectArms?: Array<{
-    id: string;
-    subject: { id: string; name: string };
-    arm?: { id: string; class?: { name: string } };
-  }>;
-}
+// ---------- Teacher Categories ----------
+// `privilege` links a nav item to a page privilege key granted by the admin.
+// Items without a `privilege` are always visible.
+const categories: { name: string; items: { name: string; href: string; icon: typeof HomeIcon; privilege?: string }[] }[] = [
+  {
+    name: 'Dashboard',
+    items: [{ name: 'Overview', href: '/teacher', icon: HomeIcon }],
+  },
+  {
+    name: 'Academic',
+    items: [
+      { name: 'My Classes', href: '/teacher/classes', icon: AcademicCapIcon, privilege: 'classes' },
+      { name: 'My Subjects', href: '/teacher/subjects', icon: BookOpenIcon, privilege: 'subjects' },
+      { name: 'Students', href: '/teacher/students', icon: UserGroupIcon, privilege: 'students' },
+      { name: 'Results', href: '/teacher/results', icon: ChartBarIcon, privilege: 'results' },
+      { name: 'Reports', href: '/teacher/reports', icon: DocumentChartBarIcon, privilege: 'reports' },
+      { name: 'Assessment Format', href: '/teacher/assessment-format', icon: ClipboardDocumentListIcon, privilege: 'assessment-format' },
+      { name: 'Lesson Plan', href: '/teacher/lesson-plan', icon: ClipboardDocumentListIcon, privilege: 'lesson-plan' },
+      { name: 'Timetable', href: '/teacher/timetable', icon: CalendarIcon, privilege: 'timetable' },
+      { name: 'Broadsheet', href: '/teacher/broadsheet', icon: ChartBarIcon, privilege: 'broadsheet' },
+      { name: 'CBT', href: '/teacher/cbt', icon: AcademicCapIcon, privilege: 'cbt' },
+    ],
+  },
+  {
+    name: 'System',
+    items: [
+      { name: 'Settings', href: '/teacher/settings', icon: CogIcon },
+      { name: 'Help', href: '/teacher/help', icon: QuestionMarkCircleIcon },
+    ],
+  },
+];
 
-// ---------- Helper ----------
-const flattenNavItems = (categories: any[]) => categories.flatMap(cat => cat.items);
+const allNavItems = categories.flatMap(cat => cat.items);
 
 export default function TeacherLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
 
+  // ---------- Sidebar states ----------
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
-  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>({});
+  const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(
+    categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {})
+  );
 
-  const [teacherProfile, setTeacherProfile] = useState<TeacherProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [schoolName, setSchoolName] = useState('');
-  const [currentTerm, setCurrentTerm] = useState('');
+  // ---------- Top bar info states ----------
+  const [schoolName, setSchoolName] = useState<string>('');
+  const [currentTerm, setCurrentTerm] = useState<string>('');
 
+  // ---------- Teacher profile state ----------
+  const [teacherProfile, setTeacherProfile] = useState<any>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+
+  // ---------- Search states ----------
   const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchResults, setSearchResults] = useState<typeof allNavItems>([]);
+
+  // ---------- Privileged navigation (based on user.allowedPages) ----------
+  const allowedCategories = (() => {
+    const allowedPages = user?.allowedPages || [];
+    const isAdmin = (user?.role || '').toUpperCase() === 'ADMIN';
+    return categories
+      .map(cat => ({
+        ...cat,
+        items: cat.items.filter(
+          item => !item.privilege || isAdmin || allowedPages.includes(item.privilege)
+        ),
+      }))
+      .filter(cat => cat.items.length > 0);
+  })();
+  const allowedNavItems = allowedCategories.flatMap(cat => cat.items);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -71,18 +108,16 @@ export default function TeacherLayout() {
   const searchDropdownRef = useRef<HTMLDivElement>(null);
   const searchContainerRef = useRef<HTMLDivElement>(null);
 
+  // ---------- Helper to check active link ----------
   const isActiveLink = (href: string) => {
     if (href === '/teacher') return location.pathname === '/teacher';
+    if (href === '/teacher/dashboard') return location.pathname === '/teacher' || location.pathname === '/teacher/';
     return location.pathname.startsWith(href);
   };
 
-  // Fetch data
+  // ---------- Fetch school & term info ----------
   useEffect(() => {
-    const fetchData = async () => {
-      if (!user?.id) {
-        setLoading(false);
-        return;
-      }
+    const fetchTopBarInfo = async () => {
       try {
         const [generalRes, academicRes] = await Promise.all([
           api.get('/settings/general'),
@@ -96,81 +131,63 @@ export default function TeacherLayout() {
           const data = await academicRes.json();
           setCurrentTerm(data.currentTerm || '');
         }
+      } catch (err) {
+        console.error('Failed to load top bar info', err);
+      }
+    };
+    fetchTopBarInfo();
+  }, []);
 
-        const profileRes = await api.get(`/teachers/${user.id}`);
+  // ---------- Fetch teacher profile ----------
+  useEffect(() => {
+    const fetchTeacherProfile = async () => {
+      if (!token) {
+        return;
+      }
+
+      try {
+        console.log('🔍 Fetching teacher profile...');
+        const profileRes = await api.get('/teachers/me', token);
+
         if (profileRes.ok) {
           const data = await profileRes.json();
           setTeacherProfile(data);
+          setProfileError(null);
+          console.log('✅ Teacher profile loaded:', data.name);
+          console.log('📚 Arms count:', data.arms?.length || 0);
+        } else if (profileRes.status === 404) {
+          // Teacher profile not found - show a message
+          console.warn('⚠️ Teacher profile not found (404)');
+          setProfileError('Teacher profile not found. Please contact your administrator.');
+
+          // Set a default profile so the UI doesn't break
+          setTeacherProfile({
+            id: user?.id || 'unknown',
+            name: user?.name || 'Teacher',
+            arms: [],
+            subjectArms: []
+          });
+
+          // Show toast notification
+          toast.error('Teacher profile not found. Please contact your administrator.', {
+            duration: 5000,
+          });
         } else {
+          // Other error
           console.error('Failed to fetch teacher profile:', profileRes.status);
+          const errorData = await profileRes.json().catch(() => ({}));
+          setProfileError(errorData?.message || 'Failed to load teacher profile');
+          toast.error(errorData?.message || 'Failed to load teacher profile');
         }
       } catch (err) {
-        console.error('Failed to load teacher data', err);
-      } finally {
-        setLoading(false);
+        console.error('Failed to load teacher profile:', err);
+        setProfileError('Network error while loading teacher profile');
+        toast.error('Could not load teacher profile. Please check your connection.');
       }
     };
-    fetchData();
-  }, [user]);
 
-  // Build navigation categories – using arms and subjectArms
-  const getCategories = () => {
-    const baseCategories: any[] = [
-      {
-        name: 'Dashboard',
-        items: [{ name: 'Overview', href: '/teacher', icon: HomeIcon }],
-      },
-    ];
-
-    const academicItems: any[] = [];
-
-    if (teacherProfile?.arms && teacherProfile.arms.length > 0) {
-      academicItems.push({
-        name: 'My Classes',
-        href: '/teacher/classes',
-        icon: AcademicCapIcon,
-      });
-    }
-
-    if (teacherProfile?.subjectArms && teacherProfile.subjectArms.length > 0) {
-      academicItems.push({
-        name: 'My Subjects',
-        href: '/teacher/subjects',
-        icon: BookOpenIcon,
-      });
-    }
-
-    const commonAcademic = [
-      { name: 'Results', href: '/teacher/results', icon: ChartBarIcon },
-      { name: 'Reports', href: '/teacher/reports', icon: DocumentChartBarIcon },
-      { name: 'Assessment Format', href: '/teacher/assessment-format', icon: ClipboardDocumentListIcon },
-      { name: 'Lesson Plan', href: '/teacher/lesson-plan', icon: ClipboardDocumentListIcon },
-      { name: 'Timetable', href: '/teacher/timetable', icon: CalendarIcon },
-    ];
-
-    baseCategories.push({
-      name: 'Academic',
-      items: [...academicItems, ...commonAcademic],
-    });
-
-    baseCategories.push({
-      name: 'System',
-      items: [
-        { name: 'Settings', href: '/teacher/settings', icon: CogIcon },
-        { name: 'Help', href: '/teacher/help', icon: QuestionMarkCircleIcon },
-      ],
-    });
-
-    return baseCategories;
-  };
-
-  const categories = useMemo(() => getCategories(), [teacherProfile]);
-  const flatNavItems = flattenNavItems(categories);
-
-  useEffect(() => {
-    const initialOpen = categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {});
-    setOpenCategories(initialOpen);
-  }, [categories]);
+    fetchTeacherProfile();
+  }, [token, user]);
 
   // ---------- Search logic ----------
   useEffect(() => {
@@ -180,14 +197,15 @@ export default function TeacherLayout() {
       return;
     }
     const queryLower = searchQuery.toLowerCase();
-    const filtered = flatNavItems.filter((item: any) =>
+    const filtered = allowedNavItems.filter(item =>
       item.name.toLowerCase().includes(queryLower)
     );
     setSearchResults(filtered);
     setShowSearchDropdown(filtered.length > 0);
     setSelectedIndex(-1);
-  }, [searchQuery, flatNavItems]);
+  }, [searchQuery]);
 
+  // Close dropdown when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       if (
@@ -251,6 +269,7 @@ export default function TeacherLayout() {
     setOpenCategories(prev => ({ ...prev, [categoryName]: !prev[categoryName] }));
   };
 
+  // ---------- Body scroll lock for mobile sidebar ----------
   useEffect(() => {
     if (sidebarOpen) {
       document.body.style.overflow = 'hidden';
@@ -262,8 +281,10 @@ export default function TeacherLayout() {
     };
   }, [sidebarOpen]);
 
+  // ---------- Effective collapsed state ----------
   const effectiveIsCollapsed = isCollapsed && !isHoverExpanded;
 
+  // ---------- Search focus handling ----------
   const handleSearchFocus = () => {
     setSearchExpanded(true);
     if (searchQuery.trim() !== '') {
@@ -284,20 +305,12 @@ export default function TeacherLayout() {
     searchInputRef.current?.focus();
   };
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   // ---------- Render ----------
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
       theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'
     }`}>
-      {/* Desktop Sidebar */}
+      {/* ====== Desktop Sidebar ====== */}
       <div
         className={`hidden md:fixed md:inset-y-0 md:left-0 md:flex md:flex-col z-20 transition-all duration-300 ${
           effectiveIsCollapsed ? 'md:w-20' : 'md:w-72'
@@ -346,7 +359,7 @@ export default function TeacherLayout() {
           <div className="mt-8 flex flex-grow flex-col">
             <nav className="flex-1 space-y-2 px-2">
               {effectiveIsCollapsed ? (
-                categories.flatMap(cat => cat.items).map((item: any) => {
+                allowedCategories.flatMap(category => category.items).map((item) => {
                   const active = isActiveLink(item.href);
                   return (
                     <Link
@@ -374,7 +387,7 @@ export default function TeacherLayout() {
                   );
                 })
               ) : (
-                categories.map((category) => (
+                allowedCategories.map((category) => (
                   <div key={category.name} className="space-y-1">
                     <button
                       onClick={() => toggleCategory(category.name)}
@@ -393,7 +406,7 @@ export default function TeacherLayout() {
                     </button>
                     {openCategories[category.name] && (
                       <div className="space-y-1 pl-2">
-                        {category.items.map((item: any) => {
+                        {category.items.map((item) => {
                           const active = isActiveLink(item.href);
                           return (
                             <Link
@@ -458,6 +471,18 @@ export default function TeacherLayout() {
                     }`}>
                       {user?.role}
                     </p>
+                    {teacherProfile && (
+                      <p className={`text-xs truncate ${
+                        theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                      }`}>
+                        {teacherProfile.arms?.length || 0} classes
+                      </p>
+                    )}
+                    {profileError && (
+                      <p className={`text-xs truncate text-red-500`}>
+                        ⚠️ Profile not found
+                      </p>
+                    )}
                   </div>
                   <button
                     onClick={handleLogout}
@@ -484,7 +509,7 @@ export default function TeacherLayout() {
         </div>
       </div>
 
-      {/* Mobile Sidebar */}
+      {/* ====== Mobile Sidebar ====== */}
       {sidebarOpen && (
         <>
           <div
@@ -529,7 +554,7 @@ export default function TeacherLayout() {
 
               <div className="mt-8 flex flex-grow flex-col">
                 <nav className="flex-1 space-y-2 px-4">
-                  {categories.map((category) => (
+                  {allowedCategories.map((category) => (
                     <div key={category.name} className="space-y-1">
                       <button
                         onClick={() => toggleCategory(category.name)}
@@ -548,7 +573,7 @@ export default function TeacherLayout() {
                       </button>
                       {openCategories[category.name] && (
                         <div className="space-y-1 pl-2">
-                          {category.items.map((item: any) => {
+                          {category.items.map((item) => {
                             const active = isActiveLink(item.href);
                             return (
                               <Link
@@ -623,7 +648,7 @@ export default function TeacherLayout() {
         </>
       )}
 
-      {/* Main content */}
+      {/* ====== Main content area with top bar ====== */}
       <div className={`flex flex-col flex-1 transition-all duration-300 ${
         effectiveIsCollapsed ? 'md:pl-20' : 'md:pl-72'
       }`}>
@@ -632,8 +657,9 @@ export default function TeacherLayout() {
             ? 'bg-white/5 backdrop-blur-xl border-b border-white/10'
             : 'bg-white/30 backdrop-blur-md border-b border-white/20'
         }`}>
-          {/* Left side */}
+          {/* Left side: sidebar toggle buttons + school/term info */}
           <div className="flex items-center flex-1 min-w-0">
+            {/* Mobile hamburger */}
             <button
               className="md:hidden p-2 rounded-lg text-gray-500 hover:text-gray-700"
               onClick={() => setSidebarOpen(true)}
@@ -642,13 +668,21 @@ export default function TeacherLayout() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
             </button>
+
+            {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebar}
               className="hidden md:block p-2 rounded-lg text-gray-500 hover:text-gray-700 transition-colors"
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
-              {isCollapsed ? <ChevronDoubleRightIcon className="h-5 w-5" /> : <ChevronDoubleLeftIcon className="h-5 w-5" />}
+              {isCollapsed ? (
+                <ChevronDoubleRightIcon className="h-5 w-5" />
+              ) : (
+                <ChevronDoubleLeftIcon className="h-5 w-5" />
+              )}
             </button>
+
+            {/* School & Term Info (desktop only) */}
             <div className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1">
               {schoolName && (
                 <span className={`text-xl font-extrabold ${searchExpanded ? 'truncate' : ''} ${
@@ -667,9 +701,13 @@ export default function TeacherLayout() {
             </div>
           </div>
 
-          {/* Search bar */}
+          {/* ====== Search Bar ====== */}
           <div className="flex items-center justify-end flex-1 max-w-xs mx-4 relative" ref={searchContainerRef}>
-            <div className={`relative transition-all duration-300 ease-in-out ${searchExpanded ? 'w-full' : 'w-10'}`}>
+            <div
+              className={`relative transition-all duration-300 ease-in-out ${
+                searchExpanded ? 'w-full' : 'w-10'
+              }`}
+            >
               <div className="relative">
                 <MagnifyingGlassIcon
                   className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 cursor-pointer transition-colors ${
@@ -687,7 +725,9 @@ export default function TeacherLayout() {
                   onBlur={handleSearchBlur}
                   placeholder={searchExpanded ? "Search menus..." : ""}
                   className={`w-full pl-10 pr-4 py-2 rounded-xl border transition-all duration-300 focus:outline-none focus:ring-2 ${
-                    searchExpanded ? 'opacity-100' : 'opacity-0 pointer-events-none'
+                    searchExpanded
+                      ? 'opacity-100'
+                      : 'opacity-0 pointer-events-none'
                   } ${
                     theme === 'dark'
                       ? 'bg-white/10 border-white/20 text-white placeholder-gray-400 focus:ring-blue-500'
@@ -700,6 +740,8 @@ export default function TeacherLayout() {
                   }}
                 />
               </div>
+
+              {/* Search dropdown */}
               {showSearchDropdown && searchExpanded && (
                 <div
                   ref={searchDropdownRef}
@@ -710,7 +752,9 @@ export default function TeacherLayout() {
                   }`}
                 >
                   {searchResults.length === 0 ? (
-                    <div className={`px-4 py-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    <div className={`px-4 py-3 text-sm ${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                    }`}>
                       No results found
                     </div>
                   ) : (
@@ -722,7 +766,9 @@ export default function TeacherLayout() {
                           onMouseEnter={() => setSelectedIndex(idx)}
                           className={`px-4 py-2 flex items-center gap-3 cursor-pointer transition-colors ${
                             selectedIndex === idx
-                              ? theme === 'dark' ? 'bg-white/10' : 'bg-black/5'
+                              ? theme === 'dark'
+                                ? 'bg-white/10'
+                                : 'bg-black/5'
                               : ''
                           } ${
                             theme === 'dark'
@@ -730,7 +776,9 @@ export default function TeacherLayout() {
                               : 'hover:bg-black/5 text-gray-800'
                           }`}
                         >
-                          <item.icon className={`h-5 w-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+                          <item.icon className={`h-5 w-5 ${
+                            theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                          }`} />
                           <span className="text-sm">{item.name}</span>
                         </li>
                       ))}
@@ -743,31 +791,40 @@ export default function TeacherLayout() {
 
           {/* Right icons */}
           <div className="flex items-center space-x-4 flex-shrink-0">
-            <Link to="/teacher/notifications" className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark'
-                ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-            }`}>
+            <Link
+              to="/teacher/notifications"
+              className={`p-2 rounded-lg transition-colors ${
+                theme === 'dark'
+                  ? 'text-gray-400 hover:text-white hover:bg-white/10'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
+              }`}
+            >
               <BellIcon className="h-5 w-5" />
             </Link>
-            <button onClick={toggleTheme} className={`p-2 rounded-lg transition-colors ${
-              theme === 'dark'
-                ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-            }`}>
+            <button
+              onClick={toggleTheme}
+              className={`p-2 rounded-lg transition-colors ${
+                theme === 'dark'
+                  ? 'text-gray-400 hover:text-white hover:bg-white/10'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
+              }`}
+            >
               {theme === 'dark' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
             </button>
-            <Link to="/teacher/profile" className={`p-1 rounded-full transition-colors ${
-              theme === 'dark'
-                ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-            }`}>
+            <Link
+              to="/teacher/profile"
+              className={`p-1 rounded-full transition-colors ${
+                theme === 'dark'
+                  ? 'text-gray-400 hover:text-white hover:bg-white/10'
+                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
+              }`}
+            >
               <UserCircleIcon className="h-8 w-8" />
             </Link>
           </div>
         </header>
 
-        <main className="flex-1">
+        <main className="flex-1 p-6">
           <Outlet />
         </main>
       </div>

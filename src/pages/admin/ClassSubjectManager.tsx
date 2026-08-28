@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
@@ -210,7 +211,7 @@ export default function ClassSubjectManager() {
   // Helper to display arm name
   const getArmDisplay = () => {
     const arm = arms.find(a => a.id === selectedArmId);
-    return arm ? `Arm ${arm.letter}` : '';
+    return formatArm(arm);
   };
 
   return (
@@ -255,7 +256,7 @@ export default function ClassSubjectManager() {
             >
               <option value="">Select Arm</option>
               {arms.map((arm) => (
-                <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>
+                <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>
               ))}
             </select>
           )}

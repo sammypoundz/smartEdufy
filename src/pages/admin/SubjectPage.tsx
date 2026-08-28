@@ -8,6 +8,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -961,9 +962,7 @@ export default function SubjectPage() {
                 >
                   Class:{' '}
                   {subject.class.name}{' '}
-                  {subject.arm?.letter
-                    ? `Arm ${subject.arm.letter}`
-                    : ''}
+                  {subject.arm?.letter ? formatArm(subject.arm) : ''}
                 </span>
               </div>
             )}

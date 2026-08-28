@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import { AcademicCapIcon } from '@heroicons/react/24/outline';
 
 export default function TeacherClasses() {
@@ -46,7 +47,7 @@ export default function TeacherClasses() {
               <AcademicCapIcon className="w-8 h-8 text-blue-500" />
               <div>
                 <p className="font-semibold">{arm.class.name}</p>
-                <p className="text-sm text-gray-500">Arm {arm.letter}</p>
+                <p className="text-sm text-gray-500">{formatArm(arm)}</p>
               </div>
             </div>
           </Link>

@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import { PAGE_PRIVILEGES } from '../../utils/privileges';
 import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -23,6 +24,7 @@ interface User {
   email: string;
   role: 'ADMIN' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'PRINCIPAL' | 'BURSAR' | 'ACCOUNTANT' | 'LIBRARIAN';
   isActive: boolean;
+  allowedPages?: string[];
   createdAt?: string;
 }
 
@@ -82,6 +84,7 @@ export default function AdminUsers() {
     role: 'STUDENT' as User['role'],
     password: '',
     isActive: true,
+    allowedPages: [] as string[],
   });
   const [submitting, setSubmitting] = useState(false);
 
@@ -129,7 +132,7 @@ export default function AdminUsers() {
 
   const openAddModal = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'STUDENT', password: '', isActive: true });
+    setFormData({ name: '', email: '', role: 'STUDENT', password: '', isActive: true, allowedPages: [] });
     setShowModal(true);
   };
 
@@ -141,6 +144,7 @@ export default function AdminUsers() {
       role: user.role,
       password: '',
       isActive: user.isActive,
+      allowedPages: user.allowedPages || [],
     });
     setShowModal(true);
   };
@@ -153,6 +157,15 @@ export default function AdminUsers() {
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
+  };
+
+  const handlePrivilegeToggle = (key: string) => {
+    setFormData(prev => ({
+      ...prev,
+      allowedPages: prev.allowedPages.includes(key)
+        ? prev.allowedPages.filter(p => p !== key)
+        : [...prev.allowedPages, key],
+    }));
   };
 
   const handleSubmit = async () => {
@@ -172,6 +185,7 @@ export default function AdminUsers() {
         email: formData.email,
         role: formData.role,
         isActive: formData.isActive,
+        allowedPages: formData.role === 'TEACHER' ? formData.allowedPages : [],
         ...(formData.password && { password: formData.password }),
       };
       if (editingUser) {
@@ -460,6 +474,11 @@ export default function AdminUsers() {
                           <span className={getRoleBadgeClass(user.role, theme)}>
                             {user.role}
                           </span>
+                          {user.role === 'TEACHER' && (user.allowedPages?.length || 0) > 0 && (
+                            <p className={`mt-1 text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                              {user.allowedPages!.length} page{user.allowedPages!.length === 1 ? '' : 's'} granted
+                            </p>
+                          )}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm">
                           {user.isActive ? (
@@ -704,6 +723,30 @@ export default function AdminUsers() {
                     ))}
                   </select>
                 </div>
+
+                {formData.role === 'TEACHER' && (
+                  <div>
+                    <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                      Page Privileges
+                    </label>
+                    <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                      Choose which pages this teacher can access. Dashboard, Settings and Profile are always available.
+                    </p>
+                    <div className={`grid grid-cols-2 gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+                      {PAGE_PRIVILEGES.map(priv => (
+                        <label key={priv.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.allowedPages.includes(priv.key)}
+                            onChange={() => handlePrivilegeToggle(priv.key)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                          />
+                          <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>{priv.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
 
                 <div>
                   <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>

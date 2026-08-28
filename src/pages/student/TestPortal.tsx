@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
@@ -581,7 +582,7 @@ export default function TestPortal() {
                     className={`w-full px-4 py-3 rounded-xl border focus:outline-none focus:ring-2 disabled:opacity-50 ${theme === 'dark' ? 'bg-gray-800/50 border-gray-700 text-white focus:ring-blue-500' : 'bg-white/50 border-gray-200 text-gray-900 focus:ring-blue-400'}`}
                   >
                     <option value="">Select arm</option>
-                    {getArmsForClass(selectedClassId).map(arm => <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>)}
+                    {getArmsForClass(selectedClassId).map(arm => <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>)}
                   </select>
                 </div>
                 <button
@@ -847,4 +848,4 @@ export default function TestPortal() {
       </div>
     </div>
   );
-} 
+}

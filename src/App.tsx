@@ -1,7 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import TeacherDashboard from './pages/teacher/Dashboard';
-import TeacherClasses from './pages/teacher/Classes';
 import TeacherSubjects from './pages/teacher/Subjects';
 import Login from './pages/auth/Login';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -56,10 +55,10 @@ const RoleBasedRedirect = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   switch (user.role) {
-    case 'admin': return <Navigate to="/admin" replace />;
-    case 'teacher': return <Navigate to="/teacher" replace />;
-    case 'parent': return <Navigate to="/parent" replace />;
-    case 'student': return <Navigate to="/student" replace />;
+    case 'ADMIN': return <Navigate to="/admin" replace />;
+    case 'TEACHER': return <Navigate to="/teacher" replace />;
+    case 'PARENT': return <Navigate to="/parent" replace />;
+    case 'STUDENT': return <Navigate to="/student" replace />;
     default: return <Navigate to="/login" replace />;
   }
 };
@@ -123,6 +122,8 @@ function App() {
             <Route path="messaging" element={<AdminMessaging />} />
             <Route path="staff" element={<AdminStaff />} />
             <Route path="timetable" element={<AdminTimetable />} />
+            <Route path="broadsheet" element={<AdminBroadsheet />} />
+            <Route path="cbt" element={<AdminCBT />} />
             <Route path="assessment-format" element={<AdminAssessmentFormat />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="inventory" element={<AdminInventory />} />
@@ -133,19 +134,29 @@ function App() {
           </Route>
         </Route>
 
-        {/* ====== TEACHER ROUTES – no MainLayout wrapper ====== */}
+        {/* ====== TEACHER ROUTES ====== */}
         <Route element={<ProtectedRoute allowedRoles={['teacher']} />}>
           <Route path="/teacher/*" element={<TeacherLayout />}>
+            {/* Dashboard routes */}
             <Route index element={<TeacherDashboard />} />
-            <Route path="classes" element={<TeacherClasses />} />
+            <Route path="dashboard" element={<TeacherDashboard />} />
+
+            {/* Academic routes – same Classes page as admin, but teachers
+                only see and manage classes assigned to them */}
+            <Route path="classes" element={<AdminClasses />} />
             <Route path="class/:classId/arm/:armId" element={<OpenArm />} />
             <Route path="subjects" element={<TeacherSubjects />} />
             <Route path="subject/:id" element={<SubjectPage />} />
+            <Route path="students" element={<Students />} />
             <Route path="results" element={<AdminResults />} />
             <Route path="reports" element={<AdminReports />} />
             <Route path="assessment-format" element={<AdminAssessmentFormat />} />
             <Route path="lesson-plan" element={<AdminLessonPlan />} />
             <Route path="timetable" element={<AdminTimetable />} />
+            <Route path="broadsheet" element={<AdminBroadsheet />} />
+            <Route path="cbt" element={<AdminCBT />} />
+
+            {/* System routes */}
             <Route path="settings" element={<AdminSettings />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
@@ -155,12 +166,12 @@ function App() {
 
         {/* ====== PARENT ROUTES ====== */}
         <Route element={<ProtectedRoute allowedRoles={['parent']} />}>
-          <Route path="/parent" element={<ParentDashboard />} />
+          <Route path="/parent/*" element={<ParentDashboard />} />
         </Route>
 
         {/* ====== STUDENT ROUTES ====== */}
         <Route element={<ProtectedRoute allowedRoles={['student']} />}>
-          <Route path="/student" element={<StudentDashboard />} />
+          <Route path="/student/*" element={<StudentDashboard />} />
         </Route>
       </Routes>
     </BrowserRouter>

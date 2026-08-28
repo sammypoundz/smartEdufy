@@ -23,6 +23,7 @@ import {
   CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
@@ -579,9 +580,8 @@ export default function AdminStaff() {
       const arms = armsRes.data || [];
       const armOpts = arms.map((arm: any) => {
         const className = arm.class?.name || arm.className || 'Unknown Class';
-        const letter = arm.letter || '';
         return {
-          display: `${className} Arm ${letter}`.trim(),
+          display: `${className} ${formatArm(arm)}`.trim(),
           className: className,
         };
       });

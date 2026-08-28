@@ -554,7 +554,7 @@ export default function OpenArm() {
     try {
       let successCount = 0;
       let errorCount = 0;
-      
+
       for (const studentId of selectedStudents) {
         try {
           const res = await api.patch(`/students/${studentId}`, { armId }, token);
@@ -567,13 +567,13 @@ export default function OpenArm() {
           errorCount++;
         }
       }
-      
+
       if (successCount > 0) {
         toast.success(`Successfully added ${successCount} student(s) to this arm${errorCount > 0 ? `, ${errorCount} failed` : ''}`);
       } else {
         toast.error(`Failed to add students to this arm`);
       }
-      
+
       await fetchArmData();
       fetchAttendanceRecords(attendanceFilterStart, attendanceFilterEnd);
       setShowAddStudentModal(false);
@@ -1274,9 +1274,7 @@ export default function OpenArm() {
   }
 
   // Clean title without duplication
-  const displayTitle = armData.alias 
-    ? `${armData.alias} (Arm ${armData.letter})` 
-    : `${className} Arm ${armData.letter}`;
+  const displayTitle = `${className} ${armData.letter}${armData.alias ? ` — ${armData.alias}` : ''}`;
 
   // --- Main render ---
   return (

@@ -16,6 +16,7 @@ import {
   UserMinusIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -572,7 +573,7 @@ export default function AdminParent() {
                             {child.name}
                           </p>
                           <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                            {child.class?.name || ''} {child.arm?.letter ? `Arm ${child.arm.letter}` : ''}
+                            {child.class?.name || ''} {child.arm ? formatArm(child.arm) : ''}
                           </p>
                         </div>
                         <button

@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import {
@@ -470,7 +471,7 @@ export default function AdminResults() {
             <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Arm</label>
             <select value={selectedArmId} onChange={e=>setSelectedArmId(e.target.value)} disabled={!selectedClassId} className={`mt-1 w-full rounded-xl border-0 px-4 py-3 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10 disabled:bg-gray-700' : 'bg-white/40 text-gray-900 border border-white/20 disabled:bg-gray-100'}`}>
               <option value="">Select arm</option>
-              {arms.map(a => <option key={a.id} value={a.id}>Arm {a.letter}</option>)}
+              {arms.map(a => <option key={a.id} value={a.id}>{formatArm(a)}</option>)}
             </select>
           </div>
           <div>
@@ -554,30 +555,30 @@ export default function AdminResults() {
                     <tr key={r.studentId} className={theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-50'}>
                       <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.studentName}</td>
                       <td className="px-6 py-4 text-sm">
-                        <input 
-                          type="number" 
-                          min="0" 
-                          max="30" 
-                          value={r.ca ?? ''} 
+                        <input
+                          type="number"
+                          min="0"
+                          max="30"
+                          value={r.ca ?? ''}
                           onChange={e => {
                             const val = e.target.value === '' ? null : Number(e.target.value);
                             handleScoreChange(r.studentId, 'ca', val);
-                          }} 
-                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} 
+                          }}
+                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
                           placeholder="-"
                         />
                       </td>
                       <td className="px-6 py-4 text-sm">
-                        <input 
-                          type="number" 
-                          min="0" 
-                          max="70" 
-                          value={r.exam ?? ''} 
+                        <input
+                          type="number"
+                          min="0"
+                          max="70"
+                          value={r.exam ?? ''}
                           onChange={e => {
                             const val = e.target.value === '' ? null : Number(e.target.value);
                             handleScoreChange(r.studentId, 'exam', val);
-                          }} 
-                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`} 
+                          }}
+                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
                           placeholder="-"
                         />
                       </td>

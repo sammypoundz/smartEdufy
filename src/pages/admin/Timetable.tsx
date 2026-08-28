@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import {
   ArrowLeftIcon,
@@ -390,7 +391,7 @@ export default function TimetablePage() {
                 >
                   <option value="">-- Choose an arm --</option>
                   {selectedClass.arms.map(arm => (
-                    <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>
+                    <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>
                   ))}
                 </select>
               </div>
@@ -416,7 +417,7 @@ export default function TimetablePage() {
           >
             <div className="flex flex-wrap justify-between items-center mb-6">
               <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                Timetable for {selectedClass.name} Arm {selectedArm?.letter || ''}
+                Timetable for {selectedClass.name} {formatArm(selectedArm)}
               </h2>
               <div className="space-x-2 mt-2 sm:mt-0">
                 {timetableEntries.length > 0 ? (

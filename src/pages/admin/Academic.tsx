@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import {
   UsersIcon,
@@ -607,7 +608,7 @@ export default function AdminAcademic() {
                         className={`mt-1 w-full rounded-xl border-0 bg-transparent px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/60 text-gray-900 border border-white/20'}`}
                       >
                         <option value="">Select arm</option>
-                        {sourceArms.map((arm) => <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>)}
+                        {sourceArms.map((arm) => <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>)}
                       </select>
                     </div>
                   </div>
@@ -641,7 +642,7 @@ export default function AdminAcademic() {
                         className={`mt-1 w-full rounded-xl border-0 bg-transparent px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-emerald-500 disabled:opacity-50 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/60 text-gray-900 border border-white/20'}`}
                       >
                         <option value="">Select arm</option>
-                        {targetArms.map((arm) => <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>)}
+                        {targetArms.map((arm) => <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>)}
                       </select>
                     </div>
                   </div>

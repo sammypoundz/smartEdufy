@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
@@ -391,7 +392,7 @@ export default function AdminLessonPlan() {
             >
               <option value="">All Arms</option>
               {getArmsForClass().map(arm => (
-                <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>
+                <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>
               ))}
             </select>
           </div>
@@ -627,7 +628,7 @@ export default function AdminLessonPlan() {
                       >
                         <option value="">Select Arm</option>
                         {getArmsForClass().map(arm => (
-                          <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>
+                          <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>
                         ))}
                       </select>
                     </div>

@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 
 interface Class {
@@ -15,6 +16,7 @@ interface Class {
 interface Arm {
   id: string;
   letter: string;
+  alias?: string;
   classId: string;
 }
 
@@ -253,14 +255,14 @@ export default function AdminBroadsheet() {
         }
 
         studentResultList.sort((a, b) => b.average - a.average);
-        let position = 1;
+        // Competition ranking: students tied on average share the same position,
+        // and the counter only advances past a tied group (1, 2, 2, 4, ...).
         for (let i = 0; i < studentResultList.length; i++) {
           if (i > 0 && studentResultList[i].average === studentResultList[i - 1].average) {
             studentResultList[i].position = studentResultList[i - 1].position;
           } else {
-            studentResultList[i].position = position;
+            studentResultList[i].position = i + 1;
           }
-          position++;
         }
 
         setStudentResults(studentResultList);
@@ -320,7 +322,7 @@ export default function AdminBroadsheet() {
               }`}
             >
               <option value="">Select arm</option>
-              {arms.map(arm => <option key={arm.id} value={arm.id}>Arm {arm.letter}</option>)}
+              {arms.map(arm => <option key={arm.id} value={arm.id}>{formatArm(arm)}</option>)}
             </select>
           </div>
           <div>
@@ -384,9 +386,9 @@ export default function AdminBroadsheet() {
                   </tr>
                 </thead>
                 <tbody className={`divide-y ${theme === 'dark' ? 'divide-white/10' : 'divide-gray-200/50'}`}>
-                  {studentResults.map((student) => (
+                  {studentResults.map((student, idx) => (
                     <motion.tr key={student.studentId} variants={item} whileHover={{ backgroundColor: theme === 'dark' ? 'rgba(255,255,255,0.05)' : 'rgba(59,130,246,0.05)' }} className="transition-colors">
-                      <td className={`whitespace-nowrap py-4 pl-6 pr-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>{student.position}</td>
+                      <td className={`whitespace-nowrap py-4 pl-6 pr-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>{idx + 1}</td>
                       <td className={`whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{student.studentName}</td>
                       {student.subjects.map(sub => (
                         <td key={sub.subjectId} className={`whitespace-nowrap px-3 py-4 text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>

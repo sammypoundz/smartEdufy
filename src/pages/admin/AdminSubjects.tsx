@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -215,7 +216,7 @@ export default function AdminSubjects() {
 
   const checkDuplicateSubject = (name: string, excludeId?: string): boolean => {
     const trimmedName = name.trim().toLowerCase();
-    
+
     return subjects.some((subject) => {
       // If editing, exclude the current subject from the check
       if (excludeId && subject.id === excludeId) {
@@ -231,7 +232,7 @@ export default function AdminSubjects() {
 
   const handleSaveSubject = async () => {
     const trimmedName = subjectForm.name.trim();
-    
+
     if (!trimmedName) {
       toast.error('Subject name is required');
       return;
@@ -717,7 +718,7 @@ export default function AdminSubjects() {
       (item) => item.id === selectedArmId
     );
 
-    return arm ? `Arm ${arm.letter}` : '';
+    return formatArm(arm);
   };
 
   // ==========================================================
@@ -1143,7 +1144,7 @@ export default function AdminSubjects() {
                     key={arm.id}
                     value={arm.id}
                   >
-                    Arm {arm.letter}
+                    {formatArm(arm)}
                   </option>
                 ))}
               </select>
@@ -1460,7 +1461,7 @@ export default function AdminSubjects() {
                   }`}
                   placeholder="e.g., Mathematics"
                 />
-                
+
                 {/* ✅ Show duplicate warning in real-time */}
                 {subjectForm.name.trim() && (
                   <p

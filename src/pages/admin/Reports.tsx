@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import {
@@ -435,7 +436,7 @@ export default function AdminReports() {
             <select value={selectedArmId} onChange={e => setSelectedArmId(e.target.value)} disabled={!selectedClassId}
               className={`mt-1 w-full rounded-xl border-0 px-4 py-3 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 disabled:opacity-50 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}>
               <option value="">Select arm</option>
-              {arms.map(a => <option key={a.id} value={a.id}>Arm {a.letter}</option>)}
+              {arms.map(a => <option key={a.id} value={a.id}>{formatArm(a)}</option>)}
             </select>
           </div>
           <div>

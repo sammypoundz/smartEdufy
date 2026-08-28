@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import {
   ArrowLeftIcon,
@@ -170,7 +171,7 @@ export default function StudentBio() {
   }, [student, allClasses]);
 
   const getArmLetter = useCallback(() => {
-    if (student?.arm?.letter) return `Arm ${student.arm.letter}`;
+    if (student?.arm) return formatArm(student.arm);
     return 'Not assigned';
   }, [student]);
 
@@ -837,7 +838,7 @@ export default function StudentBio() {
                 >
                   <option value="">-- Select Arm --</option>
                   {arms.map(a => (
-                    <option key={a.id} value={a.id}>Arm {a.letter}</option>
+                    <option key={a.id} value={a.id}>{formatArm(a)}</option>
                   ))}
                 </select>
               </div>

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import {
@@ -424,7 +425,7 @@ export default function TeacherProfile() {
                   <div>
                     <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Form Teacher of</p>
                     <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {teacher.arms?.map(arm => `${arm.class?.name || ''} Arm ${arm.letter}`).join(', ') || 'None'}
+                      {teacher.arms?.map(arm => `${arm.class?.name || ''} ${formatArm(arm)}`).join(', ') || 'None'}
                     </p>
                   </div>
                 </div>
@@ -547,7 +548,7 @@ export default function TeacherProfile() {
                                 <td className="py-2 px-4 font-mono text-sm">{entry.timeSlot}</td>
                                 <td className="py-2 px-4">{entry.subject?.name || '—'}</td>
                                 <td className="py-2 px-4">
-                                  {entry.arm?.class?.name || ''} Arm {entry.arm?.letter || '?'}
+                                  {entry.arm?.class?.name || ''} {formatArm(entry.arm)}
                                 </td>
                               </tr>
                             ))}
@@ -629,7 +630,7 @@ export default function TeacherProfile() {
                           className="w-4 h-4 rounded"
                         />
                         <span className={`${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>
-                          {arm.class?.name || 'No class'} Arm {arm.letter}
+                          {arm.class?.name || 'No class'} {formatArm(arm)}
                         </span>
                       </label>
                     );
@@ -676,7 +677,7 @@ export default function TeacherProfile() {
                   <option value="" className={theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>-- Select Arm --</option>
                   {allArms.map(arm => (
                     <option key={arm.id} value={arm.id} className={theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>
-                      {arm.class?.name || 'No class'} Arm {arm.letter}
+                      {arm.class?.name || 'No class'} {formatArm(arm)}
                     </option>
                   ))}
                 </select>
