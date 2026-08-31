@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
+import { ALL_PRIVILEGES } from '../utils/privileges';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
@@ -44,48 +45,49 @@ const categories = [
   {
     name: 'Academic',
     items: [
-      { name: 'Classes', href: '/admin/classes', icon: AcademicCapIcon },
-      { name: 'Students', href: '/admin/students', icon: UserGroupIcon },
-      { name: 'Subjects', href: '/admin/subjects', icon: BookOpenIcon },
-      { name: 'Broadsheet', href: '/admin/broadsheet', icon: DocumentTextIcon },
-      { name: 'CBT', href: '/admin/cbt', icon: ComputerDesktopIcon },
-      { name: 'Lesson Plan', href: '/admin/lesson-plan', icon: BookOpenIcon },
-      { name: 'Time Table', href: '/admin/timetable', icon: CalendarIcon },
-      { name: 'Assessment Format', href: '/admin/assessment-format', icon: ClipboardDocumentListIcon },
-      { name: 'Result Compiler', href: '/admin/results', icon: ChartBarIcon },
-      { name: 'Report Cards', href: '/admin/reports', icon: DocumentChartBarIcon },
-      { name: 'Academic Setup', href: '/admin/academic', icon: CogIcon },
+      { name: 'Classes', href: '/admin/classes', icon: AcademicCapIcon, privilege: 'classes' },
+      { name: 'Students', href: '/admin/students', icon: UserGroupIcon, privilege: 'students' },
+      { name: 'Subjects', href: '/admin/subjects', icon: BookOpenIcon, privilege: 'subjects' },
+      { name: 'Broadsheet', href: '/admin/broadsheet', icon: DocumentTextIcon, privilege: 'broadsheet' },
+      { name: 'CBT', href: '/admin/cbt', icon: ComputerDesktopIcon, privilege: 'cbt' },
+      { name: 'Lesson Plan', href: '/admin/lesson-plan', icon: BookOpenIcon, privilege: 'lesson-plan' },
+      { name: 'Time Table', href: '/admin/timetable', icon: CalendarIcon, privilege: 'timetable' },
+      { name: 'Assessment Format', href: '/admin/assessment-format', icon: ClipboardDocumentListIcon, privilege: 'assessment-format' },
+      { name: 'Result Compiler', href: '/admin/results', icon: ChartBarIcon, privilege: 'results' },
+      { name: 'Report Cards', href: '/admin/reports', icon: DocumentChartBarIcon, privilege: 'reports' },
+      { name: 'Academic Setup', href: '/admin/academic', icon: CogIcon, privilege: 'academic' },
     ],
   },
   {
     name: 'Finance',
     items: [
-      { name: 'Fees', href: '/admin/fees', icon: BanknotesIcon },
-      { name: 'Expenses & Budgeting', href: '/admin/expenses', icon: ReceiptPercentIcon },
-      { name: 'Payroll', href: '/admin/payroll', icon: CurrencyDollarIcon },
+      { name: 'Fees', href: '/admin/fees', icon: BanknotesIcon, privilege: 'fees' },
+      { name: 'Expenses & Budgeting', href: '/admin/expenses', icon: ReceiptPercentIcon, privilege: 'expenses' },
+      { name: 'Payroll', href: '/admin/payroll', icon: CurrencyDollarIcon, privilege: 'payroll' },
     ],
   },
   {
     name: 'People',
     items: [
-      { name: 'User Management', href: '/admin/users', icon: UsersIcon },
-      { name: 'Staff', href: '/admin/staff', icon: UserIcon },
-      { name: 'Teachers', href: '/admin/teachers', icon: UserIcon },
-      { name: 'Parent', href: '/admin/parent', icon: UserGroupIcon },
+      { name: 'User Management', href: '/admin/users', icon: UsersIcon, privilege: 'users' },
+      { name: 'Roles & Privileges', href: '/admin/roles', icon: UsersIcon, privilege: 'roles' },
+      { name: 'Staff', href: '/admin/staff', icon: UserIcon, privilege: 'staff' },
+      { name: 'Teachers', href: '/admin/teachers', icon: UserIcon, privilege: 'teachers' },
+      { name: 'Parent', href: '/admin/parent', icon: UserGroupIcon, privilege: 'parents' },
     ],
   },
   {
     name: 'Communication',
-    items: [{ name: 'Messaging', href: '/admin/messaging', icon: ChatBubbleLeftIcon }],
+    items: [{ name: 'Messaging', href: '/admin/messaging', icon: ChatBubbleLeftIcon, privilege: 'messaging' }],
   },
   {
     name: 'Inventory',
-    items: [{ name: 'Inventory', href: '/admin/inventory', icon: CubeIcon }],
+    items: [{ name: 'Inventory', href: '/admin/inventory', icon: CubeIcon, privilege: 'inventory' }],
   },
   {
     name: 'System',
     items: [
-      { name: 'Settings', href: '/admin/settings', icon: CogIcon },
+      { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
       { name: 'Help', href: '/admin/help', icon: QuestionMarkCircleIcon },
     ],
   },
@@ -98,6 +100,44 @@ export default function AdminLayout() {
   const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
+
+  // Users whose default dashboard is the teacher workspace (e.g. a teacher
+  // granted admin privileges) get a quick way back home from the top bar.
+  const staffRoles = [...(user?.roles || []), user?.role].filter(Boolean) as string[];
+  const isPureAdmin = staffRoles.includes('ADMIN') || staffRoles.includes('PRINCIPAL');
+  const hasTeacherWorkspace = !isPureAdmin && (
+    staffRoles.includes('TEACHER') ||
+    (user?.privileges?.length || 0) > 0 ||
+    (user?.allowedPages?.length || 0) > 0
+  );
+  // Role label for the "back to my dashboard" button, e.g. "Teacher Dashboard"
+  const homeRoleLabel =
+    staffRoles.find(r => r !== 'ADMIN' && r !== 'PRINCIPAL') || 'My';
+  const homeDashboardLabel = `${homeRoleLabel.charAt(0) + homeRoleLabel.slice(1).toLowerCase().replace(/_/g, ' ')} Dashboard`
+    .replace('My Dashboard', 'My Dashboard');
+
+  // ---------- Privileged navigation (based on roles + privileges) ----------
+  // ADMIN/PRINCIPAL implicitly hold every privilege; other users only see
+  // pages granted to them via their roles or direct privilege grants.
+  const allowedCategories = (() => {
+    const staffRoles = [...(user?.roles || []), user?.role].filter(Boolean) as string[];
+    // ADMIN/PRINCIPAL see every admin page. Everyone else (e.g. a teacher
+    // granted access to the admin panel) sees ONLY the pages explicitly
+    // granted to them via User.allowedPages — never their role defaults.
+    const isAdminUser = staffRoles.some(r => r === 'ADMIN' || r === 'PRINCIPAL');
+    const privileges = isAdminUser
+      ? ALL_PRIVILEGES.map(p => p.key)
+      : (user?.allowedPages || []);
+    return categories
+      .map(cat => ({
+        ...cat,
+        items: cat.items.filter(
+          item => !item.privilege || privileges.includes(item.privilege)
+        ),
+      }))
+      .filter(cat => cat.items.length > 0);
+  })();
+  const allowedNavItems = allowedCategories.flatMap(cat => cat.items);
 
   // ---------- Sidebar states ----------
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -158,7 +198,7 @@ export default function AdminLayout() {
       return;
     }
     const queryLower = searchQuery.toLowerCase();
-    const filtered = allNavItems.filter(item =>
+    const filtered = allowedNavItems.filter(item =>
       item.name.toLowerCase().includes(queryLower)
     );
     setSearchResults(filtered);
@@ -321,7 +361,7 @@ export default function AdminLayout() {
           <div className="mt-8 flex flex-grow flex-col">
             <nav className="flex-1 space-y-2 px-2">
               {effectiveIsCollapsed ? (
-                categories.flatMap(category => category.items).map((item) => {
+                allowedCategories.flatMap(category => category.items).map((item) => {
                   const active = isActiveLink(item.href);
                   return (
                     <Link
@@ -349,7 +389,7 @@ export default function AdminLayout() {
                   );
                 })
               ) : (
-                categories.map((category) => (
+                allowedCategories.map((category) => (
                   <div key={category.name} className="space-y-1">
                     <button
                       onClick={() => toggleCategory(category.name)}
@@ -504,7 +544,7 @@ export default function AdminLayout() {
 
               <div className="mt-8 flex flex-grow flex-col">
                 <nav className="flex-1 space-y-2 px-4">
-                  {categories.map((category) => (
+                  {allowedCategories.map((category) => (
                     <div key={category.name} className="space-y-1">
                       <button
                         onClick={() => toggleCategory(category.name)}
@@ -631,6 +671,22 @@ export default function AdminLayout() {
                 <ChevronDoubleLeftIcon className="h-5 w-5" />
               )}
             </button>
+
+            {/* Back to my default (teacher) dashboard */}
+            {hasTeacherWorkspace && (
+              <button
+                onClick={() => navigate('/teacher')}
+                className={`hidden md:inline-flex items-center gap-1.5 ml-3 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'
+                    : 'bg-blue-100 text-blue-700 hover:bg-blue-200'
+                }`}
+                title="Back to my dashboard"
+              >
+                <HomeIcon className="h-4 w-4" />
+                {hasTeacherWorkspace ? homeDashboardLabel : 'My Dashboard'}
+              </button>
+            )}
 
             {/* School & Term Info (desktop only) - full name by default, truncate only when search is expanded */}
             <div className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1">

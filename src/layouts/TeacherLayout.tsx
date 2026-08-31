@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
+import { effectivePrivileges } from '../utils/privileges';
 import { api } from '../utils/api';
 import toast from 'react-hot-toast';
 import {
@@ -24,13 +25,21 @@ import {
   ChevronDownIcon,
   XMarkIcon,
   UserGroupIcon,
+  UserIcon,
   MagnifyingGlassIcon,
+  BanknotesIcon,
+  ReceiptPercentIcon,
+  CurrencyDollarIcon,
+  UsersIcon,
+  ChatBubbleLeftIcon,
+  CubeIcon,
 } from '@heroicons/react/24/outline';
 
 // ---------- Teacher Categories ----------
 // `privilege` links a nav item to a page privilege key granted by the admin.
-// Items without a `privilege` are always visible.
-const categories: { name: string; items: { name: string; href: string; icon: typeof HomeIcon; privilege?: string }[] }[] = [
+// `anyRole` requires the user to hold one of the listed system roles.
+// Items with neither are always visible.
+const categories: { name: string; items: { name: string; href: string; icon: typeof HomeIcon; privilege?: string; anyRole?: string[] }[] }[] = [
   {
     name: 'Dashboard',
     items: [{ name: 'Overview', href: '/teacher', icon: HomeIcon }],
@@ -48,6 +57,25 @@ const categories: { name: string; items: { name: string; href: string; icon: typ
       { name: 'Timetable', href: '/teacher/timetable', icon: CalendarIcon, privilege: 'timetable' },
       { name: 'Broadsheet', href: '/teacher/broadsheet', icon: ChartBarIcon, privilege: 'broadsheet' },
       { name: 'CBT', href: '/teacher/cbt', icon: AcademicCapIcon, privilege: 'cbt' },
+    ],
+  },
+  {
+    name: 'Administration',
+    // Admin-side pages (no teacher equivalent). Each is only visible when the
+    // corresponding privilege has been granted to the user by an admin.
+    items: [
+      { name: 'Fees', href: '/admin/fees', icon: BanknotesIcon, privilege: 'fees' },
+      { name: 'Expenses & Budgeting', href: '/admin/expenses', icon: ReceiptPercentIcon, privilege: 'expenses' },
+      { name: 'Payroll', href: '/admin/payroll', icon: CurrencyDollarIcon, privilege: 'payroll' },
+      { name: 'Staff', href: '/admin/staff', icon: UserIcon, privilege: 'staff' },
+      { name: 'Teachers', href: '/admin/teachers', icon: UserIcon, privilege: 'teachers' },
+      { name: 'Parents', href: '/admin/parent', icon: UserGroupIcon, privilege: 'parents' },
+      { name: 'Messaging', href: '/admin/messaging', icon: ChatBubbleLeftIcon, privilege: 'messaging' },
+      { name: 'User Management', href: '/admin/users', icon: UsersIcon, privilege: 'users' },
+      { name: 'Roles & Privileges', href: '/admin/roles', icon: UsersIcon, privilege: 'roles' },
+      { name: 'Inventory', href: '/admin/inventory', icon: CubeIcon, privilege: 'inventory' },
+      { name: 'Academic Setup', href: '/admin/academic', icon: CogIcon, privilege: 'academic' },
+      { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
     ],
   },
   {
@@ -87,15 +115,19 @@ export default function TeacherLayout() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<typeof allNavItems>([]);
 
-  // ---------- Privileged navigation (based on user.allowedPages) ----------
+  // ---------- Privileged navigation (based on roles + privileges) ----------
   const allowedCategories = (() => {
-    const allowedPages = user?.allowedPages || [];
-    const isAdmin = (user?.role || '').toUpperCase() === 'ADMIN';
+    const userRoles = [...(user?.roles || []), user?.role].filter(Boolean) as string[];
+    const privileges = effectivePrivileges({
+      roles: userRoles,
+      privileges: user?.privileges,
+      allowedPages: user?.allowedPages,
+    });
     return categories
       .map(cat => ({
         ...cat,
         items: cat.items.filter(
-          item => !item.privilege || isAdmin || allowedPages.includes(item.privilege)
+          item => !item.privilege || privileges.includes(item.privilege)
         ),
       }))
       .filter(cat => cat.items.length > 0);

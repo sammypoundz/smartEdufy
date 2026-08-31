@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { SERVER_URL } from '../../config/server';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -677,7 +678,7 @@ export default function AdminCBT() {
 
     try {
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL}/questions/upload`,
+        `${SERVER_URL}/questions/upload`,
         {
           method: 'POST',
           headers: {
@@ -704,7 +705,7 @@ export default function AdminCBT() {
         !fullUrl.startsWith('http')
       ) {
         fullUrl =
-          `${import.meta.env.VITE_API_URL}${fullUrl}`;
+          `${SERVER_URL}${fullUrl}`;
       }
 
       setQuestionForm(prev => ({
@@ -2967,7 +2968,7 @@ export default function AdminCBT() {
                                                         'http'
                                                       )
                                                         ? q.attachmentUrl
-                                                        : `${import.meta.env.VITE_API_URL}${q.attachmentUrl}`
+                                                        : `${SERVER_URL}${q.attachmentUrl}`
                                                     }
                                                     alt="attachment"
                                                     className="h-20 rounded"
@@ -2982,7 +2983,7 @@ export default function AdminCBT() {
                                                         'http'
                                                       )
                                                         ? q.attachmentUrl
-                                                        : `${import.meta.env.VITE_API_URL}${q.attachmentUrl}`
+                                                        : `${SERVER_URL}${q.attachmentUrl}`
                                                     }
                                                     className="h-20 rounded"
                                                     controls
@@ -2997,7 +2998,7 @@ export default function AdminCBT() {
                                                         'http'
                                                       )
                                                         ? q.attachmentUrl
-                                                        : `${import.meta.env.VITE_API_URL}${q.attachmentUrl}`
+                                                        : `${SERVER_URL}${q.attachmentUrl}`
                                                     }
                                                     controls
                                                     className="w-full mt-1"

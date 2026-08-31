@@ -39,6 +39,7 @@ import SubjectPage from './pages/admin/SubjectPage';
 import SkillPage from './pages/admin/SkillPage';
 import Students from './pages/admin/Students';
 import AdminSubjects from './pages/admin/AdminSubjects';
+import AdminRoles from './pages/admin/Roles';
 
 // Teacher layout
 import TeacherLayout from './layouts/TeacherLayout';
@@ -50,17 +51,20 @@ import TestPortal from './pages/student/TestPortal';
 const ParentDashboard = () => <div>Parent Dashboard</div>;
 const StudentDashboard = () => <div>Student Dashboard</div>;
 
-// Role‑based redirect component
+// Role‑based redirect: send staff users with any administrative privilege
+// to the admin area; others by primary role.
 const RoleBasedRedirect = () => {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  switch (user.role) {
-    case 'ADMIN': return <Navigate to="/admin" replace />;
-    case 'TEACHER': return <Navigate to="/teacher" replace />;
-    case 'PARENT': return <Navigate to="/parent" replace />;
-    case 'STUDENT': return <Navigate to="/student" replace />;
-    default: return <Navigate to="/login" replace />;
-  }
+  const roles = [...(user.roles || []), user.role].filter(Boolean);
+  if (roles.includes('ADMIN') || roles.includes('PRINCIPAL')) return <Navigate to="/admin" replace />;
+  // Any staff role (custom or system) goes to the teacher workspace, which
+  // shows only the pages their privileges unlock.
+  const isParent = roles.includes('PARENT');
+  const isStudent = roles.includes('STUDENT');
+  if (isParent && roles.length === 1) return <Navigate to="/parent" replace />;
+  if (isStudent && roles.length === 1) return <Navigate to="/student" replace />;
+  return <Navigate to="/teacher" replace />;
 };
 
 function App() {
@@ -88,8 +92,9 @@ function App() {
           <Route path="/" element={<RoleBasedRedirect />} />
         </Route>
 
-        {/* ====== ADMIN ROUTES ====== */}
-        <Route element={<ProtectedRoute allowedRoles={['admin']} />}>
+        {/* ====== ADMIN ROUTES — open to any user with a matching
+             privilege (ADMIN/PRINCIPAL implicitly hold all) ====== */}
+        <Route element={<ProtectedRoute />}>
           <Route
             path="/admin/*"
             element={
@@ -100,6 +105,7 @@ function App() {
           >
             <Route index element={<AdminOverview />} />
             <Route path="users" element={<AdminUsers />} />
+            <Route path="roles" element={<AdminRoles />} />
             <Route path="classes" element={<AdminClasses />} />
             <Route path="class/:id" element={<OpenClass />} />
             <Route path="class/:classId/arm/:armId" element={<OpenArm />} />
@@ -134,8 +140,8 @@ function App() {
           </Route>
         </Route>
 
-        {/* ====== TEACHER ROUTES ====== */}
-        <Route element={<ProtectedRoute allowedRoles={['teacher']} />}>
+        {/* ====== TEACHER ROUTES — same privilege-based access ====== */}
+        <Route element={<ProtectedRoute />}>
           <Route path="/teacher/*" element={<TeacherLayout />}>
             {/* Dashboard routes */}
             <Route index element={<TeacherDashboard />} />

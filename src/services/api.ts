@@ -1,6 +1,5 @@
 import axios from 'axios';
-
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://smartedufybackend.onrender.com/api';
+import { API_BASE_URL } from '../config/server';
 
 console.log('API_BASE_URL:', API_BASE_URL);
 

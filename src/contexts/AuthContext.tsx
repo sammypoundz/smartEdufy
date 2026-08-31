@@ -2,16 +2,18 @@
 import { createContext, useState, useContext, useEffect, type ReactNode } from 'react';
 import api from '../services/api';
 
-// ✅ FIX: Use uppercase to match backend Prisma enum
-type UserRole = 'ADMIN' | 'TEACHER' | 'PARENT' | 'STUDENT' | null;
+// Roles now come from the backend (system + admin-created custom roles)
+type UserRole = string;
 
 interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  role: UserRole;             // primary/legacy role
+  roles?: string[];           // all roles held by the user
+  privileges?: string[];      // effective privileges from roles
   schoolId: string;
-  allowedPages?: string[];
+  allowedPages?: string[];    // direct privilege grants (legacy)
 }
 
 interface LoginResult {
@@ -54,6 +56,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
           if (parsedUser.schoolId) {
             api.defaults.headers.common['x-tenant-id'] = parsedUser.schoolId;
             localStorage.setItem('tenantId', parsedUser.schoolId);
+          }
+
+          // Re-fetch the user so role/privilege changes made by an admin
+          // take effect without requiring a re-login.
+          try {
+            const meRes = await api.get('/auth/me');
+            const fresh = meRes.data;
+            if (fresh && fresh.id) {
+              setUser(fresh);
+              localStorage.setItem('user', JSON.stringify(fresh));
+            }
+          } catch {
+            // keep the stored user if the refresh fails (e.g. offline)
           }
 
           console.log('✅ Auth initialized:', {
@@ -182,6 +197,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
       {children}
     </AuthContext.Provider>
   );
+};
+
+export const hasRole = (user: { role?: string; roles?: string[] } | null, ...allowed: string[]): boolean => {
+  if (!user) return false;
+  const roles = [...(user.roles || []), user.role].filter(Boolean);
+  return allowed.some(r => roles.includes(r));
 };
 
 export const useAuth = () => {

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
+import { SERVER_URL } from '../../config/server';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -417,7 +418,7 @@ export default function TestPortal() {
   const getAttachmentUrl = (url: string | null | undefined): string | undefined => {
     if (!url) return undefined;
     if (url.startsWith('http')) return url;
-    return `${import.meta.env.VITE_API_URL}${url}`;
+    return `${SERVER_URL}${url}`;
   };
 
   const QuestionNumbers = () => {

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { effectivePrivileges } from '../../utils/privileges';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
 import { getMyAssignments, type ArmAssignment } from '../../services/armApi';
@@ -22,6 +23,7 @@ interface TimetableEntry {
   id?: string;
   dayOfWeek?: string;
   day?: string;
+  timeSlot?: string;
   startTime?: string;
   endTime?: string;
   subject?: { id?: string; name?: string } | string;
@@ -107,12 +109,14 @@ export default function TeacherDashboard() {
   const totalSubjectEntries = assignments.reduce((sum, a) => sum + a.subjectNames.length, 0);
 
   const dayName = DAYS[(new Date().getDay() + 6) % 7] || '';
+  const norm = (v?: string) => (v || '').trim().toLowerCase().slice(0, 3);
   const todaysSchedule = timetable
     .filter((t) => {
       const d = t.dayOfWeek || t.day || '';
-      return d.toLowerCase() === dayName.toLowerCase();
+      // Match full names ("monday") and short forms ("mon" / "monday, ...")
+      return norm(d) === norm(dayName) || d.toLowerCase().includes(norm(dayName));
     })
-    .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
+    .sort((a, b) => (a.startTime || a.timeSlot || '').localeCompare(b.startTime || b.timeSlot || ''));
 
   const totalAttendanceRecorded = attendanceSummary.filter((s) => s.recorded).length;
 
@@ -171,8 +175,15 @@ export default function TeacherDashboard() {
   }
 
   // ---------- Quick actions (only pages the admin granted via privileges) ----------
-  const allowedPages = user?.allowedPages || [];
-  const hasPrivilege = (key: string) => allowedPages.includes(key);
+  // Use the same effective privilege computation as the sidebar: role-based
+  // privileges + direct allowedPages grants, so Quick Actions always mirrors
+  // what appears in the side navigation.
+  const effectivePrivs = effectivePrivileges({
+    roles: [...(user?.roles || []), user?.role].filter(Boolean) as string[],
+    privileges: user?.privileges,
+    allowedPages: user?.allowedPages,
+  });
+  const hasPrivilege = (key: string) => effectivePrivs.includes(key);
 
   const shortcuts = [
     hasPrivilege('classes') && { name: 'My Classes', to: '/teacher/classes', icon: AcademicCapIcon },
@@ -255,7 +266,7 @@ export default function TeacherDashboard() {
                       {armLabel && <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{armLabel}</p>}
                     </div>
                     <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>
-                      {t.startTime || ''}{t.endTime ? ` – ${t.endTime}` : ''}
+                      {t.startTime || t.timeSlot || ''}{t.endTime ? ` – ${t.endTime}` : ''}
                     </span>
                   </li>
                 );

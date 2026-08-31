@@ -9,6 +9,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import { formatArm } from '../../utils/arm';
+import { hasPagePrivilege } from '../../utils/privileges';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -24,6 +25,12 @@ import {
   PencilIcon,
   TrashIcon,
   XMarkIcon,
+  ClipboardDocumentListIcon,
+  TableCellsIcon,
+  ComputerDesktopIcon,
+  DocumentChartBarIcon,
+  Squares2X2Icon,
+  LockClosedIcon,
 } from '@heroicons/react/24/outline';
 
 // ======================================================
@@ -86,7 +93,16 @@ type ActiveTab =
 
 export default function SubjectPage() {
   const { theme } = useTheme();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+
+  /*
+   * ADMINs always have access; teachers depend on the page privileges
+   * the admin granted (User.allowedPages).
+   */
+  const isAdmin = user?.role === 'ADMIN';
+  const allowedPages = user?.allowedPages;
+  const hasPrivilege = (key: string) =>
+    isAdmin || hasPagePrivilege(allowedPages, key);
 
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
@@ -674,14 +690,35 @@ export default function SubjectPage() {
           loadedSubject?.arm?.id ||
           null;
 
+        /*
+         * If no arm was supplied/resolved, fall back to the teacher's
+         * own subject assignments (/teachers/me) to find an arm where
+         * this subject is taught — instead of hard-failing the page.
+         */
         if (!resolvedArmId) {
+          try {
+            const meRes = await api.get('/teachers/me', token!);
+            if (meRes.ok) {
+              const me = await meRes.json();
+              const match = (me.subjectArms || []).find(
+                (sa: any) => sa.subject?.id === id && sa.arm?.id
+              );
+              if (match) {
+                setArmId(match.arm.id);
+                setArmIdError(false);
+                await Promise.all([
+                  fetchCurriculum(match.arm.id),
+                  fetchPerformance(match.arm.id),
+                ]);
+                return;
+              }
+            }
+          } catch {
+            /* ignore – fall through to showing the page without arm data */
+          }
+          /* Subject loads fine even without an arm — show overview + functions. */
           setArmId(null);
-          setArmIdError(true);
-
-          toast.error(
-            'No arm information available. Please go back and select a valid arm.'
-          );
-
+          setArmIdError(false);
           return;
         }
 
@@ -1076,6 +1113,171 @@ export default function SubjectPage() {
                   {subject.description ||
                     'No description provided.'}
                 </p>
+              </div>
+
+              {/* ==============================================
+                  ACADEMIC FUNCTIONS HUB
+              =============================================== */}
+
+              <div>
+                <h3
+                  className={`text-lg font-semibold mb-3 ${
+                    isDark
+                      ? 'text-white'
+                      : 'text-gray-900'
+                  }`}
+                >
+                  Academic Functions
+                </h3>
+
+                <p
+                  className={`text-sm mb-4 ${
+                    isDark
+                      ? 'text-gray-400'
+                      : 'text-gray-600'
+                  }`}
+                >
+                  All academic tools in the system that apply to this subject
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    {
+                      label: 'Curriculum / Topics',
+                      description: 'Plan topics, set due dates and track completion',
+                      icon: AcademicCapIcon,
+                      action: () => setActiveTab('curriculum'),
+                      privilegeKey: 'subjects',
+                    },
+                    {
+                      label: 'Performance',
+                      description: 'Grades, averages and recent assessments',
+                      icon: ChartBarIcon,
+                      action: () => setActiveTab('performance'),
+                      privilegeKey: 'subjects',
+                    },
+                    {
+                      label: 'Results',
+                      description: 'Enter and manage CA & exam scores',
+                      icon: DocumentChartBarIcon,
+                      action: () => navigate('/teacher/results'),
+                      privilegeKey: 'results',
+                    },
+                    {
+                      label: 'Broadsheet',
+                      description: 'Full class result sheet for this subject',
+                      icon: TableCellsIcon,
+                      action: () => navigate('/teacher/broadsheet'),
+                      privilegeKey: 'broadsheet',
+                    },
+                    {
+                      label: 'CBT Tests',
+                      description: 'Create computer-based tests and questions',
+                      icon: ComputerDesktopIcon,
+                      action: () => navigate('/teacher/cbt'),
+                      privilegeKey: 'cbt',
+                    },
+                    {
+                      label: 'Lesson Plans',
+                      description: 'Upload and manage lesson plan documents',
+                      icon: ClipboardDocumentListIcon,
+                      action: () => navigate('/teacher/lesson-plan'),
+                      privilegeKey: 'lesson-plan',
+                    },
+                    {
+                      label: 'Timetable',
+                      description: 'View scheduled periods for this subject',
+                      icon: ClockIcon,
+                      action: () => navigate('/teacher/timetable'),
+                      privilegeKey: 'timetable',
+                    },
+                    {
+                      label: 'Assessment Format',
+                      description: 'Configure CA / exam score split',
+                      icon: Squares2X2Icon,
+                      action: () => navigate('/teacher/assessment-format'),
+                      privilegeKey: 'assessment-format',
+                    },
+                  ].map((fn) => {
+                    const Icon = fn.icon;
+                    const unlocked = hasPrivilege(fn.privilegeKey);
+
+                    return (
+                      <button
+                        key={fn.label}
+                        onClick={() => {
+                          if (!unlocked) {
+                            toast.error(
+                              `You don't have access to "${fn.label}" yet. Please ask your administrator to grant you this privilege.`
+                            );
+                            return;
+                          }
+                          fn.action();
+                        }}
+                        className={`relative flex items-start gap-3 p-4 rounded-xl border text-left transition ${
+                          unlocked
+                            ? 'hover:-translate-y-0.5'
+                            : 'cursor-not-allowed opacity-60'
+                        } ${
+                          isDark
+                            ? unlocked
+                              ? 'bg-white/[0.03] border-gray-800 hover:border-blue-700 hover:bg-white/[0.06]'
+                              : 'bg-white/[0.02] border-gray-800/60'
+                            : unlocked
+                            ? 'bg-gray-50 border-gray-200 hover:border-blue-300 hover:bg-blue-50/60'
+                            : 'bg-gray-50/60 border-gray-200'
+                        }`}
+                      >
+                        {!unlocked && (
+                          <span
+                            className={`absolute top-3 right-3 ${
+                              isDark ? 'text-gray-600' : 'text-gray-400'
+                            }`}
+                            title="No privilege granted"
+                          >
+                            <LockClosedIcon className="w-4 h-4" />
+                          </span>
+                        )}
+                        <div
+                          className={`p-2 rounded-lg shrink-0 ${
+                            isDark ? 'bg-blue-500/10' : 'bg-blue-100'
+                          }`}
+                        >
+                          <Icon
+                            className={`w-5 h-5 ${
+                              isDark ? 'text-blue-400' : 'text-blue-600'
+                            }`}
+                          />
+                        </div>
+                        <div className="pr-5">
+                          <p
+                            className={`font-semibold text-sm ${
+                              isDark ? 'text-white' : 'text-gray-900'
+                            }`}
+                          >
+                            {fn.label}
+                          </p>
+                          <p
+                            className={`text-xs mt-0.5 ${
+                              isDark ? 'text-gray-400' : 'text-gray-600'
+                            }`}
+                          >
+                            {fn.description}
+                          </p>
+                          {!unlocked && (
+                            <p
+                              className={`text-xs mt-1 font-medium ${
+                                isDark ? 'text-amber-400' : 'text-amber-600'
+                              }`}
+                            >
+                              No privilege granted
+                            </p>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div

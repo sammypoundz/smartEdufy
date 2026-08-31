@@ -1,5 +1,5 @@
 // src/utils/api.ts
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'https://smartedufybackend.onrender.com/api';
+import { API_BASE_URL } from '../config/server';
 
 /**
  * Get the stored token from localStorage.

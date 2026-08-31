@@ -4,8 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
-import { PAGE_PRIVILEGES } from '../../utils/privileges';
-import { useNavigate } from 'react-router-dom';
+import { PAGE_PRIVILEGES, SYSTEM_ROLE_PRIVILEGES } from '../../utils/privileges';import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
   PencilIcon,
@@ -22,44 +21,62 @@ interface User {
   id: string;
   name: string | null;
   email: string;
-  role: 'ADMIN' | 'TEACHER' | 'PARENT' | 'STUDENT' | 'PRINCIPAL' | 'BURSAR' | 'ACCOUNTANT' | 'LIBRARIAN';
+  role: string;
+  roles?: string[];
   isActive: boolean;
   allowedPages?: string[];
   createdAt?: string;
 }
 
-const ROLE_OPTIONS: User['role'][] = [
-  'ADMIN', 'TEACHER', 'PARENT', 'STUDENT', 'PRINCIPAL', 'BURSAR', 'ACCOUNTANT', 'LIBRARIAN'
+// Staff roles that can be granted page privileges (students/parents excluded)
+const NON_PRIVILEGED_ROLES = ['STUDENT', 'PARENT'];
+const isPrivilegeable = (role: string) => !NON_PRIVILEGED_ROLES.includes(role);
+
+const ROLE_OPTIONS: string[] = [
+  'ADMIN', 'PRINCIPAL', 'VICE_PRINCIPAL', 'TEACHER', 'BURSAR', 'ACCOUNTANT', 'LIBRARIAN', 'PARENT', 'STUDENT',
 ];
 
+const ROLE_LABELS: Record<string, string> = {
+  ADMIN: 'Admin', PRINCIPAL: 'Principal', VICE_PRINCIPAL: 'Vice Principal',
+  TEACHER: 'Teacher', BURSAR: 'Bursar', ACCOUNTANT: 'Accountant',
+  LIBRARIAN: 'Librarian', PARENT: 'Parent', STUDENT: 'Student',
+};
+
 // Dark mode role badges (gradient + subtle background)
-const ROLE_COLORS_DARK: Record<User['role'], string> = {
+const ROLE_COLORS_DARK: Record<string, string> = {
   ADMIN: 'bg-gradient-to-r from-violet-900/30 to-purple-900/30 text-violet-300 border-violet-800',
+  PRINCIPAL: 'bg-gradient-to-r from-rose-900/30 to-red-900/30 text-rose-300 border-rose-800',
+  VICE_PRINCIPAL: 'bg-gradient-to-r from-orange-900/30 to-amber-900/30 text-orange-300 border-orange-800',
   TEACHER: 'bg-gradient-to-r from-sky-900/30 to-blue-900/30 text-sky-300 border-sky-800',
   PARENT: 'bg-gradient-to-r from-emerald-900/30 to-green-900/30 text-emerald-300 border-emerald-800',
   STUDENT: 'bg-gradient-to-r from-amber-900/30 to-yellow-900/30 text-amber-300 border-amber-800',
-  PRINCIPAL: 'bg-gradient-to-r from-rose-900/30 to-red-900/30 text-rose-300 border-rose-800',
   BURSAR: 'bg-gradient-to-r from-indigo-900/30 to-violet-900/30 text-indigo-300 border-indigo-800',
   ACCOUNTANT: 'bg-gradient-to-r from-cyan-900/30 to-teal-900/30 text-cyan-300 border-cyan-800',
   LIBRARIAN: 'bg-gradient-to-r from-pink-900/30 to-fuchsia-900/30 text-pink-300 border-pink-800',
 };
 
 // Light mode role badges (solid colour, white text + darker border)
-const ROLE_COLORS_LIGHT: Record<User['role'], string> = {
+const ROLE_COLORS_LIGHT: Record<string, string> = {
   ADMIN: 'bg-violet-600 text-white border-violet-700',
+  PRINCIPAL: 'bg-rose-600 text-white border-rose-700',
+  VICE_PRINCIPAL: 'bg-orange-600 text-white border-orange-700',
   TEACHER: 'bg-sky-600 text-white border-sky-700',
   PARENT: 'bg-emerald-600 text-white border-emerald-700',
   STUDENT: 'bg-amber-600 text-white border-amber-700',
-  PRINCIPAL: 'bg-rose-600 text-white border-rose-700',
   BURSAR: 'bg-indigo-600 text-white border-indigo-700',
   ACCOUNTANT: 'bg-cyan-600 text-white border-cyan-700',
   LIBRARIAN: 'bg-pink-600 text-white border-pink-700',
 };
 
+const FALLBACK_BADGE_DARK = 'bg-gray-700/40 text-gray-300 border-gray-600';
+const FALLBACK_BADGE_LIGHT = 'bg-gray-500 text-white border-gray-600';
+
 // Helper to get role badge classes based on theme
-const getRoleBadgeClass = (role: User['role'], theme: string) => {
+const getRoleBadgeClass = (role: string, theme: string) => {
   const base = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm border-2';
-  const colorClass = theme === 'dark' ? ROLE_COLORS_DARK[role] : ROLE_COLORS_LIGHT[role];
+  const colorClass = theme === 'dark'
+    ? (ROLE_COLORS_DARK[role] || FALLBACK_BADGE_DARK)
+    : (ROLE_COLORS_LIGHT[role] || FALLBACK_BADGE_LIGHT);
   return `${base} ${colorClass}`;
 };
 
@@ -81,7 +98,8 @@ export default function AdminUsers() {
   const [formData, setFormData] = useState({
     name: '',
     email: '',
-    role: 'STUDENT' as User['role'],
+    role: 'STUDENT' as string,
+    roles: [] as string[],
     password: '',
     isActive: true,
     allowedPages: [] as string[],
@@ -132,16 +150,18 @@ export default function AdminUsers() {
 
   const openAddModal = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'STUDENT', password: '', isActive: true, allowedPages: [] });
+    setFormData({ name: '', email: '', role: 'STUDENT', roles: ['STUDENT'], password: '', isActive: true, allowedPages: [...SYSTEM_ROLE_PRIVILEGES['STUDENT']] });
     setShowModal(true);
   };
 
   const openEditModal = (user: User) => {
     setEditingUser(user);
+    const roles = user.roles?.length ? user.roles : [user.role].filter(Boolean);
     setFormData({
       name: user.name || '',
       email: user.email,
       role: user.role,
+      roles,
       password: '',
       isActive: user.isActive,
       allowedPages: user.allowedPages || [],
@@ -157,6 +177,20 @@ export default function AdminUsers() {
     } else {
       setFormData(prev => ({ ...prev, [name]: value }));
     }
+  };
+
+  const defaultsForRoles = (roles: string[]): string[] =>
+    Array.from(new Set(roles.flatMap(r => SYSTEM_ROLE_PRIVILEGES[r] || [])));
+
+  const handleRoleToggle = (role: string) => {
+    setFormData(prev => {
+      const roles = prev.roles.includes(role)
+        ? prev.roles.filter(r => r !== role)
+        : [...prev.roles, role];
+      // Whenever roles change, the privilege checkboxes follow the combined
+      // defaults of the roles now selected (admin can still adjust after).
+      return { ...prev, roles, role: roles[0] || '', allowedPages: defaultsForRoles(roles) };
+    });
   };
 
   const handlePrivilegeToggle = (key: string) => {
@@ -180,12 +214,15 @@ export default function AdminUsers() {
 
     setSubmitting(true);
     try {
+      const roles = formData.roles.length ? formData.roles : [formData.role].filter(Boolean);
+      const showPrivileges = roles.some(isPrivilegeable);
       const payload = {
         name: formData.name,
         email: formData.email,
-        role: formData.role,
+        role: roles[0] || formData.role,
+        roles,
         isActive: formData.isActive,
-        allowedPages: formData.role === 'TEACHER' ? formData.allowedPages : [],
+        allowedPages: showPrivileges ? formData.allowedPages : [],
         ...(formData.password && { password: formData.password }),
       };
       if (editingUser) {
@@ -471,12 +508,16 @@ export default function AdminUsers() {
                           {user.email}
                         </td>
                         <td className="whitespace-nowrap px-3 py-4 text-sm">
-                          <span className={getRoleBadgeClass(user.role, theme)}>
-                            {user.role}
-                          </span>
-                          {user.role === 'TEACHER' && (user.allowedPages?.length || 0) > 0 && (
+                          <div className="flex flex-wrap gap-1 max-w-xs">
+                            {(user.roles?.length ? user.roles : [user.role].filter(Boolean)).map(r => (
+                              <span key={r} className={getRoleBadgeClass(r, theme)}>
+                                {ROLE_LABELS[r] || r}
+                              </span>
+                            ))}
+                          </div>
+                          {isPrivilegeable(user.role) && (user.allowedPages?.length || 0) > 0 && (
                             <p className={`mt-1 text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                              {user.allowedPages!.length} page{user.allowedPages!.length === 1 ? '' : 's'} granted
+                              {user.allowedPages!.length} page{user.allowedPages!.length === 1 ? '' : 's'} granted (custom list)
                             </p>
                           )}
                         </td>
@@ -633,178 +674,213 @@ export default function AdminUsers() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowModal(false)}
           >
             <motion.div
-              initial={{ scale: 0.95, y: 10 }}
+              initial={{ scale: 0.98, y: 10 }}
               animate={{ scale: 1, y: 0 }}
-              exit={{ scale: 0.95, y: 10 }}
-              className={`relative w-full max-w-md rounded-2xl shadow-2xl ${
+              exit={{ scale: 0.98, y: 10 }}
+              className={`relative w-full h-full flex flex-col overflow-hidden ${
                 theme === 'dark'
-                  ? 'bg-gray-900 border border-gray-700'
-                  : 'bg-white/90 backdrop-blur-xl border border-gray-200/60'
-              } p-6`}
+                  ? 'bg-gray-900'
+                  : 'bg-white'
+              }`}
               onClick={(e) => e.stopPropagation()}
             >
-              <button
-                onClick={() => setShowModal(false)}
-                className={`absolute top-3 right-3 p-1 rounded-full transition-colors ${
+              {/* Sticky header */}
+              <div
+                className={`flex items-center justify-between px-6 py-4 border-b shrink-0 ${
                   theme === 'dark'
-                    ? 'text-gray-400 hover:bg-white/10'
-                    : 'text-gray-500 hover:bg-gray-100'
+                    ? 'bg-gray-900 border-gray-700'
+                    : 'bg-white border-gray-200'
                 }`}
               >
-                <XMarkIcon className="h-5 w-5" />
-              </button>
+                <h2 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                  {editingUser ? 'Edit User' : 'Add User'}
+                </h2>
+                <button
+                  onClick={() => setShowModal(false)}
+                  className={`p-2 rounded-full transition-colors ${
+                    theme === 'dark'
+                      ? 'text-gray-400 hover:bg-white/10'
+                      : 'text-gray-500 hover:bg-gray-100'
+                  }`}
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
 
-              <h2 className={`text-xl font-bold mb-4 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                {editingUser ? 'Edit User' : 'Add User'}
-              </h2>
+              {/* Scrollable body: fields laid out horizontally */}
+              <div className="flex-1 overflow-y-auto px-6 py-6">
+                <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-4 gap-6 items-start">
+                  <div className="space-y-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Full Name *
+                      </label>
+                      <input
+                        type="text"
+                        name="name"
+                        value={formData.name}
+                        onChange={handleFormChange}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          theme === 'dark'
+                            ? 'bg-gray-800 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                        placeholder="e.g., John Doe"
+                        required
+                      />
+                    </div>
 
-              <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Full Name *
-                  </label>
-                  <input
-                    type="text"
-                    name="name"
-                    value={formData.name}
-                    onChange={handleFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      theme === 'dark'
-                        ? 'bg-gray-800 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                    placeholder="e.g., John Doe"
-                    required
-                  />
-                </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Email *
+                      </label>
+                      <input
+                        type="email"
+                        name="email"
+                        value={formData.email}
+                        onChange={handleFormChange}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          theme === 'dark'
+                            ? 'bg-gray-800 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                        placeholder="user@example.com"
+                        required
+                      />
+                    </div>
 
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Email *
-                  </label>
-                  <input
-                    type="email"
-                    name="email"
-                    value={formData.email}
-                    onChange={handleFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      theme === 'dark'
-                        ? 'bg-gray-800 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                    placeholder="user@example.com"
-                    required
-                  />
-                </div>
+                    <div>
+                      <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Password {!editingUser && '*'}
+                      </label>
+                      <input
+                        type="password"
+                        name="password"
+                        value={formData.password}
+                        onChange={handleFormChange}
+                        className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
+                          theme === 'dark'
+                            ? 'bg-gray-800 border-gray-600 text-white'
+                            : 'bg-white border-gray-300 text-gray-900'
+                        }`}
+                        placeholder={editingUser ? 'Leave blank to keep unchanged' : 'Enter password'}
+                        required={!editingUser}
+                      />
+                    </div>
 
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Role *
-                  </label>
-                  <select
-                    name="role"
-                    value={formData.role}
-                    onChange={handleFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      theme === 'dark'
-                        ? 'bg-gray-800 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                    required
-                  >
-                    {ROLE_OPTIONS.map(role => (
-                      <option key={role} value={role} className={theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>
-                        {role}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                    <div className={`flex items-center gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+                      <input
+                        type="checkbox"
+                        name="isActive"
+                        checked={formData.isActive}
+                        onChange={handleFormChange}
+                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                      />
+                      <label className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Active (user can log in)
+                      </label>
+                    </div>
+                  </div>
 
-                {formData.role === 'TEACHER' && (
                   <div>
                     <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                      Page Privileges
+                      Roles * <span className="text-xs font-normal">(a user can hold multiple roles — privileges are combined)</span>
                     </label>
-                    <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
-                      Choose which pages this teacher can access. Dashboard, Settings and Profile are always available.
-                    </p>
-                    <div className={`grid grid-cols-2 gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
-                      {PAGE_PRIVILEGES.map(priv => (
-                        <label key={priv.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                    <div className={`grid grid-cols-1 gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+                      {ROLE_OPTIONS.map(role => (
+                        <label key={role} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={formData.allowedPages.includes(priv.key)}
-                            onChange={() => handlePrivilegeToggle(priv.key)}
+                            checked={formData.roles.includes(role)}
+                            onChange={() => handleRoleToggle(role)}
                             className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
                           />
-                          <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>{priv.label}</span>
+                          <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>
+                            {ROLE_LABELS[role] || role}
+                          </span>
                         </label>
                       ))}
                     </div>
                   </div>
-                )}
 
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Password {!editingUser && '*'}
-                  </label>
-                  <input
-                    type="password"
-                    name="password"
-                    value={formData.password}
-                    onChange={handleFormChange}
-                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                      theme === 'dark'
-                        ? 'bg-gray-800 border-gray-600 text-white'
-                        : 'bg-white border-gray-300 text-gray-900'
-                    }`}
-                    placeholder={editingUser ? 'Leave blank to keep unchanged' : 'Enter password'}
-                    required={!editingUser}
-                  />
+                  {formData.roles.some(isPrivilegeable) && (
+                    <div className="lg:col-span-1 2xl:col-span-2">
+                      <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                        Page Privileges
+                      </label>
+                      <div className="flex items-center justify-between mb-2">
+                        <p className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>
+                          Tick exactly the pages this user should access — only those pages will show for them. Leave all unticked to give them their role's default pages. Dashboard, Settings and Profile are always available.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={() => setFormData(prev => ({
+                            ...prev,
+                            allowedPages: Array.from(new Set(
+                              (prev.roles.length ? prev.roles : [prev.role].filter(Boolean)).flatMap(
+                                r => SYSTEM_ROLE_PRIVILEGES[r] || []
+                              )
+                            )),
+                          }))}
+                          className="ml-3 shrink-0 text-xs text-blue-600 hover:underline whitespace-nowrap"
+                          title="Clear the list so the user falls back to their role's default pages"
+                        >
+                          Reset to role defaults
+                        </button>
+                      </div>
+                      <div className={`grid grid-cols-1 md:grid-cols-2 gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
+                        {PAGE_PRIVILEGES.map(priv => (
+                          <label key={priv.key} className="flex items-center gap-2 text-sm cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={formData.allowedPages.includes(priv.key)}
+                              onChange={() => handlePrivilegeToggle(priv.key)}
+                              className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
+                            />
+                            <span className={theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}>{priv.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
+              </div>
 
-                <div className="flex items-center gap-2">
-                  <input
-                    type="checkbox"
-                    name="isActive"
-                    checked={formData.isActive}
-                    onChange={handleFormChange}
-                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded"
-                  />
-                  <label className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Active (user can log in)
-                  </label>
-                </div>
-
-                <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700 mt-6">
-                  <button
-                    type="button"
-                    onClick={() => setShowModal(false)}
-                    className={`px-4 py-2 border rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'border-gray-600 text-gray-300 hover:bg-gray-800'
-                        : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                    }`}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleSubmit}
-                    disabled={submitting}
-                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2"
-                  >
-                    {submitting && (
-                      <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    )}
-                    {editingUser ? 'Update' : 'Add'}
-                  </button>
-                </div>
-              </form>
+              {/* Fixed footer */}
+              <div
+                className={`flex justify-end gap-3 px-6 py-4 border-t shrink-0 ${
+                  theme === 'dark'
+                    ? 'bg-gray-900 border-gray-700'
+                    : 'bg-white border-gray-200'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className={`px-4 py-2 border rounded-lg transition-colors ${
+                    theme === 'dark'
+                      ? 'border-gray-600 text-gray-300 hover:bg-gray-800'
+                      : 'border-gray-300 text-gray-700 hover:bg-gray-50'
+                  }`}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSubmit}
+                  disabled={submitting}
+                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors flex items-center gap-2"
+                >
+                  {submitting && (
+                    <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {editingUser ? 'Update' : 'Add'}
+                </button>
+              </div>
             </motion.div>
           </motion.div>
         )}
