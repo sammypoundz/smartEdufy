@@ -4,6 +4,7 @@ import TeacherDashboard from './pages/teacher/Dashboard';
 import TeacherSubjects from './pages/teacher/Subjects';
 import Login from './pages/auth/Login';
 import ProtectedRoute from './components/ProtectedRoute';
+import OfflineIndicator from './components/OfflineIndicator';
 import { useAuth } from './contexts/AuthContext';
 import { AcademicSessionProvider } from './contexts/AcademicSessionContext';
 
@@ -71,6 +72,8 @@ const RoleBasedRedirect = () => {
 function App() {
   return (
     <BrowserRouter>
+      {/* Global offline banner — shown whenever the app has no internet */}
+      <OfflineIndicator />
       {/* Toaster is now outside the Routes so it's always available */}
       <Toaster
         position="top-right"

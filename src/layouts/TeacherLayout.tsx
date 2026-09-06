@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { effectivePrivileges } from '../utils/privileges';
 import { api } from '../utils/api';
+import ViewControls from '../components/ViewControls';
 import toast from 'react-hot-toast';
 import {
   HomeIcon,
@@ -88,6 +89,18 @@ const categories: { name: string; items: { name: string; href: string; icon: typ
 
 const allNavItems = categories.flatMap(cat => cat.items);
 
+/**
+ * Pick a font-size class based on the length of the school name so long
+ * names shrink instead of overflowing the top bar.
+ */
+function getSchoolNameTextClass(name: string): string {
+  const len = name.trim().length;
+  if (len <= 20) return 'text-xl';
+  if (len <= 30) return 'text-lg';
+  if (len <= 45) return 'text-base';
+  return 'text-sm';
+}
+
 export default function TeacherLayout() {
   const { user, logout, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -98,6 +111,26 @@ export default function TeacherLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  // Temporary collapse while hovering the school name in the top bar.
+  // Never touches isCollapsed, so the sidebar restores its former state on leave.
+  // Debounced timers avoid flicker from quick mouse pass-overs.
+  const [tempCollapsedBySchoolName, setTempCollapsedBySchoolName] = useState(false);
+  const nameFoldTimers = useRef<{ fold?: ReturnType<typeof setTimeout>; restore?: ReturnType<typeof setTimeout> }>({});
+
+  const handleSchoolNameEnter = () => {
+    clearTimeout(nameFoldTimers.current.restore);
+    nameFoldTimers.current.fold = setTimeout(() => {
+      setTempCollapsedBySchoolName(true);
+      setIsHoverExpanded(false);
+    }, 500);
+  };
+
+  const handleSchoolNameLeave = () => {
+    clearTimeout(nameFoldTimers.current.fold);
+    nameFoldTimers.current.restore = setTimeout(() => {
+      setTempCollapsedBySchoolName(false);
+    }, 400);
+  };
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(
     categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {})
   );
@@ -293,7 +326,8 @@ export default function TeacherLayout() {
   }, [sidebarOpen]);
 
   // ---------- Effective collapsed state ----------
-  const effectiveIsCollapsed = isCollapsed && !isHoverExpanded;
+  const effectiveIsCollapsed =
+    (isCollapsed || tempCollapsedBySchoolName) && !isHoverExpanded;
 
   // ---------- Search focus handling ----------
   const handleSearchFocus = () => {
@@ -693,12 +727,23 @@ export default function TeacherLayout() {
               )}
             </button>
 
-            {/* School & Term Info (desktop only) */}
-            <div className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1">
+            {/* School & Term Info (desktop only). Hover handlers live on this
+                wide wrapper (not the text) so that when the sidebar folds the
+                content shifts left but the cursor stays inside the wrapper —
+                otherwise the name slides out from under the cursor, fires
+                mouseLeave and the sidebar pops back open. */}
+            <div
+              className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1"
+              onMouseEnter={handleSchoolNameEnter}
+              onMouseLeave={handleSchoolNameLeave}
+            >
               {schoolName && (
-                <span className={`text-xl font-extrabold ${searchExpanded ? 'truncate' : ''} ${
-                  theme === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
+                <span
+                  className={`${getSchoolNameTextClass(schoolName)} font-extrabold truncate cursor-default ${
+                    theme === 'dark' ? 'text-white' : 'text-gray-900'
+                  }`}
+                  title="Hover to fold the sidebar"
+                >
                   {schoolName}
                 </span>
               )}
@@ -802,6 +847,9 @@ export default function TeacherLayout() {
 
           {/* Right icons */}
           <div className="flex items-center space-x-4 flex-shrink-0">
+            <div className="flex items-center space-x-1">
+              <ViewControls />
+            </div>
             <Link
               to="/teacher/notifications"
               className={`p-2 rounded-lg transition-colors ${

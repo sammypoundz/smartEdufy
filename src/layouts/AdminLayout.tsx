@@ -5,6 +5,7 @@ import { ALL_PRIVILEGES } from '../utils/privileges';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
+import ViewControls from '../components/ViewControls';
 import {
   HomeIcon,
   UsersIcon,
@@ -98,6 +99,18 @@ const categories = [
 
 const allNavItems = categories.flatMap(cat => cat.items);
 
+/**
+ * Pick a font-size class based on the length of the school name so long
+ * names shrink instead of overflowing the top bar.
+ */
+function getSchoolNameTextClass(name: string): string {
+  const len = name.trim().length;
+  if (len <= 20) return 'text-xl';
+  if (len <= 30) return 'text-lg';
+  if (len <= 45) return 'text-base';
+  return 'text-sm';
+}
+
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
@@ -146,6 +159,26 @@ export default function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
+  // Temporary collapse while hovering the school name in the top bar.
+  // Never touches isCollapsed, so the sidebar restores its former state on leave.
+  // Debounced timers avoid flicker from quick mouse pass-overs.
+  const [tempCollapsedBySchoolName, setTempCollapsedBySchoolName] = useState(false);
+  const nameFoldTimers = useRef<{ fold?: ReturnType<typeof setTimeout>; restore?: ReturnType<typeof setTimeout> }>({});
+
+  const handleSchoolNameEnter = () => {
+    clearTimeout(nameFoldTimers.current.restore);
+    nameFoldTimers.current.fold = setTimeout(() => {
+      setTempCollapsedBySchoolName(true);
+      setIsHoverExpanded(false);
+    }, 500);
+  };
+
+  const handleSchoolNameLeave = () => {
+    clearTimeout(nameFoldTimers.current.fold);
+    nameFoldTimers.current.restore = setTimeout(() => {
+      setTempCollapsedBySchoolName(false);
+    }, 400);
+  };
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(
     categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {})
   );
@@ -278,7 +311,8 @@ export default function AdminLayout() {
   }, [sidebarOpen]);
 
   // ---------- Effective collapsed state ----------
-  const effectiveIsCollapsed = isCollapsed && !isHoverExpanded;
+  const effectiveIsCollapsed =
+    (isCollapsed || tempCollapsedBySchoolName) && !isHoverExpanded;
 
   // ---------- Search focus handling ----------
   const handleSearchFocus = () => {
@@ -684,11 +718,21 @@ export default function AdminLayout() {
             )}
 
             {/* School & Term Info (desktop only) - full name by default, truncate only when search is expanded */}
-            <div className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1">
+            {/* Hover handlers on the wide wrapper (not the text) so folding
+                the sidebar — which shifts the top bar content left — does not
+                slide the name out from under the cursor and fire mouseLeave. */}
+            <div
+              className="hidden md:flex items-baseline space-x-2 ml-3 min-w-0 flex-1"
+              onMouseEnter={handleSchoolNameEnter}
+              onMouseLeave={handleSchoolNameLeave}
+            >
               {schoolName && (
-                <span className={`text-xl font-extrabold ${searchExpanded ? 'truncate' : ''} ${
-                  theme === 'dark' ? 'text-white' : 'text-gray-900'
-                }`}>
+                <span
+                  className={`${getSchoolNameTextClass(schoolName)} font-extrabold truncate cursor-default ${
+                    theme === 'dark' ? 'text-white' : 'text-gray-900'
+                  }`}
+                  title="Hover to fold the sidebar"
+                >
                   {schoolName}
                 </span>
               )}
@@ -792,6 +836,9 @@ export default function AdminLayout() {
 
           {/* Right icons */}
           <div className="flex items-center space-x-4 flex-shrink-0">
+            <div className="flex items-center space-x-1">
+              <ViewControls />
+            </div>
             <Link
               to="/admin/notifications"
               className={`p-2 rounded-lg transition-colors ${
