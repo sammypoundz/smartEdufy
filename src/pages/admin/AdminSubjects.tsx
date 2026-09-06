@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -64,14 +65,32 @@ const ITEMS_PER_PAGE = 10;
 export default function AdminSubjects() {
   const { theme } = useTheme();
   const { token } = useAuth();
+  const queryClient = useQueryClient();
 
   // ==========================================================
   // GLOBAL SUBJECTS
   // ==========================================================
 
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [filteredSubjects, setFilteredSubjects] = useState<Subject[]>([]);
-  const [loadingSubjects, setLoadingSubjects] = useState(true);
+  // ==========================================================
+  // FETCH SUBJECTS (cached query)
+  // ==========================================================
+
+  const subjectsQuery = useQuery<Subject[]>({
+    queryKey: ['subjects', token],
+    enabled: !!token,
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/subjects', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+
+  const subjects = subjectsQuery.data ?? [];
+  const loadingSubjects = subjectsQuery.isLoading;
+
+  const refreshSubjects = () =>
+    queryClient.invalidateQueries({ queryKey: ['subjects', token] });
 
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -90,7 +109,6 @@ export default function AdminSubjects() {
   // ARM SUBJECT ASSIGNMENTS
   // ==========================================================
 
-  const [classes, setClasses] = useState<ClassOption[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
 
   const [arms, setArms] = useState<
@@ -98,11 +116,6 @@ export default function AdminSubjects() {
   >([]);
 
   const [selectedArmId, setSelectedArmId] = useState('');
-
-  const [armSubjects, setArmSubjects] = useState<ArmSubject[]>([]);
-  const [loadingArmSubjects, setLoadingArmSubjects] = useState(false);
-
-  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
 
   const [showAddArmSubjectModal, setShowAddArmSubjectModal] =
     useState(false);
@@ -125,48 +138,13 @@ export default function AdminSubjects() {
   // FETCH SUBJECTS
   // ==========================================================
 
-  const fetchSubjects = async () => {
-    if (!token) return;
-
-    setLoadingSubjects(true);
-
-    try {
-      const res = await api.get('/subjects', token);
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      const data = await res.json();
-
-      setSubjects(data);
-      setFilteredSubjects(data);
-    } catch (error: any) {
-      console.error('Failed to fetch subjects:', error);
-      toast.error('Failed to load subjects');
-    } finally {
-      setLoadingSubjects(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchSubjects();
-  }, [token]);
-
   // ==========================================================
-  // SEARCH / FILTER
+  // SEARCH / FILTER (derived, no state needed)
   // ==========================================================
 
-  useEffect(() => {
-    const search = searchTerm.toLowerCase().trim();
-
-    const filtered = subjects.filter((subject) =>
-      subject.name.toLowerCase().includes(search)
-    );
-
-    setFilteredSubjects(filtered);
-    setCurrentPage(1);
-  }, [searchTerm, subjects]);
+  const filteredSubjects = subjects.filter((subject) =>
+    subject.name.toLowerCase().includes(searchTerm.toLowerCase().trim())
+  );
 
   // ==========================================================
   // PAGINATION
@@ -291,7 +269,7 @@ export default function AdminSubjects() {
           : 'Subject created successfully'
       );
 
-      await fetchSubjects();
+      await refreshSubjects();
 
       setShowSubjectModal(false);
       resetSubjectModal();
@@ -344,7 +322,7 @@ export default function AdminSubjects() {
 
       toast.success('Subject deleted successfully');
 
-      await fetchSubjects();
+      await refreshSubjects();
     } catch (error: any) {
       console.error(error);
       toast.error(
@@ -354,57 +332,32 @@ export default function AdminSubjects() {
   };
 
   // ==========================================================
-  // FETCH CLASSES
+  // FETCH CLASSES & TEACHERS (cached queries)
   // ==========================================================
 
-  const fetchClasses = async () => {
-    if (!token) return;
+  const classesQuery = useQuery<ClassOption[]>({
+    queryKey: ['classes', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/classes', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const classes = classesQuery.data ?? [];
 
-    try {
-      const res = await api.get('/classes', token);
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      const data = await res.json();
-
-      setClasses(data);
-    } catch (error) {
-      console.error('Failed to fetch classes:', error);
-      toast.error('Failed to load classes');
-    }
-  };
-
-  // ==========================================================
-  // FETCH TEACHERS
-  // ==========================================================
-
-  const fetchAllTeachers = async () => {
-    if (!token) return;
-
-    try {
-      const res = await api.get('/teachers', token);
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      const data = await res.json();
-
-      setAllTeachers(data);
-    } catch (error) {
-      console.error('Failed to fetch teachers:', error);
-      toast.error('Failed to load teachers');
-    }
-  };
-
-  useEffect(() => {
-    if (!token) return;
-
-    fetchClasses();
-    fetchAllTeachers();
-  }, [token]);
+  const teachersQuery = useQuery<Teacher[]>({
+    queryKey: ['teachers', token],
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/teachers', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const allTeachers = teachersQuery.data ?? [];
 
   // ==========================================================
   // CLASS CHANGE → LOAD ARMS
@@ -414,7 +367,6 @@ export default function AdminSubjects() {
     if (!selectedClassId) {
       setArms([]);
       setSelectedArmId('');
-      setArmSubjects([]);
       return;
     }
 
@@ -424,53 +376,37 @@ export default function AdminSubjects() {
 
     setArms(selectedClass?.arms || []);
     setSelectedArmId('');
-    setArmSubjects([]);
   }, [selectedClassId, classes]);
 
   // ==========================================================
-  // ARM CHANGE → LOAD SUBJECTS
+  // ARM CHANGE → LOAD SUBJECTS (cached query)
   // ==========================================================
+
+  const armSubjectsQuery = useQuery<ArmSubject[]>({
+    queryKey: ['arm-subjects', selectedArmId, token],
+    enabled: !!token && !!selectedArmId,
+    queryFn: async () => {
+      const res = await api.get(`/arms/${selectedArmId}/subjects`, token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
 
   useEffect(() => {
-    if (!selectedArmId) {
-      setArmSubjects([]);
-      return;
+    if (armSubjectsQuery.error) {
+      toast.error(
+        armSubjectsQuery.error instanceof Error
+          ? armSubjectsQuery.error.message
+          : 'Failed to load arm subjects'
+      );
     }
+  }, [armSubjectsQuery.error]);
 
-    loadArmSubjects();
-  }, [selectedArmId]);
-
-  // ==========================================================
-  // LOAD ARM SUBJECTS
-  // ==========================================================
+  const armSubjects = armSubjectsQuery.data ?? [];
+  const loadingArmSubjects = armSubjectsQuery.isLoading;
 
   const loadArmSubjects = async () => {
-    if (!token || !selectedArmId) return;
-
-    setLoadingArmSubjects(true);
-
-    try {
-      const res = await api.get(
-        `/arms/${selectedArmId}/subjects`,
-        token
-      );
-
-      if (!res.ok) {
-        throw new Error(await res.text());
-      }
-
-      const data = await res.json();
-
-      setArmSubjects(data);
-    } catch (error: any) {
-      console.error('Failed to load arm subjects:', error);
-
-      toast.error(
-        error?.message || 'Failed to load arm subjects'
-      );
-    } finally {
-      setLoadingArmSubjects(false);
-    }
+    await armSubjectsQuery.refetch();
   };
 
   // ==========================================================

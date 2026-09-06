@@ -1,5 +1,7 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState } from 'react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -62,118 +64,138 @@ export default function TeacherProfile() {
   const { token } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
 
-  const [teacher, setTeacher] = useState<Teacher | null>(null);
-  const [loading, setLoading] = useState(true);
+  // Go back to wherever the user came from (Users page, Teachers page, etc.).
+  // Falls back to the Teachers list if there's no in-app history.
+  const goBack = () => {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/admin/teachers');
+  };
+
   const [activeTab, setActiveTab] = useState<'details' | 'subjects' | 'timetable'>('details');
-  const [groupedTimetable, setGroupedTimetable] = useState<GroupedTimetable[]>([]);
-  const [loadingTimetable, setLoadingTimetable] = useState(false);
-  const [timetableError, setTimetableError] = useState<string | null>(null);
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '' });
   const [submitting, setSubmitting] = useState(false);
 
-  const [allArms, setAllArms] = useState<Arm[]>([]);
   const [showArmModal, setShowArmModal] = useState(false);
   const [selectedArmIds, setSelectedArmIds] = useState<string[]>([]);
   const [submittingArms, setSubmittingArms] = useState(false);
 
-  const [allSubjects, setAllSubjects] = useState<{ id: string; name: string }[]>([]);
   const [showSubjectModal, setShowSubjectModal] = useState(false);
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
   const [selectedSubjectArmId, setSelectedSubjectArmId] = useState('');
   const [submittingSubject, setSubmittingSubject] = useState(false);
   const [removingSubjectId, setRemovingSubjectId] = useState<string | null>(null);
 
-  // ---------- Fetch functions ----------
-  const fetchTeacher = async () => {
-    if (!token || !id) return;
-    try {
-      const res = await api.get(`/teachers/${id}`, token);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setTeacher(data);
-    } catch (err: any) {
-      console.error(err);
-      toast.error('Failed to load teacher details');
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ---------- Queries ----------
+  const teacherQuery = useQuery<Teacher>({
+    queryKey: ['teacher', id],
+    queryFn: () => unwrapRes<Teacher>(api.get(`/teachers/${id}`, token!)),
+    enabled: !!token && !!id,
+  });
+  const teacher = teacherQuery.data ?? null;
+  const loading = teacherQuery.isLoading;
 
-  const fetchTimetable = async () => {
-    if (!token || !teacher) return;
-    setLoadingTimetable(true);
-    setTimetableError(null);
-    try {
-      const res = await api.get(`/timetable/teacher/${teacher.id}`, token);
-      if (!res.ok) throw new Error(await res.text());
-      const entries: TimetableEntry[] = await res.json();
+  const timetableQuery = useQuery<TimetableEntry[]>({
+    queryKey: ['teacher-timetable', teacher?.id],
+    queryFn: () => unwrapRes<TimetableEntry[]>(api.get(`/timetable/teacher/${teacher!.id}`, token!)),
+    enabled: !!token && !!teacher,
+  });
 
-      const groupedMap = new Map<string, TimetableEntry[]>();
-      entries.forEach(entry => {
-        const day = entry.dayOfWeek;
-        if (!groupedMap.has(day)) groupedMap.set(day, []);
-        groupedMap.get(day)!.push(entry);
-      });
+  const subjectsQuery = useQuery<{ id: string; name: string }[]>({
+    queryKey: ['subjects'],
+    queryFn: () => unwrapRes(api.get('/subjects', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
+  const allSubjects = subjectsQuery.data ?? [];
 
-      const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-      const grouped = Array.from(groupedMap.entries())
-        .map(([day, entries]) => ({
-          day,
-          entries: entries.sort((a, b) => a.timeSlot.localeCompare(b.timeSlot)),
-        }))
-        .sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
+  const armsQuery = useQuery<Arm[]>({
+    queryKey: ['arms'],
+    queryFn: () => unwrapRes<Arm[]>(api.get('/arms', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
+  const allArms = armsQuery.data ?? [];
 
-      setGroupedTimetable(grouped);
-    } catch (err: any) {
-      console.error(err);
-      setTimetableError(err.message || 'Failed to load timetable');
-      toast.error('Could not load timetable');
-      setGroupedTimetable([]);
-    } finally {
-      setLoadingTimetable(false);
-    }
-  };
+  // group timetable entries by day
+  const groupedTimetable: GroupedTimetable[] = (() => {
+    const entries = timetableQuery.data;
+    if (!entries) return [];
+    const groupedMap = new Map<string, TimetableEntry[]>();
+    entries.forEach(entry => {
+      const day = entry.dayOfWeek;
+      if (!groupedMap.has(day)) groupedMap.set(day, []);
+      groupedMap.get(day)!.push(entry);
+    });
+    const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+    return Array.from(groupedMap.entries())
+      .map(([day, entries]) => ({
+        day,
+        entries: entries.sort((a, b) => a.timeSlot.localeCompare(b.timeSlot)),
+      }))
+      .sort((a, b) => dayOrder.indexOf(a.day) - dayOrder.indexOf(b.day));
+  })();
+  const loadingTimetable = timetableQuery.isLoading;
+  const timetableError = timetableQuery.error instanceof Error ? timetableQuery.error.message : null;
 
-  const fetchAllArms = async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/arms', token);
-      if (res.ok) {
-        const data = await res.json();
-        setAllArms(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const invalidateTeacher = () => queryClient.invalidateQueries({ queryKey: ['teacher', id] });
 
-  const fetchAllSubjects = async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/subjects', token);
-      if (res.ok) {
-        const data = await res.json();
-        setAllSubjects(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
+  const updatePersonalMutation = useMutation({
+    mutationFn: (body: { name: string; email: string; phone?: string }) =>
+      unwrapRes(api.put(`/teachers/${teacher!.id}`, body, token!)),
+    onSuccess: () => {
+      toast.success('Personal information updated');
+      setShowEditModal(false);
+      invalidateTeacher();
+    },
+    onError: (err: Error) => toast.error(err.message),
+    onSettled: () => setSubmitting(false),
+  });
 
-  useEffect(() => {
-    if (teacher && token) {
-      fetchTimetable();
-    }
-  }, [teacher, token]);
+  const saveArmsMutation = useMutation({
+    mutationFn: async ({ toAdd, toRemove }: { toAdd: string[]; toRemove: string[] }) => {
+      for (const armId of toAdd) await api.patch(`/arms/${armId}`, { teacherId: teacher!.id }, token!);
+      for (const armId of toRemove) await api.patch(`/arms/${armId}`, { teacherId: null }, token!);
+    },
+    onSuccess: () => {
+      toast.success('Form teacher assignments updated');
+      setShowArmModal(false);
+      invalidateTeacher();
+      queryClient.invalidateQueries({ queryKey: ['arms'] });
+    },
+    onError: (err: Error) => toast.error(err.message),
+    onSettled: () => setSubmittingArms(false),
+  });
 
-  useEffect(() => {
-    fetchTeacher();
-    fetchAllArms();
-    fetchAllSubjects();
-  }, [id, token]);
+  const addSubjectMutation = useMutation({
+    mutationFn: () =>
+      unwrapRes(api.post(`/arms/${selectedSubjectArmId}/subjects`, {
+        subjectId: selectedSubjectId,
+        teacherId: teacher!.id,
+      }, token!)),
+    onSuccess: () => {
+      toast.success('Subject added to teacher');
+      setShowSubjectModal(false);
+      invalidateTeacher();
+    },
+    onError: (err: Error) => toast.error(err.message),
+    onSettled: () => setSubmittingSubject(false),
+  });
+
+  const removeSubjectMutation = useMutation({
+    mutationFn: (subjectArmId: string) =>
+      unwrapRes(api.del(`/subjects/subject-arms/${subjectArmId}`, token!)),
+    onSuccess: () => {
+      toast.success('Subject removed');
+      invalidateTeacher();
+    },
+    onError: (err: Error) => toast.error(err.message),
+    onSettled: () => setRemovingSubjectId(null),
+  });
 
   // ---------- Handlers ----------
   const handleUpdatePersonal = async () => {
@@ -182,21 +204,11 @@ export default function TeacherProfile() {
       return;
     }
     setSubmitting(true);
-    try {
-      const res = await api.put(`/teachers/${teacher.id}`, {
-        name: editForm.name,
-        email: editForm.email,
-        phone: editForm.phone || undefined,
-      }, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Personal information updated');
-      await fetchTeacher();
-      setShowEditModal(false);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
+    updatePersonalMutation.mutate({
+      name: editForm.name,
+      email: editForm.email,
+      phone: editForm.phone || undefined,
+    });
   };
 
   const openEditModal = () => {
@@ -220,24 +232,10 @@ export default function TeacherProfile() {
   const handleSaveArms = async () => {
     if (!teacher) return;
     setSubmittingArms(true);
-    try {
-      const currentArmIds = teacher.arms?.map(a => a.id) || [];
-      const toAdd = selectedArmIds.filter(id => !currentArmIds.includes(id));
-      const toRemove = currentArmIds.filter(id => !selectedArmIds.includes(id));
-      for (const armId of toAdd) {
-        await api.patch(`/arms/${armId}`, { teacherId: teacher.id }, token);
-      }
-      for (const armId of toRemove) {
-        await api.patch(`/arms/${armId}`, { teacherId: null }, token);
-      }
-      toast.success('Form teacher assignments updated');
-      await fetchTeacher();
-      setShowArmModal(false);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmittingArms(false);
-    }
+    const currentArmIds = teacher.arms?.map(a => a.id) || [];
+    const toAdd = selectedArmIds.filter(id => !currentArmIds.includes(id));
+    const toRemove = currentArmIds.filter(id => !selectedArmIds.includes(id));
+    saveArmsMutation.mutate({ toAdd, toRemove });
   };
 
   const openAddSubjectModal = () => {
@@ -251,28 +249,15 @@ export default function TeacherProfile() {
       toast.error('Please select a subject and an arm');
       return;
     }
-    setSubmittingSubject(true);
-    try {
-      const alreadyExists = teacher.subjectArms?.some(sa =>
-        sa.subject.id === selectedSubjectId && sa.arm.id === selectedSubjectArmId
-      );
-      if (alreadyExists) {
-        toast.error('Subject already assigned to this teacher for this arm');
-        return;
-      }
-      const res = await api.post(`/arms/${selectedSubjectArmId}/subjects`, {
-        subjectId: selectedSubjectId,
-        teacherId: teacher.id,
-      }, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Subject added to teacher');
-      await fetchTeacher();
-      setShowSubjectModal(false);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmittingSubject(false);
+    const alreadyExists = teacher.subjectArms?.some(sa =>
+      sa.subject.id === selectedSubjectId && sa.arm.id === selectedSubjectArmId
+    );
+    if (alreadyExists) {
+      toast.error('Subject already assigned to this teacher for this arm');
+      return;
     }
+    setSubmittingSubject(true);
+    addSubjectMutation.mutate();
   };
 
   const handleRemoveSubject = async (subjectArmId: string) => {
@@ -287,16 +272,7 @@ export default function TeacherProfile() {
     if (!result.isConfirmed) return;
 
     setRemovingSubjectId(subjectArmId);
-    try {
-      const res = await api.del(`/subjects/subject-arms/${subjectArmId}`, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Subject removed');
-      await fetchTeacher();
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setRemovingSubjectId(null);
-    }
+    removeSubjectMutation.mutate(subjectArmId);
   };
 
   // ---------- Loading / Error ----------
@@ -316,7 +292,7 @@ export default function TeacherProfile() {
       <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
         <div className="text-center">
           <p className={`text-xl mb-4 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>Teacher not found</p>
-          <button onClick={() => navigate('/admin/teachers')} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Go Back</button>
+          <button onClick={goBack} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Go Back</button>
         </div>
       </div>
     );
@@ -336,7 +312,7 @@ export default function TeacherProfile() {
         <motion.button
           initial={{ opacity: 0, x: -10 }}
           animate={{ opacity: 1, x: 0 }}
-          onClick={() => navigate('/admin/teachers')}
+          onClick={goBack}
           className={`mb-6 inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
             theme === 'dark'
               ? 'text-gray-300 hover:text-white hover:bg-white/10'
@@ -509,7 +485,7 @@ export default function TeacherProfile() {
                 <div className="text-center py-8">
                   <p className="text-red-500">Failed to load timetable: {timetableError}</p>
                   <button
-                    onClick={fetchTimetable}
+                    onClick={() => timetableQuery.refetch()}
                     className="mt-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
                   >
                     Retry

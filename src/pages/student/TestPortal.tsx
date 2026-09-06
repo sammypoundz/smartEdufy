@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
@@ -82,7 +83,6 @@ export default function TestPortal() {
   const [admissionNumber, setAdmissionNumber] = useState('');
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedArmId, setSelectedArmId] = useState('');
-  const [classes, setClasses] = useState<Class[]>([]);
   const [availableTests, setAvailableTests] = useState<Test[]>([]);
   const [selectedTest, setSelectedTest] = useState<Test | null>(null);
   const [loading, setLoading] = useState(false);
@@ -97,6 +97,9 @@ export default function TestPortal() {
   const [timeLeft, setTimeLeft] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<{ score: number; total: number; percentage: number } | null>(null);
+
+  // Deep-linked test (copied via "Copy Link" on the admin CBT page)
+  const deepLinkedTestId = new URLSearchParams(window.location.search).get('testId');
 
   // ---------- Persistence helpers ----------
   const saveProgress = () => {
@@ -149,22 +152,24 @@ export default function TestPortal() {
     setStep('taking');
   };
 
-  // ---------- Fetch classes (public) ----------
-  const fetchClasses = async () => {
-    try {
+  // ---------- Fetch classes (public, cached query) ----------
+  const classesQuery = useQuery<Class[]>({
+    queryKey: ['public-classes'],
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
       const res = await api.get('/classes');
       if (!res.ok) throw new Error('Failed to load classes');
-      const data = await res.json();
-      setClasses(data);
-    } catch (err) {
-      console.error(err);
-      toast.error('Could not load classes');
-    }
-  };
+      return res.json();
+    },
+  });
+  const classes = classesQuery.data ?? [];
 
   useEffect(() => {
-    fetchClasses();
-  }, []);
+    if (classesQuery.error) {
+      console.error(classesQuery.error);
+      toast.error('Could not load classes');
+    }
+  }, [classesQuery.error]);
 
   const getArmsForClass = (classId: string) => {
     const cls = classes.find(c => c.id === classId);
@@ -236,7 +241,7 @@ export default function TestPortal() {
         }
       }
 
-      await fetchTests(newToken);
+      await fetchTests();
       setStep('select-test');
     } catch (err: any) {
       toast.error(err.message || 'Authentication failed');
@@ -246,16 +251,19 @@ export default function TestPortal() {
     }
   };
 
-  // Fetch published tests for the arm (authenticated)
-  const fetchTests = async (authToken: string) => {
-    try {
-      const res = await api.get(`/tests?armId=${selectedArmId}&status=PUBLISHED`, authToken);
+  // Fetch published tests for the arm (cached query)
+  const testsQuery = useQuery<Test[]>({
+    queryKey: ['student-tests', selectedArmId, token],
+    enabled: !!token && !!selectedArmId,
+    retry: false,
+    queryFn: async () => {
+      const res = await api.get(`/tests?armId=${selectedArmId}&status=PUBLISHED`, token!);
       if (!res.ok) throw new Error('Failed to load tests');
       const testsData = await res.json();
 
       const testsWithSubjects = await Promise.all(
         testsData.map(async (test: any) => {
-          const qRes = await api.get(`/questions/test/${test.id}`, authToken);
+          const qRes = await api.get(`/questions/test/${test.id}`, token!);
           if (!qRes.ok) return { ...test, subjects: [] };
           const questionsData = await qRes.json();
 
@@ -279,16 +287,43 @@ export default function TestPortal() {
           return { ...test, subjects };
         })
       );
-      setAvailableTests(testsWithSubjects);
-      if (testsWithSubjects.length === 0) {
-        toast.error('No published tests available for this arm');
-        setStep('auth');
+      return testsWithSubjects;
+    },
+  });
+
+  useEffect(() => {
+    const testsWithSubjects = testsQuery.data;
+    if (!testsWithSubjects) return;
+
+    setAvailableTests(testsWithSubjects);
+
+    // Deep link: jump straight into the specific test if it is available
+    if (deepLinkedTestId) {
+      const linkedTest = testsWithSubjects.find(t => t.id === deepLinkedTestId);
+      if (linkedTest) {
+        startTest(linkedTest);
+        return;
       }
-    } catch (err) {
-      console.error(err);
+      toast.error('The linked test is not available for your class. Choose from the list below.');
+    }
+
+    if (testsWithSubjects.length === 0) {
+      toast.error('No published tests available for this arm');
+      setStep('auth');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testsQuery.data, deepLinkedTestId]);
+
+  useEffect(() => {
+    if (testsQuery.error) {
+      console.error(testsQuery.error);
       toast.error('Could not load tests');
       setStep('auth');
     }
+  }, [testsQuery.error]);
+
+  const fetchTests = async () => {
+    await testsQuery.refetch();
   };
 
   const startTest = (test: Test) => {

@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getErrorMessage } from '../../hooks/queryHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
@@ -143,23 +145,67 @@ export default function AdminFees() {
   } = useAcademicSession();
 
   const isDark = theme === 'dark';
+  const queryClient = useQueryClient();
 
   // ============================================================
-  // State
+  // Data (TanStack Query)
   // ============================================================
 
-  const [feeStructures, setFeeStructures] = useState<
-    FeeStructure[]
-  >([]);
+  const feesQuery = useQuery({
+    queryKey: ['fees-data'],
+    queryFn: async () => {
+      const [feeRes, studentRes, paymentRes, classesRes] =
+        await Promise.all([
+          api.get('/fees/structures'),
+          api.get('/students'),
+          api.get('/fees/payments'),
+          api.get('/classes'),
+        ]);
 
-  const [students, setStudents] = useState<Student[]>([]);
-  const [payments, setPayments] = useState<FeePayment[]>([]);
-  const [availableClasses, setAvailableClasses] = useState<
-    ClassItem[]
-  >([]);
+      let paymentsData = paymentRes.data;
 
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+      if (
+        paymentsData &&
+        !Array.isArray(paymentsData) &&
+        (paymentsData as any).data
+      ) {
+        paymentsData = (paymentsData as any).data;
+      }
+
+      if (!Array.isArray(paymentsData)) {
+        paymentsData = [];
+      }
+
+      const mappedStudents: Student[] = (
+        studentRes.data as any[]
+      ).map((s) => ({
+        id: s.id,
+        name: s.name,
+        admissionNumber: s.admissionNumber || '',
+        className: s.class?.name || s.arm?.class?.name || s.className || '',
+        parentName: s.parent?.name || '',
+        parentEmail: s.parent?.email || '',
+        parentPhone: s.parent?.phone || '',
+      }));
+
+      return {
+        feeStructures: (feeRes.data as FeeStructure[]) || [],
+        students: mappedStudents,
+        payments: paymentsData as FeePayment[],
+        availableClasses: (classesRes.data as ClassItem[]) || [],
+      };
+    },
+  });
+
+  const feeStructures = feesQuery.data?.feeStructures ?? [];
+  const students = feesQuery.data?.students ?? [];
+  const payments = feesQuery.data?.payments ?? [];
+  const availableClasses = feesQuery.data?.availableClasses ?? [];
+
+  const loading = feesQuery.isLoading;
+  const error = feesQuery.error
+    ? getErrorMessage(feesQuery.error, 'Failed to load data')
+    : null;
 
   // Pagination
   const [currentPage, setCurrentPage] = useState(1);
@@ -284,87 +330,130 @@ export default function AdminFees() {
     : 'hover:bg-blue-50/50 border-gray-200';
 
   // ============================================================
-  // Data Fetching
+  // Mutations
   // ============================================================
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setLoading(true);
-      setError(null);
+  const invalidateFeesData = () =>
+    queryClient.invalidateQueries({ queryKey: ['fees-data'] });
 
-      try {
-        const [
-          feeRes,
-          studentRes,
-          paymentRes,
-          classesRes,
-        ] = await Promise.all([
-          api.get('/fees/structures'),
-          api.get('/students'),
-          api.get('/fees/payments'),
-          api.get('/classes'),
-        ]);
+  const saveFeeMutation = useMutation({
+    mutationFn: async (payload: {
+      className: string;
+      term: string;
+      breakdown: { name: string; amount: number }[];
+      deadline: string;
+    }) => {
+      if (editingFee) {
+        const res = await api.put(
+          `/fees/structures/${editingFee.id}`,
+          payload
+        );
+        return res.data;
+      }
+      const res = await api.post('/fees/structures', payload);
+      return res.data;
+    },
+    onSuccess: () => {
+      invalidateFeesData();
+      toast.success(
+        editingFee ? 'Fee structure updated' : 'Fee structure added'
+      );
+      setShowFeeModal(false);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Operation failed'));
+    },
+  });
 
-        const feeStructuresData = feeRes.data;
-        const studentsData = studentRes.data;
+  const deleteFeeMutation = useMutation({
+    mutationFn: async (fee: FeeStructure) => {
+      await api.delete(`/fees/structures/${fee.id}`);
+      return fee;
+    },
+    onSuccess: () => {
+      invalidateFeesData();
+      toast.success('Fee structure deleted');
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Delete failed'));
+    },
+    onSettled: () => setDeletingFeeId(null),
+  });
 
-        let paymentsData = paymentRes.data;
+  const sendMessageMutation = useMutation({
+    mutationFn: async () => {
+      if (!selectedStudent) return;
+      await api.post('/fees/messages', {
+        studentId: selectedStudent.id,
+        type: messageType,
+        subject:
+          messageType === 'email' ? 'Fee Reminder' : undefined,
+        message: messageText,
+      });
+    },
+    onSuccess: () => {
+      toast.success(
+        `${messageType === 'email' ? 'Email' : 'SMS'} sent successfully`
+      );
+      setShowMessageModal(false);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Failed to send message'));
+    },
+    onSettled: () => setSendingMessage(false),
+  });
 
-        const classesData = classesRes.data;
+  const recordPaymentMutation = useMutation({
+    mutationFn: async () => {
+      if (!paymentStudent) return;
 
-        if (
-          paymentsData &&
-          !Array.isArray(paymentsData) &&
-          (paymentsData as any).data
-        ) {
-          paymentsData = (paymentsData as any).data;
+      const grouped = new Map<
+        string,
+        { itemName: string; amount: number }[]
+      >();
+
+      for (const item of selectedItems) {
+        if (!grouped.has(item.feeId)) {
+          grouped.set(item.feeId, []);
         }
+        grouped.get(item.feeId)!.push({
+          itemName: item.itemName,
+          amount: item.amount,
+        });
+      }
 
-        if (!Array.isArray(paymentsData)) {
-          paymentsData = [];
-        }
-
-        setFeeStructures(feeStructuresData);
-
-        const mappedStudents = studentsData.map(
-          (s: any) => ({
-            id: s.id,
-            name: s.name,
-            admissionNumber:
-              s.admissionNumber || '',
-            className:
-              s.class?.name ||
-              s.className ||
-              '',
-            parentName:
-              s.parent?.name || '',
-            parentEmail:
-              s.parent?.email || '',
-            parentPhone:
-              s.parent?.phone || '',
-          })
+      for (const [feeId, breakdownItems] of grouped.entries()) {
+        const amountPaid = breakdownItems.reduce(
+          (sum, item) => sum + item.amount,
+          0
         );
 
-        setStudents(mappedStudents);
-        setPayments(paymentsData);
-        setAvailableClasses(classesData);
-      } catch (err: any) {
-        console.error(err);
-
-        const msg =
-          err.response?.data?.error ||
-          err.message ||
-          'Failed to load data';
-
-        setError(msg);
-        toast.error(msg);
-      } finally {
-        setLoading(false);
+        await api.post('/fees/payments', {
+          studentId: paymentStudent.id,
+          feeStructureId: feeId,
+          amountPaid,
+          paymentMethod,
+          reference: paymentReference || undefined,
+          breakdownItems,
+        });
       }
-    };
-
-    fetchData();
-  }, []);
+    },
+    onSuccess: () => {
+      invalidateFeesData();
+      toast.success(
+        `Payment of ₦${totalPaymentAmount.toLocaleString()} recorded for ${paymentStudent?.name}`
+      );
+      setShowPaymentModal(false);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Payment failed'));
+    },
+    onSettled: () => setPaymentSubmitting(false),
+  });
 
   // ============================================================
   // Current Academic Session
@@ -675,80 +764,23 @@ export default function AdminFees() {
 
     setSubmitting(true);
 
-    try {
-      const payload = {
-        className:
-          feeForm.className,
-        term: feeForm.term,
-        breakdown:
-          feeForm.breakdown.map(item => ({
-            name: item.name,
-            amount: item.amount ?? 0,
-          })),
-        deadline:
-          new Date(
-            feeForm.deadline
-          ).toISOString(),
-      };
+    const payload = {
+      className:
+        feeForm.className,
+      term: feeForm.term,
+      breakdown:
+        feeForm.breakdown.map(item => ({
+          name: item.name,
+          amount: item.amount ?? 0,
+        })),
+      deadline:
+        new Date(
+          feeForm.deadline
+        ).toISOString(),
+    };
 
-      if (editingFee) {
-        const response =
-          await api.put(
-            `/fees/structures/${editingFee.id}`,
-            payload
-          );
-
-        const updated =
-          response.data;
-
-        setFeeStructures(
-          (prev) =>
-            prev.map((fee) =>
-              fee.id ===
-              editingFee.id
-                ? updated
-                : fee
-            )
-        );
-
-        toast.success(
-          'Fee structure updated'
-        );
-      } else {
-        const response =
-          await api.post(
-            '/fees/structures',
-            payload
-          );
-
-        const created =
-          response.data;
-
-        setFeeStructures(
-          (prev) => [
-            ...prev,
-            created,
-          ]
-        );
-
-        toast.success(
-          'Fee structure added'
-        );
-      }
-
-      setShowFeeModal(false);
-    } catch (err: any) {
-      console.error(err);
-
-      const msg =
-        err.response?.data?.error ||
-        err.message ||
-        'Operation failed';
-
-      toast.error(msg);
-    } finally {
-      setSubmitting(false);
-    }
+    await saveFeeMutation.mutateAsync(payload);
+    setSubmitting(false);
   };
 
   const handleDeleteFee = async (
@@ -771,31 +803,7 @@ export default function AdminFees() {
       return;
 
     setDeletingFeeId(fee.id);
-
-    try {
-      await api.delete(
-        `/fees/structures/${fee.id}`
-      );
-
-      setFeeStructures(
-        (prev) =>
-          prev.filter(
-            (item) =>
-              item.id !== fee.id
-          )
-      );
-
-      toast.success(
-        'Fee structure deleted'
-      );
-    } catch (err) {
-      console.error(err);
-      toast.error(
-        'Delete failed'
-      );
-    } finally {
-      setDeletingFeeId(null);
-    }
+    deleteFeeMutation.mutate(fee);
   };
 
   // ============================================================
@@ -884,44 +892,7 @@ export default function AdminFees() {
         return;
 
       setSendingMessage(true);
-
-      try {
-        await api.post(
-          '/fees/messages',
-          {
-            studentId:
-              selectedStudent.id,
-            type: messageType,
-            subject:
-              messageType ===
-              'email'
-                ? 'Fee Reminder'
-                : undefined,
-            message: messageText,
-          }
-        );
-
-        toast.success(
-          `${
-            messageType ===
-            'email'
-              ? 'Email'
-              : 'SMS'
-          } sent successfully`
-        );
-
-        setShowMessageModal(
-          false
-        );
-      } catch (err: any) {
-        console.error(err);
-
-        toast.error(
-          'Failed to send message'
-        );
-      } finally {
-        setSendingMessage(false);
-      }
+      sendMessageMutation.mutate();
     };
 
   // ============================================================
@@ -1163,96 +1134,8 @@ export default function AdminFees() {
           });
       }
 
-      setPaymentSubmitting(
-        true
-      );
-
-      try {
-        for (const [
-          feeId,
-          breakdownItems,
-        ] of grouped.entries()) {
-          const amountPaid =
-            breakdownItems.reduce(
-              (sum, item) =>
-                sum +
-                item.amount,
-              0
-            );
-
-          await api.post(
-            '/fees/payments',
-            {
-              studentId:
-                paymentStudent.id,
-              feeStructureId:
-                feeId,
-              amountPaid,
-              paymentMethod,
-              reference:
-                paymentReference ||
-                undefined,
-              breakdownItems,
-            }
-          );
-        }
-
-        const paymentRes =
-          await api.get(
-            '/fees/payments'
-          );
-
-        let updatedPayments =
-          paymentRes.data;
-
-        if (
-          updatedPayments &&
-          !Array.isArray(
-            updatedPayments
-          ) &&
-          (updatedPayments as any)
-            .data
-        ) {
-          updatedPayments =
-            (
-              updatedPayments as any
-            ).data;
-        }
-
-        if (
-          !Array.isArray(
-            updatedPayments
-          )
-        ) {
-          updatedPayments = [];
-        }
-
-        setPayments(
-          updatedPayments
-        );
-
-        toast.success(
-          `Payment of ₦${totalPaymentAmount.toLocaleString()} recorded for ${paymentStudent.name}`
-        );
-
-        setShowPaymentModal(
-          false
-        );
-      } catch (err: any) {
-        console.error(err);
-
-        const msg =
-          err.response?.data
-            ?.error ||
-          err.message ||
-          'Payment failed';
-
-        toast.error(msg);
-      } finally {
-        setPaymentSubmitting(
-          false
-        );
-      }
+      setPaymentSubmitting(true);
+      recordPaymentMutation.mutate();
     };
 
   // ============================================================
@@ -2807,101 +2690,128 @@ export default function AdminFees() {
                         <tbody>
                           {getStudentFeeDetails(
                             selectedStudent
-                          ).map(
+                          ).flatMap(
                             (
                               detail,
                               idx
-                            ) => (
-                              <tr
-                                key={`${detail.fee.id}-${idx}`}
-                                className={`border-b ${
-                                  isDark
-                                    ? 'border-gray-800'
-                                    : 'border-gray-100'
-                                }`}
-                              >
-                                <td
-                                  className={`py-3 ${bodyText}`}
-                                >
-                                  {detail.fee.breakdown
-                                    .map(
-                                      (
-                                        b
-                                      ) =>
-                                        b.name
-                                    )
-                                    .join(
-                                      ', '
-                                    )}
-                                </td>
+                            ) => {
+                              // One row per fee ITEM (not per fee structure)
+                              // so part payments clearly show which item was paid.
+                              const itemOwed =
+                                getItemOwedAmounts(
+                                  selectedStudent,
+                                  detail.fee,
+                                  filteredPayments
+                                );
 
-                                <td
-                                  className={`py-3 ${bodyText}`}
-                                >
-                                  {
-                                    detail
-                                      .fee
-                                      .term
-                                  }
-                                </td>
+                              return itemOwed.map(
+                                (
+                                  item,
+                                  itemIdx
+                                ) => {
+                                  const itemStatus =
+                                    item.paid >=
+                                      item.total &&
+                                    item.total > 0
+                                      ? 'Paid'
+                                      : item.paid >
+                                        0
+                                      ? 'Partial'
+                                      : 'Pending';
 
-                                <td
-                                  className={`text-right py-3 ${bodyText}`}
-                                >
-                                  ₦
-                                  {detail.fee.totalAmount.toLocaleString()}
-                                </td>
+                                  return (
+                                    <tr
+                                      key={`${detail.fee.id}-${item.name}-${idx}-${itemIdx}`}
+                                      className={`border-b ${
+                                        isDark
+                                          ? 'border-gray-800'
+                                          : 'border-gray-100'
+                                      }`}
+                                    >
+                                      <td
+                                        className={`py-3 ${bodyText}`}
+                                      >
+                                        {
+                                          item.name
+                                        }
+                                      </td>
 
-                                <td
-                                  className={`text-right py-3 ${
-                                    isDark
-                                      ? 'text-green-400'
-                                      : 'text-green-600'
-                                  }`}
-                                >
-                                  ₦
-                                  {detail.paid.toLocaleString()}
-                                </td>
+                                      <td
+                                        className={`py-3 ${bodyText}`}
+                                      >
+                                        {
+                                          detail
+                                            .fee
+                                            .term
+                                        }
+                                      </td>
 
-                                <td
-                                  className={`text-right py-3 font-semibold ${
-                                    detail.owed >
-                                    0
-                                      ? isDark
-                                        ? 'text-red-400'
-                                        : 'text-red-600'
-                                      : headingText
-                                  }`}
-                                >
-                                  ₦
-                                  {detail.owed.toLocaleString()}
-                                </td>
+                                      <td
+                                        className={`text-right py-3 ${bodyText}`}
+                                      >
+                                        ₦
+                                        {
+                                          item.total.toLocaleString()
+                                        }
+                                      </td>
 
-                                <td className="text-center py-3">
-                                  <span
-                                    className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
-                                      detail.status ===
-                                      'Paid'
-                                        ? isDark
-                                          ? 'bg-green-500/10 text-green-400'
-                                          : 'bg-green-50 text-green-700'
-                                        : detail.status ===
-                                          'Partial'
-                                        ? isDark
-                                          ? 'bg-yellow-500/10 text-yellow-400'
-                                          : 'bg-yellow-50 text-yellow-700'
-                                        : isDark
-                                        ? 'bg-red-500/10 text-red-400'
-                                        : 'bg-red-50 text-red-700'
-                                    }`}
-                                  >
-                                    {
-                                      detail.status
-                                    }
-                                  </span>
-                                </td>
-                              </tr>
-                            )
+                                      <td
+                                        className={`text-right py-3 ${
+                                          isDark
+                                            ? 'text-green-400'
+                                            : 'text-green-600'
+                                        }`}
+                                      >
+                                        ₦
+                                        {
+                                          item.paid.toLocaleString()
+                                        }
+                                      </td>
+
+                                      <td
+                                        className={`text-right py-3 font-semibold ${
+                                          item.owed >
+                                          0
+                                            ? isDark
+                                              ? 'text-red-400'
+                                              : 'text-red-600'
+                                            : headingText
+                                        }`}
+                                      >
+                                        ₦
+                                        {
+                                          item.owed.toLocaleString()
+                                        }
+                                      </td>
+
+                                      <td className="text-center py-3">
+                                        <span
+                                          className={`inline-flex px-2.5 py-1 rounded-full text-xs font-medium ${
+                                            itemStatus ===
+                                            'Paid'
+                                              ? isDark
+                                                ? 'bg-green-500/10 text-green-400'
+                                                : 'bg-green-50 text-green-700'
+                                              : itemStatus ===
+                                                'Partial'
+                                              ? isDark
+                                                ? 'bg-yellow-500/10 text-yellow-400'
+                                                : 'bg-yellow-50 text-yellow-700'
+                                              : isDark
+                                              ? 'bg-red-500/10 text-red-400'
+                                              : 'bg-red-50 text-red-700'
+                                          }`}
+                                        >
+                                          {
+                                            itemStatus
+                                          }
+                                        </span>
+                                      </td>
+                                    </tr>
+                                  );
+                                }
+                              );
+                            }
                           )}
                         </tbody>
                       </table>

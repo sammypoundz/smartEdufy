@@ -1,12 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 // import { motion } from 'framer-motion';  // ❌ removed – not used
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { fetchGradingData, resolveClassScales, computeGradeWithScales } from '../../utils/grading';
+import type { GradingScale, GradingScaleGroup } from '../../utils/grading';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
+import UploadProgress from '../../components/UploadProgress';
 import {
   DocumentArrowDownIcon,
   CloudArrowUpIcon,
@@ -76,12 +79,25 @@ export default function AdminResults() {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
 
   const [compiledData, setCompiledData] = useState<CompiledStudentResult[]>([]);
   const [loadingCompiled, setLoadingCompiled] = useState(false);
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
+
+  // Grading scales (class-assigned group takes priority over school-wide)
+  const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
+  const [gradingGroups, setGradingGroups] = useState<GradingScaleGroup[]>([]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchGradingData(token).then(({ schoolScales, groups }) => {
+      setSchoolScales(schoolScales);
+      setGradingGroups(groups);
+    });
+  }, [token]);
 
   // ---------- Data fetching ----------
   const fetchClasses = useCallback(async () => {
@@ -199,6 +215,18 @@ export default function AdminResults() {
     setCompiledData([]);
   }, [selectedSubjectId, selectedTerm, selectedAcademicYearId]);
 
+  // Scales for the selected class: its assigned grading scale group if it has
+  // one, otherwise the school-wide (ungrouped) scales.
+  const effectiveGradingScales = useMemo(() => {
+    const selectedClass = classes.find(c => c.id === selectedClassId);
+    return resolveClassScales(selectedClass, schoolScales, gradingGroups);
+  }, [classes, selectedClassId, schoolScales, gradingGroups]);
+
+  const computeGrade = useCallback(
+    (score: number) => computeGradeWithScales(effectiveGradingScales, score),
+    [effectiveGradingScales]
+  );
+
   // Fetch results when all necessary data is ready
   useEffect(() => {
     if (selectedArmId && selectedSubjectId && selectedTerm && selectedAcademicYearId && students.length) {
@@ -272,24 +300,13 @@ export default function AdminResults() {
           if (score !== undefined) {
             subjectsWithScores++;
             totalScore += score;
-            let grade = '';
-            if (score >= 70) grade = 'A';
-            else if (score >= 60) grade = 'B';
-            else if (score >= 50) grade = 'C';
-            else if (score >= 40) grade = 'D';
-            else grade = 'F';
-            subjectsData.push({ subjectName: sub.subjectName, total: score, grade });
+            subjectsData.push({ subjectName: sub.subjectName, total: score, grade: computeGrade(score) });
           } else {
             subjectsData.push({ subjectName: sub.subjectName, total: 0, grade: '—' });
           }
         }
         const average = subjectsWithScores > 0 ? totalScore / subjectsWithScores : 0;
-        let overallGrade = '';
-        if (average >= 70) overallGrade = 'A';
-        else if (average >= 60) overallGrade = 'B';
-        else if (average >= 50) overallGrade = 'C';
-        else if (average >= 40) overallGrade = 'D';
-        else overallGrade = 'F';
+        const overallGrade = computeGrade(average);
         return {
           studentId: student.id,
           studentName: student.name,
@@ -379,12 +396,14 @@ export default function AdminResults() {
 
   const handleBulkUpload = async (file: File) => {
     setUploading(true);
+    setUploadProgress(0);
     try {
       const data = await file.arrayBuffer();
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet) as any[];
       const updatedResults = [...results];
+      let processed = 0;
       for (const row of rows) {
         const studentId = row['Student ID'] || row['studentId'];
         const ca = Number(row['CA (max 30)'] || row['ca']);
@@ -393,20 +412,19 @@ export default function AdminResults() {
           const index = updatedResults.findIndex(r => r.studentId === studentId);
           if (index !== -1) {
             const total = ca + exam;
-            let grade = '';
-            if (total >= 70) grade = 'A';
-            else if (total >= 60) grade = 'B';
-            else if (total >= 50) grade = 'C';
-            else if (total >= 40) grade = 'D';
-            else grade = 'F';
-            updatedResults[index] = { ...updatedResults[index], ca, exam, total, grade };
+            updatedResults[index] = { ...updatedResults[index], ca, exam, total, grade: computeGrade(total) };
           }
         }
+        processed++;
+        setUploadProgress(Math.round((processed / rows.length) * 100));
+        // Yield to the event loop so the progress bar can paint between rows
+        await new Promise((r) => setTimeout(r, 0));
       }
       setResults(updatedResults);
+      setUploadProgress(100);
       toast.success('Upload successful');
     } catch { toast.error('Failed to parse Excel file'); }
-    finally { setUploading(false); }
+    finally { setUploading(false); setUploadProgress(null); }
   };
 
   const triggerFileUpload = () => {
@@ -431,13 +449,7 @@ export default function AdminResults() {
         const newCa = field === 'ca' ? value : (r.ca ?? 0);
         const newExam = field === 'exam' ? value : (r.exam ?? 0);
         const total = newCa + newExam;
-        let grade = '';
-        if (total >= 70) grade = 'A';
-        else if (total >= 60) grade = 'B';
-        else if (total >= 50) grade = 'C';
-        else if (total >= 40) grade = 'D';
-        else grade = 'F';
-        return { ...r, ca: newCa, exam: newExam, total, grade };
+        return { ...r, ca: newCa, exam: newExam, total, grade: computeGrade(total) };
       }
       return r;
     }));
@@ -450,6 +462,9 @@ export default function AdminResults() {
     <div className={`min-h-screen px-4 sm:px-6 lg:px-8 py-8 ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
       {theme === 'dark' && <div className="fixed inset-0 z-0 opacity-20" style={{ backgroundImage: 'linear-gradient(rgba(59,130,246,0.1) 1px,transparent 1px),linear-gradient(90deg,rgba(59,130,246,0.1) 1px,transparent 1px)', backgroundSize: '60px 60px' }} />}
       <div className="relative z-10 max-w-7xl mx-auto">
+        {uploadProgress !== null && (
+          <UploadProgress progress={uploadProgress} label="Processing results upload…" className="mb-4" />
+        )}
         <div className="sm:flex sm:items-center sm:justify-between mb-8">
           <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
           <div className="mt-4 sm:mt-0 flex gap-3">

@@ -12,7 +12,7 @@ import {
   XMarkIcon,
   UserIcon,
   UserGroupIcon,
-  AcademicCapIcon,
+  AcademicCapIcon, DocumentTextIcon,
   CurrencyDollarIcon,
   CalendarIcon,
   ChartBarIcon,
@@ -83,6 +83,33 @@ interface SubjectResult {
   score: number;
   grade: string;
   term: string;
+  arm?: string;
+  academicYear?: string;
+  ca?: number;
+  exam?: number;
+  total?: number;
+}
+
+interface Placement {
+  className: string;
+  arm: string;
+  academicYear: string;
+  term: string;
+  promotedAt: string;
+}
+
+interface TranscriptGroup {
+  className: string;
+  academicYear: string;
+  average: number;
+  entries: { subject: string; ca: number; exam: number; total: number; score: number; grade: string; term: string }[];
+}
+
+interface TranscriptData {
+  student: { id: string; name: string; admissionNumber?: string; gender?: string; currentClass: string };
+  groups: TranscriptGroup[];
+  overallAverage: number;
+  totalSubjects: number;
 }
 
 interface AttendanceSummary {
@@ -159,6 +186,11 @@ export default function StudentBio() {
   const [attendanceLoading, setAttendanceLoading] = useState(false);
   const [resultsData, setResultsData] = useState<SubjectResult[]>([]);
   const [resultsLoading, setResultsLoading] = useState(false);
+  const [historyData, setHistoryData] = useState<Placement[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [transcriptData, setTranscriptData] = useState<TranscriptData | null>(null);
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+  const [showTranscriptModal, setShowTranscriptModal] = useState(false);
 
   // ========== Helper functions ==========
   const getClassName = useCallback(() => {
@@ -342,6 +374,43 @@ export default function StudentBio() {
     }
   };
 
+  const fetchHistory = async () => {
+    if (!token || !student) return;
+    setHistoryLoading(true);
+    try {
+      const res = await api.get(`/students/${student.id}/history`, token);
+      if (res.ok) {
+        const data = await res.json();
+        setHistoryData(data.placements || []);
+      } else {
+        setHistoryData([]);
+      }
+    } catch (err) {
+      console.error(err);
+      setHistoryData([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
+  const fetchTranscript = async () => {
+    if (!token || !student) return;
+    setTranscriptLoading(true);
+    try {
+      const res = await api.get(`/students/${student.id}/transcript`, token);
+      if (res.ok) {
+        setTranscriptData(await res.json());
+      } else {
+        setTranscriptData(null);
+      }
+    } catch (err) {
+      console.error(err);
+      setTranscriptData(null);
+    } finally {
+      setTranscriptLoading(false);
+    }
+  };
+
   // Effects
   useEffect(() => {
     const init = async () => {
@@ -357,6 +426,8 @@ export default function StudentBio() {
       fetchFeeRecords();
       fetchAttendanceSummary();
       fetchResults();
+      fetchHistory();
+      fetchTranscript();
     }
   }, [student?.id, token]);
 
@@ -685,6 +756,151 @@ export default function StudentBio() {
             </SectionCard>
           </FadeInSection>
 
+          {/* Academic History */}
+          <FadeInSection>
+            <SectionCard title="Academic History" icon={AcademicCapIcon} theme={theme}>
+              {historyLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                </div>
+              ) : historyData.length === 0 ? (
+                <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No promotion history recorded yet.</p>
+              ) : (
+                <ol className="relative border-l-2 border-blue-200 dark:border-blue-800 ml-3">
+                  {historyData.map((p, idx) => (
+                    <li key={idx} className="ml-6 pb-6 last:pb-0">
+                      <span className={`absolute flex items-center justify-center w-6 h-6 rounded-full -left-[13px] ring-4 ${
+                        theme === 'dark' ? 'bg-blue-900 ring-gray-900' : 'bg-blue-100 ring-white'
+                      }`}>
+                        <AcademicCapIcon className="h-3.5 w-3.5 text-blue-600 dark:text-blue-300" />
+                      </span>
+                      <h4 className={`text-sm font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        {p.className}{p.arm ? ` (${p.arm})` : ''}
+                      </h4>
+                      <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {idx === 0 ? 'Entry point' : 'Promoted'}
+                        {p.academicYear ? ` • ${p.academicYear}` : ''}
+                        {p.term ? ` • ${p.term}` : ''}
+                        {` • ${new Date(p.promotedAt).toLocaleDateString()}`}
+                      </p>
+                    </li>
+                  ))}
+                </ol>
+              )}
+            </SectionCard>
+          </FadeInSection>
+
+          {/* Official Transcript */}
+          <FadeInSection>
+            <SectionCard title="Academic Transcript" icon={ChartBarIcon} theme={theme}>
+              {transcriptLoading ? (
+                <div className="flex justify-center py-4">
+                  <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-500"></div>
+                </div>
+              ) : !transcriptData || transcriptData.groups.length === 0 ? (
+                <p className={`text-center py-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No results recorded yet to build a transcript.</p>
+              ) : (
+                <>
+                  <div className="flex flex-wrap items-center gap-4 mb-4">
+                    <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${
+                      theme === 'dark' ? 'bg-blue-900/30 text-blue-200' : 'bg-blue-50 text-blue-700'
+                    }`}>
+                      Overall Average: {transcriptData.overallAverage}%
+                    </div>
+                    <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${
+                      theme === 'dark' ? 'bg-purple-900/30 text-purple-200' : 'bg-purple-50 text-purple-700'
+                    }`}>
+                      Subjects Taken: {transcriptData.totalSubjects}
+                    </div>
+                    <div className={`px-4 py-2 rounded-xl text-sm font-semibold ${
+                      theme === 'dark' ? 'bg-emerald-900/30 text-emerald-200' : 'bg-emerald-50 text-emerald-700'
+                    }`}>
+                      Classes Attended: {transcriptData.groups.length}
+                    </div>
+                    <button
+                      onClick={() => setShowTranscriptModal(true)}
+                      className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition"
+                    >
+                      <DocumentTextIcon className="h-4 w-4" />
+                      View Full Transcript
+                    </button>
+                  </div>
+                  <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    Records across {transcriptData.groups.length} class level(s) from entry to current class.
+                  </p>
+                </>
+              )}
+            </SectionCard>
+          </FadeInSection>
+
+          {/* Full Transcript Modal */}
+          {showTranscriptModal && transcriptData && (
+            <div className="fixed inset-0 z-50 overflow-y-auto bg-black/50 flex items-start justify-center p-4" onClick={() => setShowTranscriptModal(false)}>
+              <div
+                id="transcript-print-area"
+                className={`w-full max-w-3xl my-8 rounded-2xl shadow-2xl p-8 ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-white text-gray-900'}`}
+                onClick={e => e.stopPropagation()}
+              >
+                <div className="text-center border-b border-gray-200 dark:border-gray-700 pb-4 mb-6">
+                  <h2 className="text-2xl font-bold">Academic Transcript</h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {transcriptData.student.name}
+                    {transcriptData.student.admissionNumber ? ` • ${transcriptData.student.admissionNumber}` : ''}
+                    {transcriptData.student.currentClass ? ` • Current: ${transcriptData.student.currentClass}` : ''}
+                  </p>
+                </div>
+                {transcriptData.groups.map((g, gi) => (
+                  <div key={gi} className="mb-8">
+                    <h3 className="text-lg font-semibold mb-1">
+                      {g.className} <span className="text-sm font-normal text-gray-500">({g.academicYear})</span>
+                    </h3>
+                    <p className="text-xs text-gray-500 mb-2">Class Average: {g.average}%</p>
+                    <table className="min-w-full text-sm border border-gray-200 dark:border-gray-700">
+                      <thead className="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                          <th className="text-left py-2 px-3">Subject</th>
+                          <th className="text-left py-2 px-3">Term</th>
+                          <th className="text-left py-2 px-3">CA</th>
+                          <th className="text-left py-2 px-3">Exam</th>
+                          <th className="text-left py-2 px-3">Score</th>
+                          <th className="text-left py-2 px-3">Grade</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.entries.map((e, ei) => (
+                          <tr key={ei} className="border-t border-gray-100 dark:border-gray-800">
+                            <td className="py-2 px-3">{e.subject}</td>
+                            <td className="py-2 px-3">{e.term}</td>
+                            <td className="py-2 px-3">{e.ca}</td>
+                            <td className="py-2 px-3">{e.exam}</td>
+                            <td className="py-2 px-3 font-medium">{e.score}</td>
+                            <td className="py-2 px-3">{e.grade}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between border-t border-gray-200 dark:border-gray-700 pt-4">
+                  <div className="text-sm font-semibold">Overall Average: {transcriptData.overallAverage}%</div>
+                  <div className="flex gap-2 no-print">
+                    <button
+                      onClick={() => window.print()}
+                      className="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition"
+                    >
+                      Print / Save PDF
+                    </button>
+                    <button
+                      onClick={() => setShowTranscriptModal(false)}
+                      className={`px-4 py-2 rounded-xl text-sm font-medium ${theme === 'dark' ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'}`}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
           {/* Academic Performance */}
           <FadeInSection>
             <SectionCard title="Academic Performance" icon={ChartBarIcon} theme={theme}>

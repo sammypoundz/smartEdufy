@@ -1,9 +1,11 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useAuth } from "../../contexts/AuthContext";
 import toast from "react-hot-toast";
 import api from "../../services/api";
+import { getErrorMessage, unwrap } from "../../hooks/queryHelpers";
 import { ALL_PRIVILEGES } from "../../utils/privileges";
 import {
   PlusIcon,
@@ -28,8 +30,7 @@ const GROUPS = [...new Set(ALL_PRIVILEGES.map((p) => p.group))];
 export default function AdminRoles() {
   const { theme } = useTheme();
   const { user } = useAuth();
-  const [roles, setRoles] = useState<RoleDef[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<RoleDef | null>(null);
   const [form, setForm] = useState({
@@ -44,21 +45,39 @@ export default function AdminRoles() {
     .filter(Boolean)
     .includes("ADMIN");
 
-  const fetchRoles = async () => {
-    setLoading(true);
-    try {
-      const res = await api.get("/roles");
-      setRoles(Array.isArray(res.data) ? res.data : []);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || "Failed to load roles");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const {
+    data: roles = [],
+    isLoading: loading,
+  } = useQuery<RoleDef[]>({
+    queryKey: ["roles"],
+    queryFn: () =>
+      unwrap(api.get<RoleDef[]>("/roles")).then((d) =>
+        Array.isArray(d) ? d : [],
+      ),
+  });
 
-  useEffect(() => {
-    fetchRoles();
-  }, []);
+  const saveMutation = useMutation({
+    mutationFn: ({ id, payload }: { id?: string; payload: Record<string, unknown> }) =>
+      id
+        ? api.put(`/roles/${id}`, payload)
+        : api.post("/roles", payload),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.id ? "Role updated" : "Role created");
+      queryClient.invalidateQueries({ queryKey: ["roles"] });
+      setShowModal(false);
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, "Save failed")),
+    onSettled: () => setSaving(false),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/roles/${id}`),
+    onSuccess: () => {
+      toast.success("Role deleted");
+      queryClient.invalidateQueries({ queryKey: ["roles"] });
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, "Delete failed")),
+  });
 
   const openAdd = () => {
     setEditing(null);
@@ -92,27 +111,15 @@ export default function AdminRoles() {
       return;
     }
     setSaving(true);
-    try {
-      const payload = {
+    saveMutation.mutate({
+      id: editing?.id,
+      payload: {
         name: form.name.toUpperCase().replace(/[^A-Z0-9_]/g, "_"),
         label: form.label || undefined,
         description: form.description || undefined,
         privileges: form.privileges,
-      };
-      if (editing) {
-        await api.put(`/roles/${editing.id}`, payload);
-        toast.success("Role updated");
-      } else {
-        await api.post("/roles", payload);
-        toast.success("Role created");
-      }
-      setShowModal(false);
-      fetchRoles();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || "Save failed");
-    } finally {
-      setSaving(false);
-    }
+      },
+    });
   };
 
   const handleDelete = async (role: RoleDef) => {
@@ -121,13 +128,7 @@ export default function AdminRoles() {
       return;
     }
     if (!confirm(`Delete role "${role.label || role.name}"?`)) return;
-    try {
-      await api.delete(`/roles/${role.id}`);
-      toast.success("Role deleted");
-      fetchRoles();
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || "Delete failed");
-    }
+    deleteMutation.mutate(role.id);
   };
 
   const card =

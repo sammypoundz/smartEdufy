@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMyAssignments, type ArmAssignment } from '../../services/armApi';
+import { useQuery } from '@tanstack/react-query';
+import { getMyAssignments } from '../../services/armApi';
+import { getErrorMessage } from '../../hooks/queryHelpers';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
   AcademicCapIcon,
@@ -11,16 +12,11 @@ import {
 
 export default function MyClasses() {
   const { theme } = useTheme();
-  const [assignments, setAssignments] = useState<ArmAssignment[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    getMyAssignments()
-      .then(setAssignments)
-      .catch(() => setError('Failed to load your class assignments.'))
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: assignments = [], isLoading: loading, error } = useQuery({
+    queryKey: ['my-assignments'],
+    queryFn: getMyAssignments,
+  });
+  const errText = error ? 'Failed to load your class assignments.' : null;
 
   const cardCls = `p-5 rounded-2xl shadow-lg border transition-all hover:shadow-xl ${
     theme === 'dark'
@@ -37,11 +33,11 @@ export default function MyClasses() {
     return <p className="text-gray-500">Loading your classes…</p>;
   }
 
-  if (error) {
+  if (errText) {
     return (
       <div className="p-5 rounded-xl border border-red-300 bg-red-50 text-red-700 flex items-center gap-3">
         <ExclamationTriangleIcon className="h-6 w-6" />
-        <p>{error}</p>
+        <p>{getErrorMessage(error, 'Failed to load your class assignments.')}</p>
       </div>
     );
   }

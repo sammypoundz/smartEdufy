@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -15,7 +15,6 @@ import {
   UserPlusIcon,
   DocumentTextIcon,
 } from '@heroicons/react/24/outline';
-import toast from 'react-hot-toast';
 import { api } from '../../utils/api';
 
 // ---------- Animation variants ----------
@@ -125,126 +124,110 @@ const ActivityFeed = ({ activities, theme, navigate }: { activities: Activity[];
 // ---------- Main Component ----------
 export default function AdminOverview() {
   const { theme } = useTheme();
-  const { token, logout, user } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
-  const [schoolName, setSchoolName] = useState('Loading...');
-  const [stats, setStats] = useState({
-    totalStudents: 0,
-    totalTeachers: 0,
-    totalClasses: 0,
-    averagePerformance: 0,
-  });
-  const [activities, setActivities] = useState<Activity[]>([]);
-  const [loading, setLoading] = useState(true);
 
   // ---------- Fetch real data ----------
-  useEffect(() => {
-    const fetchDashboardData = async () => {
-      if (!token) {
-        setLoading(false);
-        return;
-      }
-
+  const { data, isLoading: loading } = useQuery({
+    queryKey: ['admin-dashboard', token],
+    enabled: !!token,
+    async queryFn() {
+      // 1. School name
+      let schoolName = 'Loading...';
       try {
-        // 1. School name
         const meRes = await api.get('/auth/me');
         if (meRes.ok) {
           const me = await meRes.json();
-          if (me.school?.name) {
-            setSchoolName(me.school.name);
+          if (me.school?.name) schoolName = me.school.name;
+        }
+      } catch {}
+
+      // 2. Stats: students, teachers, classes
+      const [studentsRes, teachersRes, classesRes] = await Promise.all([
+        api.get('/students'),
+        api.get('/teachers'),
+        api.get('/classes'),
+      ]);
+
+      const students = studentsRes.ok ? await studentsRes.json() : [];
+      const teachers = teachersRes.ok ? await teachersRes.json() : [];
+      const classes = classesRes.ok ? await classesRes.json() : [];
+
+      const stats = {
+        totalStudents: Array.isArray(students) ? students.length : 0,
+        totalTeachers: Array.isArray(teachers) ? teachers.length : 0,
+        totalClasses: Array.isArray(classes) ? classes.length : 0,
+        averagePerformance: 0, // not available from simple endpoints
+      };
+
+      // 3. Recent registrations (users)
+      let registrations: any[] = [];
+      try {
+        const usersRes = await api.get('/users');
+        if (usersRes.ok) {
+          const allUsers = await usersRes.json();
+          if (Array.isArray(allUsers)) {
+            registrations = allUsers
+              .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+              .slice(0, 5);
           }
         }
+      } catch {}
 
-        // 2. Stats: students, teachers, classes
-        const [studentsRes, teachersRes, classesRes] = await Promise.all([
-          api.get('/students'),
-          api.get('/teachers'),
-          api.get('/classes'),
-        ]);
+      // 4. Recent fee payments
+      let payments: any[] = [];
+      try {
+        const feeRes = await api.get('/fees/payments?limit=5');
+        if (feeRes.ok) {
+          const d = await feeRes.json();
+          payments = Array.isArray(d) ? d : d.data || [];
+        }
+      } catch {}
 
-        const students = studentsRes.ok ? await studentsRes.json() : [];
-        const teachers = teachersRes.ok ? await teachersRes.json() : [];
-        const classes = classesRes.ok ? await classesRes.json() : [];
+      // 5. Recent payroll
+      let payrolls: any[] = [];
+      try {
+        const payrollRes = await api.get('/payroll?limit=5');
+        if (payrollRes.ok) {
+          const d = await payrollRes.json();
+          payrolls = Array.isArray(d) ? d : d.data || [];
+        }
+      } catch {}
 
-        setStats({
-          totalStudents: Array.isArray(students) ? students.length : 0,
-          totalTeachers: Array.isArray(teachers) ? teachers.length : 0,
-          totalClasses: Array.isArray(classes) ? classes.length : 0,
-          averagePerformance: 0, // not available from simple endpoints
-        });
+      // 6. Build activity feed
+      const activities: Activity[] = [
+        ...registrations.map((u) => ({
+          id: `reg-${u.id}`,
+          time: new Date(u.createdAt),
+          description: `${u.name || u.email} registered as ${u.role}`,
+          type: 'registration' as const,
+          path: '/admin/users',
+        })),
+        ...payments.map((p) => ({
+          id: `pay-${p.id}`,
+          time: new Date(p.paymentDate || Date.now()),
+          description: `${p.student?.name || 'Student'} paid ${formatCurrency(p.amountPaid)} fees`,
+          type: 'payment' as const,
+          path: '/admin/fees',
+        })),
+        ...payrolls.map((p) => ({
+          id: `pr-${p.id}`,
+          time: new Date(p.paymentDate || Date.now()),
+          description: `${p.staffName || p.staff?.name || 'Staff'} payroll processed (${p.month})`,
+          type: 'payroll' as const,
+          path: '/admin/payroll',
+        })),
+      ]
+        .sort((a, b) => b.time.getTime() - a.time.getTime())
+        .slice(0, 10);
 
-        // 3. Recent registrations (users)
-        let registrations: any[] = [];
-        try {
-          const usersRes = await api.get('/users');
-          if (usersRes.ok) {
-            const allUsers = await usersRes.json();
-            if (Array.isArray(allUsers)) {
-              registrations = allUsers
-                .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-                .slice(0, 5);
-            }
-          }
-        } catch {}
+      return { schoolName, stats, activities };
+    },
+  });
 
-        // 4. Recent fee payments
-        let payments: any[] = [];
-        try {
-          const feeRes = await api.get('/fees/payments?limit=5');
-          if (feeRes.ok) {
-            const data = await feeRes.json();
-            payments = Array.isArray(data) ? data : data.data || [];
-          }
-        } catch {}
-
-        // 5. Recent payroll
-        let payrolls: any[] = [];
-        try {
-          const payrollRes = await api.get('/payroll?limit=5');
-          if (payrollRes.ok) {
-            const data = await payrollRes.json();
-            payrolls = Array.isArray(data) ? data : data.data || [];
-          }
-        } catch {}
-
-        // 6. Build activity feed
-        const activitiesList: Activity[] = [
-          ...registrations.map((u) => ({
-            id: `reg-${u.id}`,
-            time: new Date(u.createdAt),
-            description: `${u.name || u.email} registered as ${u.role}`,
-            type: 'registration' as const,
-            path: '/admin/users',
-          })),
-          ...payments.map((p) => ({
-            id: `pay-${p.id}`,
-            time: new Date(p.paymentDate || Date.now()),
-            description: `${p.student?.name || 'Student'} paid ${formatCurrency(p.amountPaid)} fees`,
-            type: 'payment' as const,
-            path: '/admin/fees',
-          })),
-          ...payrolls.map((p) => ({
-            id: `pr-${p.id}`,
-            time: new Date(p.paymentDate || Date.now()),
-            description: `${p.staffName || p.staff?.name || 'Staff'} payroll processed (${p.month})`,
-            type: 'payroll' as const,
-            path: '/admin/payroll',
-          })),
-        ]
-          .sort((a, b) => b.time.getTime() - a.time.getTime())
-          .slice(0, 10);
-
-        setActivities(activitiesList);
-      } catch (error) {
-        console.error('Failed to load dashboard data', error);
-        toast.error('Could not load dashboard data');
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchDashboardData();
-  }, [token, logout]);
+  const schoolName = data?.schoolName ?? 'Loading...';
+  const stats = data?.stats ?? { totalStudents: 0, totalTeachers: 0, totalClasses: 0, averagePerformance: 0 };
+  const activities = data?.activities ?? [];
 
   // ---------- Stats cards ----------
   const statsData = [

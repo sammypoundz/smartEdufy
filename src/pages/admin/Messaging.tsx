@@ -1,6 +1,8 @@
-import { useState, useEffect, useMemo, useCallback } from 'react';
+import { useState, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
+import { unwrap, getErrorMessage } from '../../hooks/queryHelpers';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import {
@@ -60,107 +62,108 @@ interface User {
 
 export default function AdminMessaging() {
   const { theme } = useTheme();
+  const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
   const [activeTab, setActiveTab] = useState<'inbox' | 'sent' | 'drafts'>('inbox');
 
-  // State from API
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Server state via TanStack Query
   const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-
-  // Users for compose modal
-  const [allUsers, setAllUsers] = useState<User[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
 
   // Compose state
   const [isComposeOpen, setIsComposeOpen] = useState(false);
+  const [usersQueryEnabled, setUsersQueryEnabled] = useState(false);
   const [selectedGroups, setSelectedGroups] = useState<string[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<string[]>([]);
   const [deliveryMethod, setDeliveryMethod] = useState<'email' | 'sms'>('email');
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
-  const [sending, setSending] = useState(false);
   const [userSearch, setUserSearch] = useState('');
 
   // Message detail state
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
 
-  // ---------- Fetch messages ----------
-  const fetchMessages = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const response = await api.get('/messages', {
-        params: {
-          type: activeTab === 'drafts' ? 'inbox' : activeTab,
-          page,
-          limit: 20,
-          search: search || undefined,
-        },
-      });
-      const data = response.data;
-      setMessages(data.data || []);
-      setTotalPages(data.totalPages || 1);
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Failed to load messages';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, [activeTab, page, search]);
+  // ---------- Messages query ----------
+  const messagesQuery = useQuery({
+    queryKey: ['messages', activeTab, page, search],
+    queryFn: async () => {
+      const data = await unwrap<{
+        data?: Message[];
+        totalPages?: number;
+      }>(
+        api.get('/messages', {
+          params: {
+            type: activeTab === 'drafts' ? 'inbox' : activeTab,
+            page,
+            limit: 20,
+            search: search || undefined,
+          },
+        }),
+      );
+      return { messages: data.data || [], totalPages: data.totalPages || 1 };
+    },
+  });
 
-  // ---------- Fetch users (only /users) ----------
-  const fetchUsers = useCallback(async () => {
-    if (allUsers.length > 0) return; // already loaded
-    setLoadingUsers(true);
-    setError(null);
+  const messages = messagesQuery.data?.messages ?? [];
+  const totalPages = messagesQuery.data?.totalPages ?? 1;
+  const loading = messagesQuery.isLoading;
+  const error = messagesQuery.isError ? getErrorMessage(messagesQuery.error, 'Failed to load messages') : null;
 
-    try {
+  // ---------- Users query (fetched lazily when compose opens) ----------
+  const usersQuery = useQuery({
+    queryKey: ['users'],
+    queryFn: async () => {
       const response = await api.get('/users');
-      let users: any[] = [];
-
-      // Handle different response structures (array or { data: [] })
-      if (Array.isArray(response.data)) {
-        users = response.data;
-      } else if (response.data.data && Array.isArray(response.data.data)) {
-        users = response.data.data;
-      } else {
-        console.warn('Unexpected /users response:', response.data);
-        toast.error('Unexpected user data format');
-        setLoadingUsers(false);
-        return;
-      }
-
+      const raw = response.data;
+      const users: any[] = Array.isArray(raw)
+        ? raw
+        : Array.isArray(raw?.data)
+          ? raw.data
+          : [];
       // Normalize to User interface
-      const mappedUsers: User[] = users.map((u: any) => ({
-        id: u.id || u._id,
-        name: u.name || u.fullName || null,
-        email: u.email,
-        role: u.role || 'USER',
-        phone: u.phone || null,
-      }));
+      return users.map(
+        (u: any): User => ({
+          id: u.id || u._id,
+          name: u.name || u.fullName || null,
+          email: u.email,
+          role: u.role || 'USER',
+          phone: u.phone || null,
+        }),
+      );
+    },
+    enabled: usersQueryEnabled,
+    staleTime: 5 * 60 * 1000,
+  });
 
-      setAllUsers(mappedUsers);
-    } catch (err: any) {
-      console.error('Failed to fetch /users:', err.message);
-      toast.error('Could not load users. Please try again.');
-      setAllUsers([]);
-    } finally {
-      setLoadingUsers(false);
-    }
-  }, [allUsers]);
+  const allUsers = usersQuery.data ?? [];
+  const loadingUsers = usersQuery.isFetching;
 
-  // Load messages on tab/search/page change
-  useEffect(() => {
-    fetchMessages();
-  }, [fetchMessages]);
+  // ---------- Send broadcast mutation ----------
+  const broadcastMutation = useMutation({
+    mutationFn: (payload: {
+      groups: string[];
+      userIds: string[];
+      type: 'email' | 'sms';
+      subject: string;
+      message: string;
+    }) => unwrap<{ totalRecipients: number }>(api.post('/messages/broadcast', payload)),
+    onSuccess: (result) => {
+      toast.success(
+        `Message sent via ${deliveryMethod.toUpperCase()} to ${result.totalRecipients} recipient(s)`,
+      );
+      queryClient.invalidateQueries({ queryKey: ['messages'] });
+      setIsComposeOpen(false);
+      // Reset form
+      setSelectedGroups([]);
+      setSelectedUsers([]);
+      setSubject('');
+      setMessage('');
+      setUserSearch('');
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to send message')),
+  });
 
-  // ---------- Send broadcast ----------
-  const handleSend = async () => {
+  const handleSend = () => {
     if (!subject.trim() || !message.trim()) {
       toast.error('Please fill in subject and message');
       return;
@@ -169,39 +172,16 @@ export default function AdminMessaging() {
       toast.error('Please select at least one recipient');
       return;
     }
-
-    setSending(true);
-    try {
-      const payload = {
-        groups: selectedGroups,
-        userIds: selectedUsers,
-        type: deliveryMethod,
-        subject: subject.trim(),
-        message: message.trim(),
-      };
-
-      const response = await api.post('/messages/broadcast', payload);
-      const result = response.data;
-      toast.success(
-        `Message sent via ${deliveryMethod.toUpperCase()} to ${result.totalRecipients} recipient(s)`
-      );
-      if (activeTab === 'sent') {
-        await fetchMessages();
-      }
-      setIsComposeOpen(false);
-      // Reset form
-      setSelectedGroups([]);
-      setSelectedUsers([]);
-      setSubject('');
-      setMessage('');
-      setUserSearch('');
-    } catch (err: any) {
-      const msg = err.response?.data?.error || 'Failed to send message';
-      toast.error(msg);
-    } finally {
-      setSending(false);
-    }
+    broadcastMutation.mutate({
+      groups: selectedGroups,
+      userIds: selectedUsers,
+      type: deliveryMethod,
+      subject: subject.trim(),
+      message: message.trim(),
+    });
   };
+
+  const sending = broadcastMutation.isPending;
 
   // ---------- View message detail ----------
   const openMessageDetail = async (msg: Message) => {
@@ -302,7 +282,7 @@ export default function AdminMessaging() {
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
-              fetchUsers();
+              setUsersQueryEnabled(true);
               setIsComposeOpen(true);
             }}
             className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700"
@@ -351,6 +331,12 @@ export default function AdminMessaging() {
         ) : error ? (
           <div className={`text-center py-12 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
             {error}
+            <button
+              onClick={() => messagesQuery.refetch()}
+              className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm"
+            >
+              Retry
+            </button>
           </div>
         ) : messages.length === 0 ? (
           <div className={`text-center py-12 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>

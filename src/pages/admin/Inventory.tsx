@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import {
   PlusIcon,
   PencilIcon,
@@ -57,17 +59,7 @@ const statusOptions = ['All', 'Good', 'Needs Repair', 'Broken', 'Low Stock'];
 
 export default function AdminInventory() {
   const { theme } = useTheme();
-
-  // State
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [totalPages, setTotalPages] = useState(1);
-  const [loading, setLoading] = useState(false);
-  const [stats, setStats] = useState<Stats>({
-    totalItems: 0,
-    totalQuantity: 0,
-    lowStockItems: 0,
-    categories: 0,
-  });
+  const queryClient = useQueryClient();
 
   // Filters & pagination
   const [search, setSearch] = useState('');
@@ -88,10 +80,10 @@ export default function AdminInventory() {
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null); // track which item is being deleted
 
-  // Fetch items with filters & pagination
-  const fetchItems = useCallback(async () => {
-    setLoading(true);
-    try {
+  // ---------- Queries ----------
+  const itemsQuery = useQuery({
+    queryKey: ['inventory', currentPage, search, categoryFilter, statusFilter],
+    queryFn: () => {
       const params = new URLSearchParams({
         page: currentPage.toString(),
         limit: itemsPerPage.toString(),
@@ -99,41 +91,70 @@ export default function AdminInventory() {
         ...(categoryFilter !== 'All' && { category: categoryFilter }),
         ...(statusFilter !== 'All' && { status: statusFilter }),
       });
-      const res = await api.get(`/inventory?${params.toString()}`);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setItems(data.data || []);
-      setTotalPages(data.totalPages || 1);
-    } catch (err: any) {
-      toast.error(err.message || 'Failed to load inventory');
-      setItems([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [currentPage, search, categoryFilter, statusFilter]);
+      return unwrapRes<{ data: InventoryItem[]; totalPages: number }>(
+        api.get(`/inventory?${params.toString()}`),
+      );
+    },
+    placeholderData: keepPreviousData,
+  });
 
-  // Fetch stats
-  const fetchStats = useCallback(async () => {
-    try {
-      const res = await api.get('/inventory/stats');
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setStats(data);
-    } catch (err: any) {
-      console.error('Failed to fetch stats', err);
-    }
-  }, []);
+  const statsQuery = useQuery<Stats>({
+    queryKey: ['inventory-stats'],
+    queryFn: () => unwrapRes<Stats>(api.get('/inventory/stats')),
+  });
 
-  // Load data when dependencies change
+  const items = itemsQuery.data?.data ?? [];
+  const totalPages = itemsQuery.data?.totalPages ?? 1;
+  const loading = itemsQuery.isLoading;
+  const stats = statsQuery.data ?? {
+    totalItems: 0,
+    totalQuantity: 0,
+    lowStockItems: 0,
+    categories: 0,
+  };
+
   useEffect(() => {
-    fetchItems();
-    fetchStats();
-  }, [fetchItems, fetchStats]);
+    if (itemsQuery.error) {
+      toast.error((itemsQuery.error as Error).message || 'Failed to load inventory');
+    }
+  }, [itemsQuery.error]);
 
   // Reset page when filters change
   useEffect(() => {
     setCurrentPage(1);
   }, [search, categoryFilter, statusFilter]);
+
+  // ---------- Mutations ----------
+  const invalidateInventory = () => {
+    queryClient.invalidateQueries({ queryKey: ['inventory'] });
+    queryClient.invalidateQueries({ queryKey: ['inventory-stats'] });
+  };
+
+  const saveMutation = useMutation({
+    mutationFn: ({ id, payload }: { id?: string; payload: Omit<InventoryItem, 'id'> }) =>
+      id
+        ? unwrapRes(api.put(`/inventory/${id}`, payload))
+        : unwrapRes(api.post('/inventory', payload)),
+    onSuccess: (_d, vars) => {
+      toast.success(vars.id ? 'Item updated' : 'Item added');
+      setIsModalOpen(false);
+      setEditingItem(null);
+      setFormData({ name: '', quantity: 0, category: 'Furniture', status: 'Good' });
+      invalidateInventory();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Operation failed'),
+    onSettled: () => setSubmitting(false),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => unwrapRes(api.del(`/inventory/${id}`)),
+    onSuccess: () => {
+      toast.success('Item deleted');
+      invalidateInventory();
+    },
+    onError: (err: Error) => toast.error(err.message || 'Delete failed'),
+    onSettled: () => setDeletingId(null),
+  });
 
   // ---------- CRUD Handlers ----------
   const handleAdd = () => {
@@ -165,16 +186,7 @@ export default function AdminInventory() {
     if (!result.isConfirmed) return;
 
     setDeletingId(id);
-    try {
-      const res = await api.del(`/inventory/${id}`);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Item deleted');
-      await Promise.all([fetchItems(), fetchStats()]);
-    } catch (err: any) {
-      toast.error(err.message || 'Delete failed');
-    } finally {
-      setDeletingId(null);
-    }
+    deleteMutation.mutate(id);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -184,21 +196,7 @@ export default function AdminInventory() {
       return;
     }
     setSubmitting(true);
-    try {
-      const endpoint = editingItem ? `/inventory/${editingItem.id}` : '/inventory';
-      const method = editingItem ? 'put' : 'post';
-      const res = await api[method](endpoint, formData);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success(editingItem ? 'Item updated' : 'Item added');
-      await Promise.all([fetchItems(), fetchStats()]);
-      setIsModalOpen(false);
-      setEditingItem(null);
-      setFormData({ name: '', quantity: 0, category: 'Furniture', status: 'Good' });
-    } catch (err: any) {
-      toast.error(err.message || 'Operation failed');
-    } finally {
-      setSubmitting(false);
-    }
+    saveMutation.mutate({ id: editingItem?.id, payload: formData });
   };
 
   // ---------- Render ----------

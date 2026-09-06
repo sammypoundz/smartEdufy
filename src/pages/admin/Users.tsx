@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getErrorMessage } from '../../hooks/queryHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
@@ -84,9 +86,20 @@ export default function AdminUsers() {
   const { theme } = useTheme();
   const navigate = useNavigate();
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
+
+  const usersQuery = useQuery<User[]>({
+    queryKey: ['users'],
+    queryFn: async () => {
+      const res = await api.get('/users');
+      const data = res.data;
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
+  const users = usersQuery.data ?? [];
+  const loading = usersQuery.isLoading;
+  const error = usersQuery.error ? getErrorMessage(usersQuery.error, 'Failed to load users') : null;
 
   const [searchTerm, setSearchTerm] = useState('');
   const [roleFilter, setRoleFilter] = useState('');
@@ -104,31 +117,66 @@ export default function AdminUsers() {
     isActive: true,
     allowedPages: [] as string[],
   });
-  const [submitting, setSubmitting] = useState(false);
 
   // ---------- Per‑action loading states ----------
   const [actionLoading, setActionLoading] = useState<{ [key: string]: 'toggle' | 'delete' }>({});
 
-  const fetchUsers = async () => {
-    setLoading(true);
-    setError(null);
+  // ---------- Bulk selection ----------
+  const [selectedUserIds, setSelectedUserIds] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const selectedCount = selectedUserIds.size;
+
+  const toggleUserSelection = (id: string, checked: boolean) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      if (checked) next.add(id); else next.delete(id);
+      return next;
+    });
+  };
+
+  const toggleSelectAllOnPage = (checked: boolean) => {
+    setSelectedUserIds(prev => {
+      const next = new Set(prev);
+      paginatedUsers.forEach(u => (checked ? next.add(u.id) : next.delete(u.id)));
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedUserIds(new Set());
+
+  const handleBulkDeleteUsers = async () => {
+    const ids = Array.from(selectedUserIds);
+    const result = await Swal.fire({
+      title: 'Delete Users',
+      text: `Delete ${ids.length} selected user${ids.length === 1 ? '' : 's'}? This action cannot be undone.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Delete',
+    });
+    if (!result.isConfirmed) return;
+
+    setBulkDeleting(true);
     try {
-      const res = await api.get('/users');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      setUsers(data);
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load users';
-      setError(msg);
-      toast.error(msg);
+      const res = await api.post('/users/bulk-delete', { ids });
+      const data = res.data as { deleted?: number; failed?: string[] };
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      if (data.failed?.length) {
+        toast.error(`Deleted ${data.deleted ?? 0} user(s); ${data.failed.length} failed`);
+      } else {
+        toast.success(`Deleted ${data.deleted ?? ids.length} user(s)`);
+      }
+      clearSelection();
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Bulk delete failed'));
     } finally {
-      setLoading(false);
+      setBulkDeleting(false);
     }
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    if (usersQuery.error) toast.error(error);
+  }, [usersQuery.error, error]);
 
   const filteredUsers = useMemo(() => {
     return users.filter(user => {
@@ -143,6 +191,9 @@ export default function AdminUsers() {
 
   const totalPages = Math.ceil(filteredUsers.length / rowsPerPage);
   const paginatedUsers = filteredUsers.slice((currentPage - 1) * rowsPerPage, currentPage * rowsPerPage);
+
+  const allOnPageSelected =
+    paginatedUsers.length > 0 && paginatedUsers.every(u => selectedUserIds.has(u.id));
   const handlePageChange = (newPage: number) => setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
   useEffect(() => {
     setCurrentPage(1);
@@ -202,7 +253,21 @@ export default function AdminUsers() {
     }));
   };
 
-  const handleSubmit = async () => {
+  const saveMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id?: string; payload: Record<string, unknown> }) =>
+      id ? (await api.put(`/users/${id}`, payload)).data : (await api.post('/users', payload)).data,
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success(vars.id ? 'User updated' : 'User added');
+      setShowModal(false);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Operation failed'));
+    },
+  });
+
+  const handleSubmit = () => {
     if (!formData.name || !formData.email || !formData.role) {
       toast.error('Please fill all required fields');
       return;
@@ -212,38 +277,54 @@ export default function AdminUsers() {
       return;
     }
 
-    setSubmitting(true);
-    try {
-      const roles = formData.roles.length ? formData.roles : [formData.role].filter(Boolean);
-      const showPrivileges = roles.some(isPrivilegeable);
-      const payload = {
-        name: formData.name,
-        email: formData.email,
-        role: roles[0] || formData.role,
-        roles,
-        isActive: formData.isActive,
-        allowedPages: showPrivileges ? formData.allowedPages : [],
-        ...(formData.password && { password: formData.password }),
-      };
-      if (editingUser) {
-        const res = await api.put(`/users/${editingUser.id}`, payload);
-        const updated = res.data;
-        setUsers(prev => prev.map(u => u.id === editingUser.id ? updated : u));
-        toast.success('User updated');
-      } else {
-        const res = await api.post('/users', payload);
-        const created = res.data;
-        setUsers(prev => [...prev, created]);
-        toast.success('User added');
-      }
-      setShowModal(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Operation failed');
-    } finally {
-      setSubmitting(false);
-    }
+    const roles = formData.roles.length ? formData.roles : [formData.role].filter(Boolean);
+    const showPrivileges = roles.some(isPrivilegeable);
+    const payload = {
+      name: formData.name,
+      email: formData.email,
+      role: roles[0] || formData.role,
+      roles,
+      isActive: formData.isActive,
+      allowedPages: showPrivileges ? formData.allowedPages : [],
+      ...(formData.password && { password: formData.password }),
+    };
+    saveMutation.mutate({ id: editingUser?.id, payload });
   };
+
+  const submitting = saveMutation.isPending;
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => api.delete(`/users/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success('User deleted');
+    },
+    onError: () => toast.error('Delete failed'),
+    onSettled: (_d, _e, id) => {
+      setActionLoading(prev => {
+        const newState = { ...prev };
+        delete newState[id];
+        return newState;
+      });
+    },
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: async ({ id, isActive }: { id: string; isActive: boolean }) =>
+      (await api.patch(`/users/${id}/status`, { isActive })).data,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['users'] });
+      toast.success(`User ${statusMutation.variables?.isActive ? 'activated' : 'deactivated'}`);
+    },
+    onError: () => toast.error('Status update failed'),
+    onSettled: (_d, _e, vars) => {
+      setActionLoading(prev => {
+        const newState = { ...prev };
+        delete newState[vars.id];
+        return newState;
+      });
+    },
+  });
 
   const handleDelete = async (user: User) => {
     const result = await Swal.fire({
@@ -257,41 +338,12 @@ export default function AdminUsers() {
     if (!result.isConfirmed) return;
 
     setActionLoading(prev => ({ ...prev, [user.id]: 'delete' }));
-
-    try {
-      await api.delete(`/users/${user.id}`);
-      setUsers(prev => prev.filter(u => u.id !== user.id));
-      toast.success('User deleted');
-    } catch (err) {
-      toast.error('Delete failed');
-    } finally {
-      setActionLoading(prev => {
-        const newState = { ...prev };
-        delete newState[user.id];
-        return newState;
-      });
-    }
+    deleteMutation.mutate(user.id);
   };
 
-  const toggleUserStatus = async (user: User) => {
-    const newStatus = !user.isActive;
-
+  const toggleUserStatus = (user: User) => {
     setActionLoading(prev => ({ ...prev, [user.id]: 'toggle' }));
-
-    try {
-      const res = await api.patch(`/users/${user.id}/status`, { isActive: newStatus });
-      const updated = res.data;
-      setUsers(prev => prev.map(u => u.id === user.id ? updated : u));
-      toast.success(`User ${newStatus ? 'activated' : 'deactivated'}`);
-    } catch (err) {
-      toast.error('Status update failed');
-    } finally {
-      setActionLoading(prev => {
-        const newState = { ...prev };
-        delete newState[user.id];
-        return newState;
-      });
-    }
+    statusMutation.mutate({ id: user.id, isActive: !user.isActive });
   };
 
   // Loading & Error states
@@ -315,7 +367,7 @@ export default function AdminUsers() {
       }`}>
         <div className="text-center text-red-600 dark:text-red-400">
           <p>{error}</p>
-          <button onClick={fetchUsers} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">Retry</button>
+          <button onClick={() => usersQuery.refetch()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">Retry</button>
         </div>
       </div>
     );
@@ -409,6 +461,47 @@ export default function AdminUsers() {
           </div>
         </div>
 
+        {/* Bulk actions bar */}
+        {selectedCount > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: -6 }}
+            animate={{ opacity: 1, y: 0 }}
+            className={`flex items-center justify-between px-4 py-3 mb-4 rounded-xl border ${
+              theme === 'dark'
+                ? 'bg-red-500/10 border-red-500/30'
+                : 'bg-red-50 border-red-200'
+            }`}
+          >
+            <span className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>
+              {selectedCount} user{selectedCount === 1 ? '' : 's'} selected
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={clearSelection}
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  theme === 'dark'
+                    ? 'bg-white/5 text-gray-300 hover:bg-white/10'
+                    : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                Clear
+              </button>
+              <button
+                onClick={handleBulkDeleteUsers}
+                disabled={bulkDeleting}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
+              >
+                {bulkDeleting ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <TrashIcon className="h-4 w-4" />
+                )}
+                Delete Selected
+              </button>
+            </div>
+          </motion.div>
+        )}
+
         {/* Table */}
         <motion.div
           initial={{ opacity: 0, y: 10 }}
@@ -425,6 +518,18 @@ export default function AdminUsers() {
               <thead>
                 <tr>
                   <th className={`py-4 pl-6 pr-3 text-left text-xs font-semibold uppercase tracking-wider ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={allOnPageSelected}
+                      onChange={(e) => toggleSelectAllOnPage(e.target.checked)}
+                      disabled={paginatedUsers.length === 0}
+                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                      title="Select all on this page"
+                    />
+                  </th>
+                  <th className={`py-4 pl-3 pr-3 text-left text-xs font-semibold uppercase tracking-wider ${
                     theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
                   }`}>
                     Name
@@ -456,7 +561,7 @@ export default function AdminUsers() {
               }`}>
                 {paginatedUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className={`text-center py-8 text-sm ${
+                    <td colSpan={6} className={`text-center py-8 text-sm ${
                       theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
                     }`}>
                       No users found. <button onClick={openAddModal} className="text-blue-500 underline">Add one</button>.
@@ -479,7 +584,15 @@ export default function AdminUsers() {
                         transition={{ duration: 0.15 }}
                         className="cursor-default"
                       >
-                        <td className="whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium">
+                        <td className="whitespace-nowrap py-4 pl-6 pr-3 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={selectedUserIds.has(user.id)}
+                            onChange={(e) => toggleUserSelection(user.id, e.target.checked)}
+                            className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300 rounded cursor-pointer"
+                          />
+                        </td>
+                        <td className="whitespace-nowrap py-4 pl-3 pr-3 text-sm font-medium">
                           <div className="flex items-center gap-2">
                             {user.role === 'TEACHER' && (
                               <motion.button

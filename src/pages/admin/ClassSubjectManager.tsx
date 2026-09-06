@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -47,14 +48,9 @@ interface Teacher {
 export default function ClassSubjectManager() {
   const { theme } = useTheme();
   const { token } = useAuth();
-  const [classes, setClasses] = useState<ClassOption[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [arms, setArms] = useState<{ id: string; letter: string }[]>([]);
   const [selectedArmId, setSelectedArmId] = useState('');
-  const [armSubjects, setArmSubjects] = useState<ArmSubject[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [allSubjects, setAllSubjects] = useState<Subject[]>([]);
-  const [allTeachers, setAllTeachers] = useState<Teacher[]>([]);
   const [showAddModal, setShowAddModal] = useState(false);
   const [showTeacherModal, setShowTeacherModal] = useState(false);
   const [currentArmSubject, setCurrentArmSubject] = useState<ArmSubject | null>(null);
@@ -62,22 +58,55 @@ export default function ClassSubjectManager() {
   const [selectedTeacherId, setSelectedTeacherId] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  // Fetch classes
-  useEffect(() => {
-    const fetchClasses = async () => {
-      if (!token) return;
-      try {
-        const res = await api.get('/classes', token);
-        if (res.ok) {
-          const data = await res.json();
-          setClasses(data);
-        }
-      } catch (err) {
-        console.error(err);
-      }
-    };
-    fetchClasses();
-  }, [token]);
+  // ---------- Cached queries ----------
+  const classesQuery = useQuery<ClassOption[]>({
+    queryKey: ['classes', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/classes', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const classes = classesQuery.data ?? [];
+
+  const armSubjectsQuery = useQuery<ArmSubject[]>({
+    queryKey: ['csm-arm-subjects', selectedArmId, token],
+    enabled: !!token && !!selectedArmId,
+    queryFn: async () => {
+      const res = await api.get(`/arms/${selectedArmId}/subjects`, token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const armSubjects = armSubjectsQuery.data ?? [];
+  const loading = armSubjectsQuery.isLoading;
+
+  const loadArmSubjects = async () => {
+    await armSubjectsQuery.refetch();
+  };
+
+  const subjectsAndTeachersQuery = useQuery<{ subjects: Subject[]; teachers: Teacher[] }>({
+    queryKey: ['csm-subjects-teachers', token],
+    enabled: false,
+    queryFn: async () => {
+      const [subjectsRes, teachersRes] = await Promise.all([
+        api.get('/subjects', token!),
+        api.get('/teachers', token!),
+      ]);
+      return {
+        subjects: subjectsRes.ok ? await subjectsRes.json() : [],
+        teachers: teachersRes.ok ? await teachersRes.json() : [],
+      };
+    },
+  });
+  const allSubjects = subjectsAndTeachersQuery.data?.subjects ?? [];
+  const allTeachers = subjectsAndTeachersQuery.data?.teachers ?? [];
+
+  const loadAllSubjectsAndTeachers = async () => {
+    await subjectsAndTeachersQuery.refetch();
+  };
 
   // When class changes, load arms
   useEffect(() => {
@@ -94,43 +123,11 @@ export default function ClassSubjectManager() {
   // Load arm subjects when arm changes
   useEffect(() => {
     if (!selectedArmId) {
-      setArmSubjects([]);
       return;
     }
     loadArmSubjects();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedArmId]);
-
-  const loadArmSubjects = async () => {
-    if (!token || !selectedArmId) return;
-    setLoading(true);
-    try {
-      const res = await api.get(`/arms/${selectedArmId}/subjects`, token);
-      if (res.ok) {
-        const data = await res.json();
-        setArmSubjects(data);
-      } else {
-        toast.error('Failed to load arm subjects');
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadAllSubjectsAndTeachers = async () => {
-    if (!token) return;
-    try {
-      const [subjectsRes, teachersRes] = await Promise.all([
-        api.get('/subjects', token),
-        api.get('/teachers', token),
-      ]);
-      if (subjectsRes.ok) setAllSubjects(await subjectsRes.json());
-      if (teachersRes.ok) setAllTeachers(await teachersRes.json());
-    } catch (err) {
-      console.error(err);
-    }
-  };
 
   const openAddModal = () => {
     loadAllSubjectsAndTeachers();

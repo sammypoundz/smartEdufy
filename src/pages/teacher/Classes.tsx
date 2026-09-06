@@ -1,31 +1,21 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import { formatArm } from '../../utils/arm';
 import { AcademicCapIcon } from '@heroicons/react/24/outline';
 
 export default function TeacherClasses() {
   const { token } = useAuth();
-  const [classes, setClasses] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const fetchClasses = async () => {
-      try {
-        const res = await api.get('/teachers/me', token);
-        if (res.ok) {
-          const data = await res.json();
-          setClasses(data.classArms || []);
-        }
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchClasses();
-  }, [token]);
+  const { data: classes = [], isLoading: loading } = useQuery({
+    queryKey: ['teacher-class-arms', token],
+    queryFn: async () => {
+      const res = await api.get('/teachers/me', token);
+      const data = await unwrapRes<any>(res);
+      return (data.classArms || []) as any[];
+    },
+  });
 
   if (loading) return <div className="p-4">Loading your classes...</div>;
 

@@ -1,9 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { fetchGradingData, resolveClassScales, computeGradeWithScales } from '../../utils/grading';
+import type { GradingScale, GradingScaleGroup } from '../../utils/grading';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
@@ -20,7 +22,7 @@ const toNumber = (value: string | number | null | undefined): number => {
   return isNaN(num) ? 0 : num;
 };
 
-interface Class { id: string; name: string; }
+interface Class { id: string; name: string; gradingScaleGroup?: { id: string; name: string } | null; }
 interface Arm { id: string; letter: string; }
 interface Subject { id: string; name: string; }
 interface Student { id: string; name: string; admissionNumber?: string; }
@@ -87,6 +89,28 @@ export default function AdminReports() {
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [printingAll, setPrintingAll] = useState(false);
   const [downloadingSingle, setDownloadingSingle] = useState<string | null>(null);
+
+  // Grading scales (class-assigned group takes priority over school-wide)
+  const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
+  const [gradingGroups, setGradingGroups] = useState<GradingScaleGroup[]>([]);
+
+  useEffect(() => {
+    if (!token) return;
+    fetchGradingData(token).then(({ schoolScales, groups }) => {
+      setSchoolScales(schoolScales);
+      setGradingGroups(groups);
+    });
+  }, [token]);
+
+  const effectiveGradingScales = useMemo(() => {
+    const selectedClass = classes.find(c => c.id === selectedClassId);
+    return resolveClassScales(selectedClass, schoolScales, gradingGroups);
+  }, [classes, selectedClassId, schoolScales, gradingGroups]);
+
+  const computeGrade = useCallback(
+    (score: number) => computeGradeWithScales(effectiveGradingScales, score),
+    [effectiveGradingScales]
+  );
 
   // ========== Data fetching ==========
   const fetchClasses = useCallback(async () => {
@@ -198,12 +222,7 @@ export default function AdminReports() {
         }
 
         const average: number = subjectsWithScores > 0 ? totalScore / subjectsWithScores : 0;
-        let overallGrade = '';
-        if (average >= 70) overallGrade = 'A';
-        else if (average >= 60) overallGrade = 'B';
-        else if (average >= 50) overallGrade = 'C';
-        else if (average >= 40) overallGrade = 'D';
-        else overallGrade = 'F';
+        const overallGrade = computeGrade(average);
 
         return {
           studentId: student.id,
@@ -222,7 +241,7 @@ export default function AdminReports() {
     } finally {
       setLoading(false);
     }
-  }, [selectedArmId, selectedTerm, selectedAcademicYearId, students, subjects, token]);
+  }, [selectedArmId, selectedTerm, selectedAcademicYearId, students, subjects, token, computeGrade]);
 
   // ========== Effects ==========
   useEffect(() => { fetchClasses(); }, [fetchClasses]);

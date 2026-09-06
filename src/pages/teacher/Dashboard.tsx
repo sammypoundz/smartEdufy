@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { effectivePrivileges } from '../../utils/privileges';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
 import { getMyAssignments, type ArmAssignment } from '../../services/armApi';
+import { getErrorMessage, unwrapRes } from '../../hooks/queryHelpers';
 import {
   AcademicCapIcon,
   UserGroupIcon,
@@ -18,6 +19,20 @@ import {
   CheckCircleIcon,
   ClockIcon,
 } from '@heroicons/react/24/outline';
+
+interface AttendanceSummary {
+  label: string;
+  armId: string;
+  present: number;
+  total: number;
+  recorded: boolean;
+}
+
+interface DashboardData {
+  assignments: ArmAssignment[];
+  timetable: TimetableEntry[];
+  attendanceSummary: AttendanceSummary[];
+}
 
 interface TimetableEntry {
   id?: string;
@@ -36,71 +51,52 @@ export default function TeacherDashboard() {
   const { user } = useAuth();
   const { theme } = useTheme();
 
-  const [assignments, setAssignments] = useState<ArmAssignment[]>([]);
-  const [timetable, setTimetable] = useState<TimetableEntry[]>([]);
-  const [attendanceSummary, setAttendanceSummary] = useState<
-    { label: string; armId: string; present: number; total: number; recorded: boolean }[]
-  >([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const teacherId = user?.id;
+  const { data, isLoading: loading, error } = useQuery({
+    queryKey: ['teacher-dashboard', teacherId],
+    enabled: !!teacherId,
+    queryFn: async (): Promise<DashboardData> => {
+      // 1. Assigned classes & subjects (single source of truth for access)
+      const assignments = await getMyAssignments().catch(() => []);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const load = async () => {
-      setLoading(true);
-      setError(null);
+      // 2. Teacher's own timetable (subjects they teach)
+      let timetable: TimetableEntry[] = [];
       try {
-        // 1. Assigned classes & subjects (single source of truth for access)
-        const myAssignments = await getMyAssignments().catch(() => []);
-        if (cancelled) return;
-        setAssignments(myAssignments);
+        const tt = await unwrapRes<any[]>(api.get(`/timetable/teacher/${teacherId}`));
+        timetable = Array.isArray(tt) ? tt : [];
+      } catch {
+        /* timetable is non-critical */
+      }
 
-        // 2. Teacher's own timetable (subjects they teach)
-        const teacherId = user?.id;
-        if (teacherId) {
-          const ttRes = await api.get(`/timetable/teacher/${teacherId}`);
-          if (!cancelled && ttRes.ok) {
-            const data = await ttRes.json();
-            setTimetable(Array.isArray(data) ? data : []);
-          }
-        }
-
-        // 3. Today's attendance snapshot for each form class they own
-        const today = new Date().toISOString().slice(0, 10);
-        const formArms = myAssignments.filter((a) => a.isFormTeacher);
-        const summaries = await Promise.all(
-          formArms.map(async (a) => {
-            try {
-              const res = await api.get(`/attendance/arm/${a.armId}?startDate=${today}&endDate=${today}`);
-              if (!res.ok) return { label: `${a.className} ${a.armName}`, armId: a.armId, present: 0, total: 0, recorded: false };
-              const records = await res.json();
-              const list = Array.isArray(records) ? records : [];
-              if (list.length === 0) {
-                return { label: `${a.className} ${a.armName}`, armId: a.armId, present: 0, total: 0, recorded: false };
-              }
-              const present = list.filter((r: any) => r.present).length;
-              const total = new Set(list.map((r: any) => r.studentId)).size;
-              return { label: `${a.className} ${a.armName}`, armId: a.armId, present, total, recorded: true };
-            } catch {
+      // 3. Today's attendance snapshot for each form class they own
+      const today = new Date().toISOString().slice(0, 10);
+      const formArms = assignments.filter((a) => a.isFormTeacher);
+      const attendanceSummary = await Promise.all(
+        formArms.map(async (a): Promise<AttendanceSummary> => {
+          try {
+            const records = await unwrapRes<any[]>(
+              api.get(`/attendance/arm/${a.armId}?startDate=${today}&endDate=${today}`),
+            );
+            const list = Array.isArray(records) ? records : [];
+            if (list.length === 0) {
               return { label: `${a.className} ${a.armName}`, armId: a.armId, present: 0, total: 0, recorded: false };
             }
-          })
-        );
-        if (!cancelled) setAttendanceSummary(summaries);
-      } catch (err) {
-        console.error('Failed to load dashboard data', err);
-        if (!cancelled) setError('Could not load your dashboard data. Please try again.');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
+            const present = list.filter((r: any) => r.present).length;
+            const total = new Set(list.map((r: any) => r.studentId)).size;
+            return { label: `${a.className} ${a.armName}`, armId: a.armId, present, total, recorded: true };
+          } catch {
+            return { label: `${a.className} ${a.armName}`, armId: a.armId, present: 0, total: 0, recorded: false };
+          }
+        }),
+      );
 
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?.id]);
+      return { assignments, timetable, attendanceSummary };
+    },
+  });
+
+  const assignments = data?.assignments ?? [];
+  const timetable = data?.timetable ?? [];
+  const attendanceSummary = data?.attendanceSummary ?? [];
 
   // ---------- Derived values ----------
   const totalClasses = new Set(assignments.map((a) => a.armId)).size;
@@ -149,7 +145,7 @@ export default function TeacherDashboard() {
     return (
       <div className="p-5 rounded-xl border border-red-300 bg-red-50 text-red-700 flex items-center gap-3">
         <ExclamationTriangleIcon className="h-6 w-6" />
-        <p>{error}</p>
+        <p>{getErrorMessage(error)}</p>
       </div>
     );
   }

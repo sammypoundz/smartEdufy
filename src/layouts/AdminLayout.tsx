@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ALL_PRIVILEGES } from '../utils/privileges';
 import { useAuth } from '../contexts/AuthContext';
@@ -34,6 +35,7 @@ import {
   XMarkIcon,
   UserIcon,
   MagnifyingGlassIcon,
+  ClipboardDocumentCheckIcon,
 } from '@heroicons/react/24/outline';
 
 // ---------- Categories ----------
@@ -88,6 +90,7 @@ const categories = [
     name: 'System',
     items: [
       { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
+      { name: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardDocumentCheckIcon, privilege: 'audit-logs' },
       { name: 'Help', href: '/admin/help', icon: QuestionMarkCircleIcon },
     ],
   },
@@ -147,10 +150,25 @@ export default function AdminLayout() {
     categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {})
   );
 
-  // ---------- Top bar info states ----------
-  const [schoolName, setSchoolName] = useState<string>('');
-  const [currentTerm, setCurrentTerm] = useState<string>('');
-
+  // ---------- Top bar info (cached query) ----------
+  const { data: topBar } = useQuery({
+    queryKey: ['topbar-info'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const [generalRes, academicRes] = await Promise.all([
+        api.get('/settings/general'),
+        api.get('/settings/academic'),
+      ]);
+      const general = generalRes.ok ? await generalRes.json() : {};
+      const academic = academicRes.ok ? await academicRes.json() : {};
+      return {
+        schoolName: (general.schoolName as string) || '',
+        currentTerm: (academic.currentTerm as string) || '',
+      };
+    },
+  });
+  const schoolName = topBar?.schoolName ?? '';
+  const currentTerm = topBar?.currentTerm ?? '';
   // ---------- Search states ----------
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<typeof allNavItems>([]);
@@ -166,29 +184,6 @@ export default function AdminLayout() {
     if (href === '/admin') return location.pathname === '/admin';
     return location.pathname.startsWith(href);
   };
-
-  // ---------- Fetch school & term info ----------
-  useEffect(() => {
-    const fetchTopBarInfo = async () => {
-      try {
-        const [generalRes, academicRes] = await Promise.all([
-          api.get('/settings/general'),
-          api.get('/settings/academic'),
-        ]);
-        if (generalRes.ok) {
-          const data = await generalRes.json();
-          setSchoolName(data.schoolName || '');
-        }
-        if (academicRes.ok) {
-          const data = await academicRes.json();
-          setCurrentTerm(data.currentTerm || '');
-        }
-      } catch (err) {
-        console.error('Failed to load top bar info', err);
-      }
-    };
-    fetchTopBarInfo();
-  }, []);
 
   // ---------- Search logic ----------
   useEffect(() => {

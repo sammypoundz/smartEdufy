@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react'; // ✅ removed 'React' import
+import { useEffect } from 'react'; // ✅ removed 'React' import
 import { useParams, useNavigate } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import { ArrowLeftIcon } from '@heroicons/react/24/outline';
 import toast from 'react-hot-toast';
 
@@ -20,35 +22,26 @@ export default function SkillPage() {
   const { token } = useAuth();
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [skill, setSkill] = useState<Skill | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+
+  const {
+    data: skill,
+    isLoading: loading,
+    error,
+  } = useQuery<Skill | null>({
+    queryKey: ['skill', id],
+    queryFn: () => unwrapRes<Skill>(api.get(`/skills/${id}`, token!)),
+    enabled: !!token && !!id,
+    retry: false,
+  });
 
   useEffect(() => {
-    const fetchSkill = async () => {
-      if (!token || !id) {
-        setLoading(false);
-        return;
-      }
-      try {
-        const res = await api.get(`/skills/${id}`, token);
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || 'Failed to fetch skill');
-        }
-        const data = await res.json();
-        setSkill(data);
-      } catch (err: any) {
-        console.error(err);
-        setError(err.message);
-        toast.error('Could not load skill details');
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (error) {
+      console.error(error);
+      toast.error('Could not load skill details');
+    }
+  }, [error]);
 
-    fetchSkill();
-  }, [id, token]);
+  const errorMessage = error instanceof Error ? error.message : null;
 
   if (loading) {
     return (
@@ -61,12 +54,12 @@ export default function SkillPage() {
     );
   }
 
-  if (error || !skill) {
+  if (errorMessage || !skill) {
     return (
       <div className={`min-h-screen flex items-center justify-center ${theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'}`}>
         <div className="text-center">
           <p className={`text-xl mb-4 ${theme === 'dark' ? 'text-red-400' : 'text-red-600'}`}>
-            {error || 'Skill not found'}
+            {errorMessage || 'Skill not found'}
           </p>
           <button
             onClick={() => navigate('/admin/skills')} // adjust the route if needed

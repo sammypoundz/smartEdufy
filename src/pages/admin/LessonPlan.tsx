@@ -1,9 +1,13 @@
 import { useState, useEffect, useRef } from 'react';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
+import { uploadWithProgress } from '../../utils/upload';
+import UploadProgress from '../../components/UploadProgress';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -68,8 +72,6 @@ export default function AdminLessonPlan() {
   const { token } = useAuth();
 
   // State
-  const [lessonPlans, setLessonPlans] = useState<LessonPlan[]>([]);
-  const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingPlan, setEditingPlan] = useState<LessonPlan | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -82,8 +84,6 @@ export default function AdminLessonPlan() {
   const buttonRefs = useRef<Map<string, HTMLButtonElement>>(new Map());
 
   // Filters
-  const [classes, setClasses] = useState<ClassOption[]>([]);
-  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedArmId, setSelectedArmId] = useState('');
   const [selectedSubjectId, setSelectedSubjectId] = useState('');
@@ -113,64 +113,49 @@ export default function AdminLessonPlan() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, [dropdownState]);
 
-  // Fetch lesson plans with filters
-  const fetchLessonPlans = async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
+  // ---------- Queries ----------
+  const lessonPlansQuery = useQuery<LessonPlan[]>({
+    queryKey: ['lesson-plans', token, selectedClassId, selectedArmId, selectedSubjectId],
+    queryFn: () => {
       const params = new URLSearchParams();
       if (selectedClassId) params.append('classId', selectedClassId);
       if (selectedArmId) params.append('armId', selectedArmId);
       if (selectedSubjectId) params.append('subjectId', selectedSubjectId);
       const url = `/lesson-plans${params.toString() ? `?${params}` : ''}`;
-      const res = await api.get(url, token);
-      if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setLessonPlans(data);
-    } catch (err: any) {
-      console.error(err);
+      return unwrapRes<LessonPlan[]>(api.get(url, token!));
+    },
+    enabled: !!token,
+    placeholderData: keepPreviousData,
+  });
+
+  const classesQuery = useQuery<ClassOption[]>({
+    queryKey: ['classes'],
+    queryFn: () => unwrapRes<ClassOption[]>(api.get('/classes', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const subjectsQuery = useQuery<SubjectOption[]>({
+    queryKey: ['subjects'],
+    queryFn: () => unwrapRes<SubjectOption[]>(api.get('/subjects', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const lessonPlans = lessonPlansQuery.data ?? [];
+  const classes = classesQuery.data ?? [];
+  const subjects = subjectsQuery.data ?? [];
+  const loading = lessonPlansQuery.isLoading;
+  const queryClient = useQueryClient();
+  const invalidateLessonPlans = () =>
+    queryClient.invalidateQueries({ queryKey: ['lesson-plans'] });
+
+  useEffect(() => {
+    if (lessonPlansQuery.error) {
+      console.error(lessonPlansQuery.error);
       toast.error('Failed to load lesson plans');
-    } finally {
-      setLoading(false);
     }
-  };
-
-  // Fetch classes and arms
-  const fetchClasses = async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/classes', token);
-      if (res.ok) {
-        const data = await res.json();
-        setClasses(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  // Fetch subjects
-  const fetchSubjects = async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/subjects', token);
-      if (res.ok) {
-        const data = await res.json();
-        setSubjects(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  };
-
-  useEffect(() => {
-    fetchLessonPlans();
-  }, [selectedClassId, selectedArmId, selectedSubjectId, token]);
-
-  useEffect(() => {
-    fetchClasses();
-    fetchSubjects();
-  }, [token]);
+  }, [lessonPlansQuery.error]);
 
   // Get arms for selected class
   const getArmsForClass = () => {
@@ -213,6 +198,8 @@ export default function AdminLessonPlan() {
     setDropdownState(null);
   };
 
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
   const handleSave = async () => {
     if (!formData.title.trim() || !formData.classId || !formData.armId || !formData.subjectId) {
       toast.error('Please fill all required fields');
@@ -234,20 +221,29 @@ export default function AdminLessonPlan() {
       form.append('status', formData.status);
       if (formData.file) form.append('file', formData.file);
 
-      let res;
+      const onProgress = setUploadProgress;
       if (editingPlan) {
-        res = await api.put(`/lesson-plans/${editingPlan.id}`, form, token);
+        if (formData.file) {
+          // New file attached — upload with progress (PUT, includes file)
+          onProgress(0);
+          await uploadWithProgress(`/lesson-plans/${editingPlan.id}`, form, token, onProgress, 'PUT');
+        } else {
+          // Text-only update
+          const res = await api.put(`/lesson-plans/${editingPlan.id}`, form, token);
+          if (!res.ok) throw new Error(await res.text());
+        }
       } else {
-        res = await api.post('/lesson-plans', form, token);
+        onProgress(0);
+        await uploadWithProgress('/lesson-plans', form, token, onProgress);
       }
-      if (!res.ok) throw new Error(await res.text());
       toast.success(editingPlan ? 'Lesson plan updated' : 'Lesson plan uploaded');
       setShowModal(false);
-      fetchLessonPlans();
+      invalidateLessonPlans();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setSubmitting(false);
+      setUploadProgress(null);
     }
   };
 
@@ -266,7 +262,7 @@ export default function AdminLessonPlan() {
       const res = await api.del(`/lesson-plans/${plan.id}`, token);
       if (!res.ok) throw new Error(await res.text());
       toast.success('Lesson plan deleted');
-      fetchLessonPlans();
+      invalidateLessonPlans();
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -678,6 +674,13 @@ export default function AdminLessonPlan() {
                     />
                     {editingPlan && !formData.file && (
                       <p className="text-xs text-gray-500 mt-1">Leave empty to keep current file</p>
+                    )}
+                    {uploadProgress !== null && (
+                      <UploadProgress
+                        progress={uploadProgress}
+                        label={formData.file ? `Uploading ${formData.file.name}` : 'Uploading…'}
+                        className="mt-2"
+                      />
                     )}
                   </div>
                 </div>

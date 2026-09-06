@@ -1,8 +1,10 @@
 import { useState, useEffect } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import {
   BellIcon,
   ShieldCheckIcon,
@@ -103,7 +105,6 @@ const categories = [
 export default function AdminSettings() {
   const { theme } = useTheme();
   const [activeCategory, setActiveCategory] = useState('general');
-  const [loading, setLoading] = useState(true);
 
   // State for each section
   const [general, setGeneral] = useState<GeneralSettings>({ schoolName: '', language: 'en' });
@@ -126,16 +127,14 @@ export default function AdminSettings() {
 
   // Term picker
   const [showTermPicker, setShowTermPicker] = useState(false);
-  const [academicYears, setAcademicYears] = useState<AcademicYear[]>([]);
-  const [loadingTerms, setLoadingTerms] = useState(false);
 
   // Loading states for saves
   const [saving, setSaving] = useState(false);
 
-  // ---------- Data fetching ----------
-  const fetchAllData = async () => {
-    setLoading(true);
-    try {
+  // ---------- Data fetching (cached queries) ----------
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => {
       const [
         generalRes,
         academicRes,
@@ -158,43 +157,59 @@ export default function AdminSettings() {
         api.get('/grading-scales'),
       ]);
 
-      if (generalRes.ok) setGeneral(await generalRes.json());
-      if (academicRes.ok) setAcademic(await academicRes.json());
-      if (bankRes.ok) setBankDetails(await bankRes.json());
-      if (notificationRes.ok) setNotificationSettings(await notificationRes.json());
-      if (securityRes.ok) setSecuritySettings(await securityRes.json());
-      if (backupRes.ok) setBackupSettings(await backupRes.json());
-      if (templatesRes.ok) setTemplates(await templatesRes.json());
-      if (promotionRes.ok) setPromotionRules(await promotionRes.json());
-      if (gradingRes.ok) setGradingScales(await gradingRes.json());
-    } catch (err) {
-      console.error('Failed to load settings:', err);
-      toast.error('Failed to load settings');
-    } finally {
-      setLoading(false);
-    }
-  };
+      const load = async <T,>(res: Response, fallback: T): Promise<T> =>
+        res.ok ? ((await res.json()) as T) : fallback;
 
-  const fetchAcademicYears = async () => {
-    setLoadingTerms(true);
-    try {
-      const res = await api.get('/academic-years');
-      if (res.ok) {
-        const data = await res.json();
-        setAcademicYears(data);
-      } else {
-        toast.error('Failed to load academic years');
-      }
-    } catch (err) {
-      toast.error('Failed to load terms');
-    } finally {
-      setLoadingTerms(false);
-    }
-  };
+      return {
+        general: await load<GeneralSettings>(generalRes, { schoolName: '', language: 'en' }),
+        academic: await load<AcademicSettings>(academicRes, { currentTerm: '', currentTermId: null, academicYearId: null }),
+        bankDetails: await load<BankDetails>(bankRes, { bankName: '', accountName: '', accountNumber: '', sortCode: '' }),
+        notificationSettings: await load<NotificationSettings>(notificationRes, { emailNotifications: true, smsNotifications: false }),
+        securitySettings: await load<SecuritySettings>(securityRes, { twoFactorAuth: true, sessionTimeout: 30 }),
+        backupSettings: await load<BackupSettings>(backupRes, { autoBackup: true }),
+        templates: await load<ReportCardTemplate[]>(templatesRes, []),
+        promotionRules: await load<PromotionRule[]>(promotionRes, []),
+        gradingScales: await load<GradingScale[]>(gradingRes, []),
+      };
+    },
+  });
+
+  const yearsQuery = useQuery<AcademicYear[]>({
+    queryKey: ['academic-years'],
+    queryFn: () => unwrapRes<AcademicYear[]>(api.get('/academic-years')),
+    enabled: false, // fetched lazily when the term picker opens
+  });
+
+  // Sync query data into local editable state
+  useEffect(() => {
+    const d = settingsQuery.data;
+    if (!d) return;
+    setGeneral(d.general);
+    setAcademic(d.academic);
+    setBankDetails(d.bankDetails);
+    setNotificationSettings(d.notificationSettings);
+    setSecuritySettings(d.securitySettings);
+    setBackupSettings(d.backupSettings);
+    setTemplates(d.templates);
+    setPromotionRules(d.promotionRules);
+    setGradingScales(d.gradingScales);
+  }, [settingsQuery.data]);
 
   useEffect(() => {
-    fetchAllData();
-  }, []);
+    if (settingsQuery.error) {
+      console.error('Failed to load settings:', settingsQuery.error);
+      toast.error('Failed to load settings');
+    }
+  }, [settingsQuery.error]);
+
+  const loading = settingsQuery.isLoading;
+  const academicYears = yearsQuery.data ?? [];
+  const loadingTerms = yearsQuery.isFetching;
+
+  const fetchAcademicYears = async () => {
+    if (yearsQuery.dataUpdatedAt === 0) await yearsQuery.refetch();
+    else yearsQuery.refetch();
+  };
 
   // ---------- Save handlers ----------
   const saveGeneral = async () => {
@@ -384,12 +399,12 @@ export default function AdminSettings() {
     if (scale) {
       setEditingScale({ ...scale });
     } else {
-      setEditingScale({ 
-        id: Date.now().toString(), 
-        minScore: null, 
-        maxScore: null, 
-        grade: '', 
-        points: null 
+      setEditingScale({
+        id: Date.now().toString(),
+        minScore: null,
+        maxScore: null,
+        grade: '',
+        points: null
       });
     }
     setShowGradingModal(true);
@@ -456,12 +471,12 @@ export default function AdminSettings() {
     if (rule) {
       setEditingPromotion({ ...rule });
     } else {
-      setEditingPromotion({ 
-        id: Date.now().toString(), 
-        fromClass: '', 
-        toClass: '', 
-        minAverage: null, 
-        isAutomatic: true 
+      setEditingPromotion({
+        id: Date.now().toString(),
+        fromClass: '',
+        toClass: '',
+        minAverage: null,
+        isAutomatic: true
       });
     }
     setShowPromotionModal(true);

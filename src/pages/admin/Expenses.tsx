@@ -1,6 +1,8 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
+import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
@@ -59,12 +61,51 @@ const getCurrentYearMonth = (): string => {
 
 export default function AdminExpensesAndBudgets() {
   const { theme } = useTheme();
+  const queryClient = useQueryClient();
 
-  // ---------- State ----------
-  const [expenses, setExpenses] = useState<Expense[]>([]);
-  const [budgets, setBudgets] = useState<Budget[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // ---------- Data Fetching ----------
+  const {
+    data: expensesData,
+    isLoading: expensesLoading,
+    error: expensesError,
+    refetch: refetchExpenses,
+  } = useQuery<Expense[]>({
+    queryKey: ['expenses'],
+    queryFn: async () => {
+      const data = await unwrap<Expense[]>(api.get('/expenses'));
+      const list = Array.isArray(data) ? data : [];
+      return list.map((exp) => ({
+        ...exp,
+        date: exp.date ? toYMD(exp.date) : '',
+      }));
+    },
+  });
+
+  const {
+    data: budgetsData,
+    isLoading: budgetsLoading,
+    error: budgetsError,
+    refetch: refetchBudgets,
+  } = useQuery<Budget[]>({
+    queryKey: ['budgets'],
+    queryFn: async () => {
+      const data = await unwrap<Budget[]>(api.get('/budgets'));
+      return Array.isArray(data) ? data : [];
+    },
+  });
+
+  const expenses = expensesData ?? [];
+  const budgets = budgetsData ?? [];
+  const loading = expensesLoading || budgetsLoading;
+  const error =
+    expensesError || budgetsError
+      ? getErrorMessage(expensesError ?? budgetsError, 'Failed to load data')
+      : null;
+  const fetchAll = () => {
+    refetchExpenses();
+    refetchBudgets();
+  };
+
   const [activeTab, setActiveTab] = useState<'expenses' | 'budgets'>('expenses');
 
   // Budget modal state
@@ -102,53 +143,7 @@ export default function AdminExpensesAndBudgets() {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [budgetMonth, setBudgetMonth] = useState(getCurrentYearMonth());
 
-  // ---------- Data Fetching ----------
-  const fetchExpenses = async () => {
-    try {
-      const res = await api.get('/expenses');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      const normalised = data.map((exp: any) => ({
-        ...exp,
-        date: exp.date ? toYMD(exp.date) : '',
-      }));
-      setExpenses(normalised);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Failed to load expenses');
-    }
-  };
-
-  const fetchBudgets = async () => {
-    try {
-      const res = await api.get('/budgets');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      setBudgets(data);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Failed to load budgets');
-    }
-  };
-
-  const fetchAll = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      await Promise.all([fetchExpenses(), fetchBudgets()]);
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load data';
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchAll();
-  }, []);
-
-  // ---------- Budget CRUD ----------
+  // ---------- Add-budget modal ----------
   const openAddBudgetModal = () => {
     setEditingBudget(null);
     setBudgetForm({
@@ -159,15 +154,19 @@ export default function AdminExpensesAndBudgets() {
     setShowBudgetModal(true);
   };
 
-  const openEditBudgetModal = (budget: Budget) => {
-    setEditingBudget(budget);
-    setBudgetForm({
-      category: budget.category,
-      amount: budget.amount.toString(),
-      monthYear: budget.monthYear,
-    });
-    setShowBudgetModal(true);
-  };
+  // ---------- Budget submit mutation ----------
+  const budgetSubmitMutation = useMutation({
+    mutationFn: async ({ editing, payload }: { editing: Budget | null; payload: Omit<Budget, 'id'> }) => {
+      if (editing) return unwrap<Budget>(api.put(`/budgets/${editing.id}`, payload));
+      return unwrap<Budget>(api.post('/budgets', payload));
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
+      toast.success(variables.editing ? 'Budget updated' : 'Budget added');
+      setShowBudgetModal(false);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Operation failed')),
+  });
 
   const handleBudgetSubmit = async () => {
     if (!budgetForm.category || !budgetForm.amount || !budgetForm.monthYear) {
@@ -192,29 +191,37 @@ export default function AdminExpensesAndBudgets() {
 
     setSubmittingBudget(true);
     try {
-      const payload = {
-        category: budgetForm.category,
-        amount: amountNum,
-        monthYear: budgetForm.monthYear,
-      };
-      if (editingBudget) {
-        const res = await api.put(`/budgets/${editingBudget.id}`, payload);
-        const updated = res.data;
-        setBudgets((prev) => prev.map((b) => (b.id === editingBudget.id ? updated : b)));
-        toast.success('Budget updated');
-      } else {
-        const res = await api.post('/budgets', payload);
-        const created = res.data;
-        setBudgets((prev) => [...prev, created]);
-        toast.success('Budget added');
-      }
-      setShowBudgetModal(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Operation failed');
+      await budgetSubmitMutation.mutateAsync({
+        editing: editingBudget,
+        payload: {
+          category: budgetForm.category,
+          amount: amountNum,
+          monthYear: budgetForm.monthYear,
+        },
+      });
     } finally {
       setSubmittingBudget(false);
     }
+  };
+
+  // ---------- Delete budget mutation ----------
+  const deleteBudgetMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/budgets/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['budgets'] });
+      toast.success('Budget deleted');
+    },
+    onError: () => toast.error('Delete failed'),
+  });
+
+  const openEditBudgetModal = (budget: Budget) => {
+    setEditingBudget(budget);
+    setBudgetForm({
+      category: budget.category,
+      amount: budget.amount.toString(),
+      monthYear: budget.monthYear,
+    });
+    setShowBudgetModal(true);
   };
 
   const handleDeleteBudget = async (budget: Budget) => {
@@ -227,13 +234,7 @@ export default function AdminExpensesAndBudgets() {
       confirmButtonText: 'Delete',
     });
     if (result.isConfirmed) {
-      try {
-        await api.delete(`/budgets/${budget.id}`);
-        setBudgets((prev) => prev.filter((b) => b.id !== budget.id));
-        toast.success('Budget deleted');
-      } catch (err) {
-        toast.error('Delete failed');
-      }
+      deleteBudgetMutation.mutate(budget.id);
     }
   };
 
@@ -255,7 +256,29 @@ export default function AdminExpensesAndBudgets() {
 
   const totalBudgetExpenses = budgetExpenses.reduce((sum, exp) => sum + exp.amount, 0);
 
-  // ---------- Expense CRUD ----------
+  // ---------- Expense mutations ----------
+  const expenseSubmitMutation = useMutation({
+    mutationFn: async ({ editing, payload }: { editing: Expense | null; payload: Omit<Expense, 'id'> }) => {
+      if (editing) return unwrap<Expense>(api.put(`/expenses/${editing.id}`, payload));
+      return unwrap<Expense>(api.post('/expenses', payload));
+    },
+    onSuccess: (_data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success(variables.editing ? 'Expense updated' : 'Expense added');
+      setShowExpenseModal(false);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Operation failed')),
+  });
+
+  const deleteExpenseMutation = useMutation({
+    mutationFn: (id: string) => api.delete(`/expenses/${id}`),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Expense deleted');
+    },
+    onError: () => toast.error('Delete failed'),
+  });
+
   const openAddExpenseModal = () => {
     setEditingExpense(null);
     setExpenseForm({
@@ -291,26 +314,15 @@ export default function AdminExpensesAndBudgets() {
 
     setSubmittingExpense(true);
     try {
-      const payload = {
-        description: expenseForm.description,
-        amount: amountNum,
-        category: expenseForm.category,
-        date: expenseForm.date,
-      };
-      if (editingExpense) {
-        const res = await api.put(`/expenses/${editingExpense.id}`, payload);
-        const updated = res.data;
-        setExpenses((prev) => prev.map((e) => (e.id === editingExpense.id ? { ...updated, date: toYMD(updated.date) } : e)));
-        toast.success('Expense updated');
-      } else {
-        const res = await api.post('/expenses', payload);
-        const created = res.data;
-        setExpenses((prev) => [...prev, { ...created, date: toYMD(created.date) }]);
-        toast.success('Expense added');
-      }
-      setShowExpenseModal(false);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Operation failed');
+      await expenseSubmitMutation.mutateAsync({
+        editing: editingExpense,
+        payload: {
+          description: expenseForm.description,
+          amount: amountNum,
+          category: expenseForm.category,
+          date: expenseForm.date,
+        },
+      });
     } finally {
       setSubmittingExpense(false);
     }
@@ -326,13 +338,7 @@ export default function AdminExpensesAndBudgets() {
       confirmButtonText: 'Delete',
     });
     if (result.isConfirmed) {
-      try {
-        await api.delete(`/expenses/${expense.id}`);
-        setExpenses((prev) => prev.filter((e) => e.id !== expense.id));
-        toast.success('Expense deleted');
-      } catch (err) {
-        toast.error('Delete failed');
-      }
+      deleteExpenseMutation.mutate(expense.id);
     }
   };
 
@@ -343,17 +349,14 @@ export default function AdminExpensesAndBudgets() {
       return;
     }
     try {
-      const res = await api.put(`/expenses/${expense.id}`, {
+      await unwrap<Expense>(api.put(`/expenses/${expense.id}`, {
         ...expense,
         category: newCategory,
-      });
-      const updated = res.data;
-      setExpenses((prev) =>
-        prev.map((e) => (e.id === expense.id ? { ...updated, date: toYMD(updated.date) } : e))
-      );
+      }));
+      queryClient.invalidateQueries({ queryKey: ['expenses'] });
       toast.success(`Moved "${expense.description}" to ${newCategory}`);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Move failed');
+    } catch (err) {
+      toast.error(getErrorMessage(err, 'Move failed'));
     }
   };
 
@@ -815,8 +818,8 @@ export default function AdminExpensesAndBudgets() {
               className="fixed inset-0 flex items-center justify-center z-50 p-4"
             >
               <div className={`w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden transition-all ${
-                theme === 'dark' 
-                  ? 'bg-gradient-to-b from-gray-900 to-gray-800' 
+                theme === 'dark'
+                  ? 'bg-gradient-to-b from-gray-900 to-gray-800'
                   : 'bg-gradient-to-b from-white to-gray-50'
               }`}>
                 <div className={`relative px-6 py-5 border-b ${theme === 'dark' ? 'border-gray-700 bg-gray-800/50' : 'border-gray-200 bg-white/50'}`}>

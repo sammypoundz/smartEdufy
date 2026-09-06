@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -29,33 +30,25 @@ const item = {
 export default function AdminAssessmentFormat() {
   const { theme } = useTheme();
   const { token } = useAuth();
-  const [formats, setFormats] = useState<AssessmentFormat[]>([]);
-  const [loading, setLoading] = useState(true);
+  const queryClient = useQueryClient();
   const [showModal, setShowModal] = useState(false);
   const [editingFormat, setEditingFormat] = useState<AssessmentFormat | null>(null);
   const [formData, setFormData] = useState({ name: '', ca: 30, exam: 70 });
   const [submitting, setSubmitting] = useState(false);
 
   // Fetch all assessment formats
-  const fetchFormats = async () => {
-    if (!token) return;
-    setLoading(true);
-    try {
+  const { data: formats = [], isLoading: loading } = useQuery<AssessmentFormat[]>({
+    queryKey: ['assessment-formats', token],
+    queryFn: async () => {
       const res = await api.get('/assessment-formats', token);
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
-      setFormats(data);
-    } catch (err: any) {
-      console.error(err);
-      toast.error('Failed to load assessment formats');
-    } finally {
-      setLoading(false);
-    }
-  };
+      return (await res.json()) as AssessmentFormat[];
+    },
+    enabled: !!token,
+  });
 
-  useEffect(() => {
-    fetchFormats();
-  }, [token]);
+  const invalidate = () =>
+    queryClient.invalidateQueries({ queryKey: ['assessment-formats'] });
 
   // Open modal for create/edit
   const openCreateModal = () => {
@@ -102,34 +95,27 @@ export default function AdminAssessmentFormat() {
     }
 
     setSubmitting(true);
-    try {
-      let res;
-      if (editingFormat) {
-        res = await api.put(`/assessment-formats/${editingFormat.id}`, {
-          name: formData.name,
-          ca: formData.ca,
-          exam: formData.exam,
-        }, token);
-        if (!res.ok) throw new Error(await res.text());
-        toast.success('Assessment format updated');
-      } else {
-        res = await api.post('/assessment-formats', {
-          name: formData.name,
-          ca: formData.ca,
-          exam: formData.exam,
-        }, token);
-        if (!res.ok) throw new Error(await res.text());
-        toast.success('Assessment format created');
-      }
-      await fetchFormats();
+    saveMutation.mutate({
+      id: editingFormat?.id,
+      body: { name: formData.name, ca: formData.ca, exam: formData.exam },
+    });
+  };
+
+  // Save (create or update)
+  const saveMutation = useMutation({
+    mutationFn: ({ id, body }: { id?: string; body: { name: string; ca: number; exam: number } }) =>
+      id
+        ? api.put(`/assessment-formats/${id}`, body, token)
+        : api.post('/assessment-formats', body, token),
+    onSuccess: (_res, vars) => {
+      toast.success(vars.id ? 'Assessment format updated' : 'Assessment format created');
+      invalidate();
       setShowModal(false);
       setEditingFormat(null);
-    } catch (err: any) {
-      toast.error(err.message);
-    } finally {
-      setSubmitting(false);
-    }
-  };
+    },
+    onError: (err: any) => toast.error(err.message),
+    onSettled: () => setSubmitting(false),
+  });
 
   // Delete with confirmation
   const handleDelete = async (format: AssessmentFormat) => {
@@ -142,15 +128,18 @@ export default function AdminAssessmentFormat() {
       confirmButtonText: 'Yes, delete',
     });
     if (!result.isConfirmed) return;
-    try {
-      const res = await api.del(`/assessment-formats/${format.id}`, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Assessment format deleted');
-      await fetchFormats();
-    } catch (err: any) {
-      toast.error(err.message);
-    }
+    deleteMutation.mutate(format.id);
   };
+
+  // Delete
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => api.del(`/assessment-formats/${id}`, token),
+    onSuccess: () => {
+      toast.success('Assessment format deleted');
+      invalidate();
+    },
+    onError: (err: any) => toast.error(err.message),
+  });
 
   if (loading) {
     return (

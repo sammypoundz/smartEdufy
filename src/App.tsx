@@ -40,6 +40,7 @@ import SkillPage from './pages/admin/SkillPage';
 import Students from './pages/admin/Students';
 import AdminSubjects from './pages/admin/AdminSubjects';
 import AdminRoles from './pages/admin/Roles';
+import AuditLogPage from './pages/admin/AuditLog';
 
 // Teacher layout
 import TeacherLayout from './layouts/TeacherLayout';
@@ -137,12 +138,17 @@ function App() {
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
+            <Route path="audit-logs" element={<AuditLogPage />} />
           </Route>
         </Route>
 
         {/* ====== TEACHER ROUTES — same privilege-based access ====== */}
         <Route element={<ProtectedRoute />}>
-          <Route path="/teacher/*" element={<TeacherLayout />}>
+          <Route path="/teacher/*" element={
+            <AcademicSessionProvider>
+              <TeacherLayout />
+            </AcademicSessionProvider>
+          }>
             {/* Dashboard routes */}
             <Route index element={<TeacherDashboard />} />
             <Route path="dashboard" element={<TeacherDashboard />} />
@@ -163,7 +169,6 @@ function App() {
             <Route path="cbt" element={<AdminCBT />} />
 
             {/* System routes */}
-            <Route path="settings" element={<AdminSettings />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />

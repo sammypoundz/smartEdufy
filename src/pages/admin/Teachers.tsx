@@ -1,9 +1,13 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
+import { exportToExcel, exportToPDF, type ExportColumn } from '../../utils/exportData';
+import ExportButtons from '../../components/ExportButtons';
 import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -26,6 +30,13 @@ interface Teacher {
   createdAt?: string;
 }
 
+const teacherExportColumns: ExportColumn<Teacher>[] = [
+  { header: 'Name', value: t => t.name || '' },
+  { header: 'Email', value: t => t.email },
+  { header: 'Phone', value: t => t.phone || '' },
+  { header: 'Status', value: t => (t.isActive ? 'Active' : 'Inactive') },
+];
+
 // Dark mode role badges (gradient + subtle background)
 const ROLE_COLORS_DARK: Record<string, string> = {
   TEACHER: 'bg-gradient-to-r from-sky-900/30 to-blue-900/30 text-sky-300 border-sky-800',
@@ -46,10 +57,7 @@ const getRoleBadgeClass = (role: string, theme: string) => {
 export default function AdminTeachers() {
   const { theme } = useTheme();
   const navigate = useNavigate();
-
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const [searchTerm, setSearchTerm] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
@@ -71,31 +79,28 @@ export default function AdminTeachers() {
   // ---------- Per‑action loading states ----------
   const [actionLoading, setActionLoading] = useState<{ [key: string]: 'toggle' | 'delete' }>({});
 
-  // ---------- Fetch Teachers ----------
-  const fetchTeachers = async () => {
-    setLoading(true);
-    setError(null);
-
-    try {
-      const res = await api.get('/teachers');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      setTeachers(data);
-    } catch (err: any) {
-      const msg =
-        err.response?.data?.error ||
-        err.message ||
-        'Failed to load teachers';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  // ---------- Fetch Teachers (cached) ----------
+  const teachersQuery = useQuery<Teacher[]>({
+    queryKey: ['teachers'],
+    queryFn: async () => {
+      const data = await unwrap(api.get<Teacher[]>('/teachers'));
+      return Array.isArray(data) ? data : [];
+    },
+  });
+  const teachers = teachersQuery.data ?? [];
+  const loading = teachersQuery.isLoading;
+  const error = teachersQuery.error
+    ? getErrorMessage(teachersQuery.error, 'Failed to load teachers')
+    : null;
 
   useEffect(() => {
-    fetchTeachers();
-  }, []);
+    if (teachersQuery.error) {
+      toast.error(getErrorMessage(teachersQuery.error, 'Failed to load teachers'));
+    }
+  }, [teachersQuery.error]);
+
+  const invalidateTeachers = () =>
+    queryClient.invalidateQueries({ queryKey: ['teachers'] });
 
   // ---------- Filter Teachers ----------
   const filteredTeachers = useMemo(() => {
@@ -191,36 +196,34 @@ export default function AdminTeachers() {
 
     setSubmitting(true);
 
-    try {
-      const payload = {
+    saveMutation.mutate({
+      id: editingTeacher?.id,
+      payload: {
         name: formData.name,
         email: formData.email,
         phone: formData.phone || undefined,
         isActive: formData.isActive,
         ...(formData.password && { password: formData.password }),
-      };
-
-      if (editingTeacher) {
-        const res = await api.put(`/teachers/${editingTeacher.id}`, payload);
-        const updated = res.data;
-        setTeachers((prev) =>
-          prev.map((t) => (t.id === editingTeacher.id ? updated : t))
-        );
-        toast.success('Teacher updated');
-      } else {
-        const res = await api.post('/teachers', payload);
-        const created = res.data;
-        setTeachers((prev) => [...prev, created]);
-        toast.success('Teacher added');
-      }
-      setShowModal(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Operation failed');
-    } finally {
-      setSubmitting(false);
-    }
+      },
+    });
   };
+
+  const saveMutation = useMutation({
+    mutationFn: ({ id, payload }: { id?: string; payload: Record<string, unknown> }) =>
+      id
+        ? unwrap(api.put<Teacher>(`/teachers/${id}`, payload))
+        : unwrap(api.post<Teacher>('/teachers', payload)),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.id ? 'Teacher updated' : 'Teacher added');
+      setShowModal(false);
+      invalidateTeachers();
+    },
+    onError: (err: unknown) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Operation failed'));
+    },
+    onSettled: () => setSubmitting(false),
+  });
 
   const handleDelete = async (teacher: Teacher) => {
     const result = await Swal.fire({
@@ -236,21 +239,23 @@ export default function AdminTeachers() {
 
     // Set loading state for this teacher's delete button
     setActionLoading((prev) => ({ ...prev, [teacher.id]: 'delete' }));
+    deleteMutation.mutate(teacher.id);
+  };
 
-    try {
-      await api.delete(`/teachers/${teacher.id}`);
-      setTeachers((prev) => prev.filter((t) => t.id !== teacher.id));
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => unwrap(api.delete(`/teachers/${id}`)),
+    onSuccess: () => {
       toast.success('Teacher deleted');
-    } catch {
-      toast.error('Delete failed');
-    } finally {
+      invalidateTeachers();
+    },
+    onError: () => toast.error('Delete failed'),
+    onSettled: (_d, _e, id) =>
       setActionLoading((prev) => {
         const newState = { ...prev };
-        delete newState[teacher.id];
+        delete newState[id as string];
         return newState;
-      });
-    }
-  };
+      }),
+  });
 
   // Toggle status with loading state
   const toggleTeacherStatus = async (teacher: Teacher) => {
@@ -258,27 +263,27 @@ export default function AdminTeachers() {
 
     // Set loading state for this teacher's toggle button
     setActionLoading((prev) => ({ ...prev, [teacher.id]: 'toggle' }));
+    toggleMutation.mutate({ id: teacher.id, isActive: newStatus });
+  };
 
-    try {
-      const res = await api.patch(`/teachers/${teacher.id}`, {
-        isActive: newStatus,
-      });
-      const updated = res.data;
-      setTeachers((prev) =>
-        prev.map((t) => (t.id === teacher.id ? updated : t))
-      );
-      toast.success(`Teacher ${newStatus ? 'activated' : 'deactivated'}`);
-    } catch (err) {
+  const toggleMutation = useMutation({
+    mutationFn: ({ id, isActive }: { id: string; isActive: boolean }) =>
+      unwrap(api.patch<Teacher>(`/teachers/${id}`, { isActive })),
+    onSuccess: (_d, vars) => {
+      toast.success(`Teacher ${vars.isActive ? 'activated' : 'deactivated'}`);
+      invalidateTeachers();
+    },
+    onError: (err) => {
       console.error(err);
       toast.error('Status update failed');
-    } finally {
+    },
+    onSettled: (_d, _e, vars) =>
       setActionLoading((prev) => {
         const newState = { ...prev };
-        delete newState[teacher.id];
+        delete newState[vars.id];
         return newState;
-      });
-    }
-  };
+      }),
+  });
 
   // ---------- Loading ----------
   if (loading) {
@@ -305,7 +310,7 @@ export default function AdminTeachers() {
         <div className="text-center text-red-600 dark:text-red-400">
           <p>{error}</p>
           <button
-            onClick={fetchTeachers}
+            onClick={() => teachersQuery.refetch()}
             className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg"
           >
             Retry
@@ -350,6 +355,11 @@ export default function AdminTeachers() {
                 Manage all teachers in the system. View, edit, or add new teachers.
               </p>
             </div>
+            <ExportButtons
+              disabled={teachers.length === 0}
+              onExcel={() => exportToExcel('teachers', teacherExportColumns, teachers)}
+              onPDF={() => exportToPDF('teachers', 'Teacher List', teacherExportColumns, teachers)}
+            />
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}

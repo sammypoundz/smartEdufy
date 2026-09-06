@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
+import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { unwrapRes, getErrorMessage } from '../../hooks/queryHelpers';
 import {
   BookOpenIcon,
   AcademicCapIcon,
@@ -15,43 +16,31 @@ export default function TeacherSubjects() {
   const { token } = useAuth();
   const isDark = theme === 'dark';
 
-  const [subjects, setSubjects] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const fetchSubjects = async () => {
-      try {
-        const res = await api.get('/teachers/me', token);
-        if (res.ok) {
-          const data = await res.json();
-          // The API returns assignments as subjectArms[] (subject + arm per row).
-          // Deduplicate by subject id (a teacher may teach the same subject in multiple arms).
-          const assignments: any[] = data.subjectArms || [];
-          const unique = new Map<string, any>();
-          for (const sa of assignments) {
-            if (sa.subject && !unique.has(sa.subject.id)) {
-              unique.set(sa.subject.id, {
-                ...sa.subject,
-                arms: assignments
-                  .filter((a: any) => a.subject?.id === sa.subject.id && a.arm)
-                  .map((a: any) => a.arm),
-              });
-            }
-          }
-          setSubjects(Array.from(unique.values()));
-        } else {
-          setError('Failed to load your subjects. Please try again.');
+  const { data: subjects = [], isLoading: loading, error } = useQuery({
+    queryKey: ['teacher-subjects', token],
+    queryFn: async () => {
+      const res = await api.get('/teachers/me', token);
+      const data = await unwrapRes<any>(res);
+      // The API returns assignments as subjectArms[] (subject + arm per row).
+      // Deduplicate by subject id (a teacher may teach the same subject in multiple arms).
+      const assignments: any[] = data.subjectArms || [];
+      const unique = new Map<string, any>();
+      for (const sa of assignments) {
+        if (sa.subject && !unique.has(sa.subject.id)) {
+          unique.set(sa.subject.id, {
+            ...sa.subject,
+            arms: assignments
+              .filter((a: any) => a.subject?.id === sa.subject.id && a.arm)
+              .map((a: any) => a.arm),
+          });
         }
-      } catch (err) {
-        console.error(err);
-        setError('Failed to load your subjects. Please try again.');
-      } finally {
-        setLoading(false);
       }
-    };
-    fetchSubjects();
-  }, [token]);
+      return Array.from(unique.values());
+    },
+  });
+  const errText = error
+    ? 'Failed to load your subjects. Please try again.'
+    : null;
 
   if (loading) {
     return (
@@ -66,14 +55,14 @@ export default function TeacherSubjects() {
     );
   }
 
-  if (error) {
+  if (errText) {
     return (
       <div className="p-6">
         <div className={`max-w-md mx-auto mt-10 p-5 rounded-xl border text-center ${
           isDark ? 'bg-[#111827]/80 border-gray-800 text-red-400' : 'bg-white border-red-200 text-red-600'
         }`}>
           <ExclamationTriangleIcon className="w-8 h-8 mx-auto mb-2" />
-          {error}
+          {getErrorMessage(error, 'Failed to load your subjects. Please try again.')}
         </div>
       </div>
     );

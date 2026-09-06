@@ -55,10 +55,16 @@ export default function ProtectedRoute({ allowedRoles, privilege }: ProtectedRou
 
   // Privilege-route fallback: current path mapped to a privilege the user holds.
   const path = location.pathname;
+  // Admin-only privileges: even an explicit grant must not open these pages
+  // for non-admin users (Settings, Audit Logs).
+  const ADMIN_ONLY_PRIVILEGES = ['settings', 'audit-logs'];
   for (const [key, routes] of Object.entries(PRIVILEGE_ROUTES)) {
     const pathMatches = routes.some(r => path === r || path.startsWith(r + '/'));
     if (!pathMatches) continue;
     if (isAdminPath) {
+      if (ADMIN_ONLY_PRIVILEGES.includes(key) && !isAdminUser) {
+        return <Navigate to="/" replace />;
+      }
       // Admin panel: explicit grant or admin/principal role required.
       if (isAdminUser || explicitGrants.includes(key)) return pass();
     } else if (privileges.includes(key)) {

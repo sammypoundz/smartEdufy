@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 import {
@@ -60,91 +62,49 @@ export default function AdminClasses() {
   const { theme } = useTheme();
   const { token, user } = useAuth();
   const navigate = useNavigate();
-  const [classes, setClasses] = useState<ClassType[]>([]);
+  const queryClient = useQueryClient();
   const [selectedClass, setSelectedClass] = useState<ClassType | null>(null);
   const [isPanelOpen, setIsPanelOpen] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [teachers, setTeachers] = useState<Teacher[]>([]);
-  const [teachersLoading, setTeachersLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [currentArmIndex, setCurrentArmIndex] = useState<number | null>(null);
 
-  // ----- Teacher modal search & pagination -----
+  // Check if user is admin
+  const isAdmin = user?.role === 'ADMIN';
+
+  // ---------- Queries ----------
+  const classesQuery = useQuery<ClassType[]>({
+    queryKey: ['admin-classes', isAdmin],
+    queryFn: () =>
+      unwrapRes<ClassType[]>(
+        api.get(isAdmin ? '/classes' : '/classes/teacher/classes', token!),
+      ),
+    enabled: !!token,
+  });
+  const classes = classesQuery.data ?? [];
+  const loading = classesQuery.isLoading;
+  const error = classesQuery.error instanceof Error ? classesQuery.error.message : null;
+
+  const teachersQuery = useQuery<Teacher[]>({
+    queryKey: ['teachers'],
+    queryFn: () => unwrapRes<Teacher[]>(api.get('/teachers', token!)),
+    enabled: !!token && isAdmin,
+    staleTime: 5 * 60 * 1000,
+  });
+  const teachers = teachersQuery.data ?? [];
+  const teachersLoading = teachersQuery.isLoading;
+
+  // ----- Teacher modal search & pagination state -----
   const [teacherSearch, setTeacherSearch] = useState('');
   const [teacherPage, setTeacherPage] = useState(1);
   const pageSize = 5;
 
-  // Check if user is admin
-  const isAdmin = user?.role === 'ADMIN';
-
-  const fetchTeachers = async () => {
-    if (!token || !isAdmin) return;
-    setTeachersLoading(true);
-    try {
-      const res = await api.get('/teachers', token);
-      if (res.ok) {
-        const data = await res.json();
-        setTeachers(data);
-        console.log('✅ Teachers loaded:', data.length);
-      } else {
-        console.error('Failed to fetch teachers', await res.text());
-        setTeachers([]);
-      }
-    } catch (err) {
-      console.error('Failed to fetch teachers', err);
-      setTeachers([]);
-    } finally {
-      setTeachersLoading(false);
-    }
-  };
-
-  const fetchClasses = async () => {
-    if (!token) return;
-    setLoading(true);
-    setError(null);
-    try {
-      let res;
-
-      if (isAdmin) {
-        // Admin fetches all classes
-        res = await api.get('/classes', token);
-      } else {
-        // Teacher fetches only their assigned classes (class-teacher arms
-        // + arms where they teach subjects) via a dedicated endpoint
-        res = await api.get('/classes/teacher/classes', token);
-      }
-
-      if (!res) {
-        setError('No response from server');
-        setLoading(false);
-        return;
-      }
-
-      if (!res.ok) {
-        const errorText = await res.text();
-        throw new Error(`HTTP ${res.status}: ${errorText}`);
-      }
-      const data = await res.json();
-      console.log('✅ Classes loaded:', data.length);
-      setClasses(data);
-    } catch (err: any) {
-      console.error('❌ Failed to fetch classes:', err);
-      setError(err.message || 'Could not load classes. Please check your network connection.');
-      toast.error('Could not load classes');
-    } finally {
-      setLoading(false);
-    }
-  };
-
   useEffect(() => {
-    fetchClasses();
-    if (isAdmin) {
-      fetchTeachers();
+    if (classesQuery.error) {
+      toast.error('Could not load classes');
     }
-  }, [token, isAdmin]);
+  }, [classesQuery.error]);
 
   // Filter & paginate teachers (only for admin)
   const filteredTeachers = useMemo(() => {
@@ -225,6 +185,87 @@ export default function AdminClasses() {
     setSelectedClass(null);
   };
 
+  const saveMutation = useMutation({
+    mutationFn: async () => {
+      if (selectedClass!.id) {
+        const classRes = await api.put(`/classes/${selectedClass!.id}`, { name: selectedClass!.name }, token);
+        if (!classRes.ok) throw new Error(`Failed to update class: ${await classRes.text()}`);
+
+        const currentClass = classes.find(c => c.id === selectedClass!.id);
+        const currentArms = currentClass?.arms || [];
+
+        for (const arm of selectedClass!.arms) {
+          const existingArm = currentArms.find(a => a.id === arm.id);
+          if (existingArm) {
+            const patchRes = await api.patch(`/arms/${arm.id}`, {
+              letter: arm.letter,
+              alias: arm.alias,
+              teacherId: arm.teacherId,
+            }, token);
+            if (!patchRes.ok) throw new Error(`Failed to update arm ${arm.letter}: ${await patchRes.text()}`);
+          } else {
+            const createRes = await api.post('/arms', {
+              letter: arm.letter,
+              alias: arm.alias,
+              classId: selectedClass!.id,
+              teacherId: arm.teacherId,
+            }, token);
+            if (!createRes.ok) throw new Error(`Failed to create arm ${arm.letter}: ${await createRes.text()}`);
+          }
+        }
+
+        const toDelete = currentArms.filter(a => !selectedClass!.arms.some(na => na.id === a.id));
+        for (const arm of toDelete) {
+          const delRes = await api.del(`/arms/${arm.id}`, token);
+          if (!delRes.ok) console.warn(`Failed to delete arm ${arm.id}: ${await delRes.text()}`);
+        }
+      } else {
+        const classRes = await api.post('/classes', { name: selectedClass!.name }, token);
+        if (!classRes.ok) throw new Error(`Failed to create class: ${await classRes.text()}`);
+        const newClass = await classRes.json();
+
+        for (const arm of selectedClass!.arms) {
+          const armRes = await api.post('/arms', {
+            letter: arm.letter,
+            alias: arm.alias,
+            classId: newClass.id,
+            teacherId: arm.teacherId,
+          }, token);
+          if (!armRes.ok) throw new Error(`Failed to create arm ${arm.letter}: ${await armRes.text()}`);
+        }
+      }
+    },
+    onSuccess: () => {
+      toast.success(selectedClass?.id ? 'Class updated' : 'New class created');
+      queryClient.invalidateQueries({ queryKey: ['admin-classes'] });
+      closePanel();
+    },
+    onError: (err: Error) => {
+      console.error(err);
+      toast.error(err.message || 'Failed to save class');
+    },
+    onSettled: () => setIsSaving(false),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => {
+      return api.del(`/classes/${id}`, token).then(async (res) => {
+        if (!res.ok) {
+          const errorText = await res.text();
+          throw new Error(errorText || `HTTP ${res.status}`);
+        }
+      });
+    },
+    onSuccess: () => {
+      toast.success('Class deleted');
+      queryClient.invalidateQueries({ queryKey: ['admin-classes'] });
+    },
+    onError: (err: Error) => {
+      console.error(err);
+      toast.error(`Delete failed: ${err.message}`);
+    },
+    onSettled: () => setIsDeleting(null),
+  });
+
   const saveClass = async () => {
     if (!selectedClass) {
       toast.error('No class selected');
@@ -242,65 +283,7 @@ export default function AdminClasses() {
     }
 
     setIsSaving(true);
-    try {
-      if (selectedClass.id) {
-        const classRes = await api.put(`/classes/${selectedClass.id}`, { name: selectedClass.name }, token);
-        if (!classRes.ok) throw new Error(`Failed to update class: ${await classRes.text()}`);
-
-        const currentClass = classes.find(c => c.id === selectedClass.id);
-        const currentArms = currentClass?.arms || [];
-
-        for (const arm of selectedClass.arms) {
-          const existingArm = currentArms.find(a => a.id === arm.id);
-          if (existingArm) {
-            const patchRes = await api.patch(`/arms/${arm.id}`, {
-              letter: arm.letter,
-              alias: arm.alias,
-              teacherId: arm.teacherId,
-            }, token);
-            if (!patchRes.ok) throw new Error(`Failed to update arm ${arm.letter}: ${await patchRes.text()}`);
-          } else {
-            const createRes = await api.post('/arms', {
-              letter: arm.letter,
-              alias: arm.alias,
-              classId: selectedClass.id,
-              teacherId: arm.teacherId,
-            }, token);
-            if (!createRes.ok) throw new Error(`Failed to create arm ${arm.letter}: ${await createRes.text()}`);
-          }
-        }
-
-        const toDelete = currentArms.filter(a => !selectedClass.arms.some(na => na.id === a.id));
-        for (const arm of toDelete) {
-          const delRes = await api.del(`/arms/${arm.id}`, token);
-          if (!delRes.ok) console.warn(`Failed to delete arm ${arm.id}: ${await delRes.text()}`);
-        }
-
-        toast.success('Class updated');
-      } else {
-        const classRes = await api.post('/classes', { name: selectedClass.name }, token);
-        if (!classRes.ok) throw new Error(`Failed to create class: ${await classRes.text()}`);
-        const newClass = await classRes.json();
-
-        for (const arm of selectedClass.arms) {
-          const armRes = await api.post('/arms', {
-            letter: arm.letter,
-            alias: arm.alias,
-            classId: newClass.id,
-            teacherId: arm.teacherId,
-          }, token);
-          if (!armRes.ok) throw new Error(`Failed to create arm ${arm.letter}: ${await armRes.text()}`);
-        }
-        toast.success('New class created');
-      }
-      await fetchClasses();
-      closePanel();
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.message || 'Failed to save class');
-    } finally {
-      setIsSaving(false);
-    }
+    saveMutation.mutate();
   };
 
   const deleteClass = async (id: string, e: React.MouseEvent) => {
@@ -325,20 +308,7 @@ export default function AdminClasses() {
     });
     if (result.isConfirmed) {
       setIsDeleting(id);
-      try {
-        const res = await api.del(`/classes/${id}`, token);
-        if (!res.ok) {
-          const errorText = await res.text();
-          throw new Error(errorText || `HTTP ${res.status}`);
-        }
-        toast.success('Class deleted');
-        await fetchClasses();
-      } catch (err: any) {
-        console.error(err);
-        toast.error(`Delete failed: ${err.message}`);
-      } finally {
-        setIsDeleting(null);
-      }
+      deleteMutation.mutate(id);
     }
   };
 
@@ -440,7 +410,7 @@ export default function AdminClasses() {
           <h3 className={`text-xl font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Error</h3>
           <p className={`mb-6 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>{error}</p>
           <button
-            onClick={() => fetchClasses()}
+            onClick={() => classesQuery.refetch()}
             className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
           >
             Retry

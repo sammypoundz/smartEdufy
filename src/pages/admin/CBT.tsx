@@ -1,9 +1,13 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { unwrapRes } from '../../hooks/queryHelpers';
 import { SERVER_URL } from '../../config/server';
+import { uploadWithProgress } from '../../utils/upload';
+import UploadProgress from '../../components/UploadProgress';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -140,9 +144,6 @@ export default function AdminCBT() {
 
   // ---------- Existing state ----------
 
-  const [tests, setTests] = useState<Test[]>([]);
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [editingTest, setEditingTest] = useState<Test | null>(null);
@@ -171,6 +172,9 @@ export default function AdminCBT() {
     attachmentUrl: '',
     attachmentFile: null as File | null,
   });
+
+  // Attachment upload progress (0–100, null = no upload running)
+  const [attachmentProgress, setAttachmentProgress] = useState<number | null>(null);
 
   // Test form state
   const [formData, setFormData] = useState({
@@ -247,68 +251,54 @@ export default function AdminCBT() {
   // DATA FETCHING
   // ============================================================
 
-  const fetchTests = useCallback(async () => {
-    if (!token) return;
+  // ---------- Queries ----------
+  const queryClient = useQueryClient();
 
-    setLoading(true);
+  const testsQuery = useQuery<Test[]>({
+    queryKey: ['cbt-tests', token],
+    queryFn: async () => {
+      const data = await unwrapRes<Test[]>(api.get('/tests', token!));
+      return data.map((test: Test) => ({
+        ...test,
+        subjects: test.subjects || [],
+      }));
+    },
+    enabled: !!token,
+  });
 
-    try {
-      const res = await api.get('/tests', token);
+  const classesQuery = useQuery<Class[]>({
+    queryKey: ['classes'],
+    queryFn: () => unwrapRes<Class[]>(api.get('/classes', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
 
-      if (res.ok) {
-        let data = await res.json();
+  const subjectsQuery = useQuery<Subject[]>({
+    queryKey: ['subjects'],
+    queryFn: () => unwrapRes<Subject[]>(api.get('/subjects', token!)),
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+  });
 
-        data = data.map((test: Test) => ({
-          ...test,
-          subjects: test.subjects || [],
-        }));
+  const tests = testsQuery.data ?? [];
+  const classes = classesQuery.data ?? [];
+  const subjects = subjectsQuery.data ?? [];
 
-        setTests(data);
-      } else {
-        toast.error('Failed to load tests');
-      }
-    } catch (err) {
-      console.error(err);
+  useEffect(() => {
+    if (testsQuery.data) setLoading(false);
+  }, [testsQuery.data]);
+
+  useEffect(() => {
+    if (testsQuery.error) {
+      console.error(testsQuery.error);
       toast.error('Could not load tests');
-    } finally {
-      setLoading(false);
     }
-  }, [token]);
+  }, [testsQuery.error]);
 
-  const fetchClasses = useCallback(async () => {
-    if (!token) return;
-
-    try {
-      const res = await api.get('/classes', token);
-
-      if (res.ok) {
-        const data = await res.json();
-        setClasses(data);
-      }
-    } catch (err) {
-      console.error(err);
-    }
-  }, [token]);
-
-  const fetchSubjects = useCallback(async () => {
-    if (!token) return;
-
-    setSubjectsError(false);
-
-    try {
-      const res = await api.get('/subjects', token);
-
-      if (res.ok) {
-        const data = await res.json();
-        setSubjects(data);
-      } else {
-        setSubjectsError(true);
-      }
-    } catch (err) {
-      console.error(err);
-      setSubjectsError(true);
-    }
-  }, [token]);
+  useEffect(() => {
+    if (subjectsQuery.error) setSubjectsError(true);
+    else setSubjectsError(false);
+  }, [subjectsQuery.error]);
 
   const fetchQuestions = async (testId: string) => {
     setLoadingQuestions(true);
@@ -332,16 +322,6 @@ export default function AdminCBT() {
       setLoadingQuestions(false);
     }
   };
-
-  useEffect(() => {
-    fetchTests();
-    fetchClasses();
-    fetchSubjects();
-  }, [
-    fetchTests,
-    fetchClasses,
-    fetchSubjects,
-  ]);
 
   const getArmsForClass = (classId: string) => {
     const cls = classes.find(
@@ -442,7 +422,9 @@ export default function AdminCBT() {
 
       setShowModal(false);
 
-      fetchTests();
+      queryClient.invalidateQueries({
+        queryKey: ['cbt-tests', token],
+      });
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -476,7 +458,9 @@ export default function AdminCBT() {
 
       toast.success('Test deleted');
 
-      fetchTests();
+      queryClient.invalidateQueries({
+        queryKey: ['cbt-tests', token],
+      });
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -509,7 +493,9 @@ export default function AdminCBT() {
         }`
       );
 
-      fetchTests();
+      queryClient.invalidateQueries({
+        queryKey: ['cbt-tests', token],
+      });
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -519,7 +505,7 @@ export default function AdminCBT() {
     setOpenDropdownId(null);
 
     const url =
-      `${window.location.origin}/student/test/${testId}`;
+      `${window.location.origin}/student/test?testId=${testId}`;
 
     navigator.clipboard.writeText(url);
 
@@ -541,7 +527,7 @@ export default function AdminCBT() {
       subjects.length === 0 &&
       !subjectsError
     ) {
-      await fetchSubjects();
+      await subjectsQuery.refetch();
     }
 
     const testSubjects = subjects.filter(
@@ -676,26 +662,15 @@ export default function AdminCBT() {
       file
     );
 
+    setAttachmentProgress(0);
+
     try {
-      const response = await fetch(
-        `${SERVER_URL}/questions/upload`,
-        {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        }
+      const data = await uploadWithProgress(
+        '/questions/upload',
+        formData,
+        token,
+        setAttachmentProgress
       );
-
-      if (!response.ok) {
-        throw new Error(
-          await response.text()
-        );
-      }
-
-      const data =
-        await response.json();
 
       let fullUrl =
         data.attachmentUrl;
@@ -727,6 +702,8 @@ export default function AdminCBT() {
       );
 
       console.error(err);
+    } finally {
+      setAttachmentProgress(null);
     }
   };
 
@@ -838,16 +815,14 @@ export default function AdminCBT() {
             ? questions.length
             : questions.length + 1;
 
-        setTests(prev =>
-          prev.map(t =>
-            t.id === selectedTest.id
-              ? {
-                  ...t,
-                  questionCount:
-                    newCount,
-                }
-              : t
-          )
+        queryClient.setQueryData<Test[]>(
+          ['cbt-tests', token],
+          (prev) =>
+            (prev ?? []).map((t) =>
+              t.id === selectedTest.id
+                ? { ...t, questionCount: newCount }
+                : t
+            )
         );
 
         resetQuestionForm();
@@ -900,18 +875,20 @@ export default function AdminCBT() {
           selectedTest!.id
         );
 
-        setTests(prev =>
-          prev.map(t =>
-            t.id ===
-            selectedTest!.id
-              ? {
-                  ...t,
-                  questionCount:
-                    t.questionCount -
-                    1,
-                }
-              : t
-          )
+        queryClient.setQueryData<Test[]>(
+          ['cbt-tests', token],
+          (prev) =>
+            (prev ?? []).map((t) =>
+              t.id ===
+              selectedTest!.id
+                ? {
+                    ...t,
+                    questionCount:
+                      t.questionCount -
+                      1,
+                  }
+                : t
+            )
         );
       } catch (err: any) {
         toast.error(
@@ -1053,67 +1030,50 @@ export default function AdminCBT() {
   ] = useState(false);
 
   const [
-    academicYears,
-    setAcademicYears,
-  ] = useState<
-    {
-      id: string;
-      name: string;
-    }[]
-  >([]);
-
-  const [
     exportForm,
     setExportForm,
   ] = useState({
     term: 'First Term',
     academicYearId: '',
     resultType:
-      'exam' as 'ca' | 'exam',
+      'ca1' as 'ca1' | 'ca2' | 'exam',
   });
 
-  const fetchAcademicYears =
-    useCallback(
-      async () => {
-        if (!token) return;
+  const academicYearsQuery = useQuery<
+    {
+      id: string;
+      name: string;
+    }[]
+  >({
+    queryKey: ['cbt-academic-years', token],
+    enabled: false,
+    queryFn: async () => {
+      const res = await api.get('/academic-years', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
 
-        try {
-          const res =
-            await api.get(
-              '/academic-years',
-              token
-            );
+  const academicYears = academicYearsQuery.data ?? [];
 
-          if (res.ok) {
-            const data =
-              await res.json();
+  useEffect(() => {
+    const years = academicYearsQuery.data;
+    if (years && years.length > 0 && !exportForm.academicYearId) {
+      setExportForm(prev => ({
+        ...prev,
+        academicYearId: years[0].id,
+      }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [academicYearsQuery.data]);
 
-            setAcademicYears(
-              data
-            );
-
-            if (
-              data.length > 0 &&
-              !exportForm.academicYearId
-            ) {
-              setExportForm(
-                prev => ({
-                  ...prev,
-                  academicYearId:
-                    data[0].id,
-                })
-              );
-            }
-          }
-        } catch (err) {
-          console.error(err);
-        }
-      },
-      [
-        token,
-        exportForm.academicYearId,
-      ]
-    );
+  const fetchAcademicYears = useCallback(
+    async () => {
+      await academicYearsQuery.refetch();
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [academicYearsQuery.refetch]
+  );
 
   const fetchTestAttempts =
     async (
@@ -1215,7 +1175,7 @@ export default function AdminCBT() {
         }
 
         toast.success(
-          `Results pushed to ${exportForm.resultType.toUpperCase()} successfully`
+          `Results pushed successfully`
         );
 
         setShowAnalyticsModal(
@@ -2650,6 +2610,14 @@ export default function AdminCBT() {
 
                           </div>
 
+                          {attachmentProgress !== null && (
+                            <UploadProgress
+                              progress={attachmentProgress}
+                              label="Uploading attachment…"
+                              className="mt-2"
+                            />
+                          )}
+
                           <input
                             id="image-upload"
                             type="file"
@@ -3566,7 +3534,8 @@ export default function AdminCBT() {
                                         e
                                           .target
                                           .value as
-                                          | 'ca'
+                                          | 'ca1'
+                                          | 'ca2'
                                           | 'exam',
                                     })
                                   )
@@ -3577,8 +3546,12 @@ export default function AdminCBT() {
                                 className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${inputClasses}`}
                               >
 
-                                <option value="ca">
-                                  CA Score
+                                <option value="ca1">
+                                  First CA
+                                </option>
+
+                                <option value="ca2">
+                                  Second CA
                                 </option>
 
                                 <option value="exam">

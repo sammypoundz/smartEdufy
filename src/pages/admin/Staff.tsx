@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -23,10 +25,13 @@ import {
   CurrencyDollarIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+import UploadProgress from '../../components/UploadProgress';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import * as XLSX from 'xlsx';
+import { exportToExcel, exportToPDF, type ExportColumn } from '../../utils/exportData';
+import ExportButtons from '../../components/ExportButtons';
 
 // ---------- Types ----------
 interface SubjectAssignment {
@@ -45,6 +50,16 @@ interface StaffMember {
   isActive: boolean;
   createdAt?: string;
 }
+
+const staffExportColumns: ExportColumn<StaffMember>[] = [
+  { header: 'Name', value: s => s.name },
+  { header: 'Email', value: s => s.email },
+  { header: 'Role', value: s => s.role },
+  { header: 'Teacher Type', value: s => s.teacherType || '' },
+  { header: 'Assigned Class', value: s => s.assignedClass || '' },
+  { header: 'Subjects', value: s => s.assignedSubjects?.map(x => x.subject).join(', ') || '' },
+  { header: 'Status', value: s => (s.isActive ? 'Active' : 'Inactive') },
+];
 
 interface StaffFormData {
   name: string;
@@ -430,9 +445,10 @@ interface BulkModalProps {
   onUpload: (file: File) => Promise<void>;
   theme: string;
   loading: boolean;
+  uploadProgress?: number | null;
 }
 
-const BulkModal = ({ onClose, onUpload, theme, loading }: BulkModalProps) => {
+const BulkModal = ({ onClose, onUpload, theme, loading, uploadProgress = null }: BulkModalProps) => {
   const [file, setFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -515,6 +531,13 @@ const BulkModal = ({ onClose, onUpload, theme, loading }: BulkModalProps) => {
                 Selected: {file.name}
               </p>
             )}
+            {uploadProgress !== null && (
+              <UploadProgress
+                progress={uploadProgress}
+                label={`Uploading ${file?.name || 'file'}…`}
+                className="mt-3 w-full"
+              />
+            )}
           </div>
         </div>
 
@@ -546,10 +569,7 @@ const BulkModal = ({ onClose, onUpload, theme, loading }: BulkModalProps) => {
 // ---------- Main Component ----------
 export default function AdminStaff() {
   const { theme } = useTheme();
-
-  const [staffList, setStaffList] = useState<StaffMember[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('All');
@@ -560,40 +580,159 @@ export default function AdminStaff() {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkUploadProgress, setBulkUploadProgress] = useState<number | null>(null);
 
   const [submitting, setSubmitting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [generatingLink, setGeneratingLink] = useState(false);
 
-  // Dynamic options from DB
-  const [armOptions, setArmOptions] = useState<{ display: string; className: string }[]>([]);
-  const [subjectsList, setSubjectsList] = useState<string[]>([]);
-
-  // ---------- Fetch Options (arms & subjects) ----------
-  const fetchOptions = async () => {
-    try {
-      const [armsRes, subjectsRes] = await Promise.all([
-        api.get('/arms'),
-        api.get('/subjects'),
+  // ---------- Queries ----------
+  // Staff list: merge /staff (assignments + roles) with /teachers (profiles)
+  const staffQuery = useQuery<StaffMember[]>({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const [staffList, teachersList] = await Promise.all([
+        unwrap<any[]>(api.get('/staff')),
+        unwrap<any[]>(api.get('/teachers')),
       ]);
 
-      const arms = armsRes.data || [];
-      const armOpts = arms.map((arm: any) => {
+      const staffMap = new Map<string, any>();
+      staffList.forEach((item) => {
+        staffMap.set(item.email, {
+          teacherType: item.teacherType || null,
+          assignedClass: item.assignedClass || null,
+          assignedSubjects: item.assignedSubjects || [],
+          isActive: item.isActive ?? true,
+          role: roleDisplayMap[item.role] || item.role,
+          id: item.id,
+        });
+      });
+
+      const mergedTeachers: StaffMember[] = teachersList.map((teacher: any) => {
+        const staffInfo = staffMap.get(teacher.email);
+        return {
+          id: staffInfo?.id || teacher.id,
+          name: teacher.name || '',
+          email: teacher.email,
+          role: staffInfo?.role || 'Teacher',
+          teacherType: staffInfo?.teacherType || null,
+          assignedClass: staffInfo?.assignedClass || null,
+          assignedSubjects: staffInfo?.assignedSubjects || [],
+          isActive: staffInfo?.isActive ?? true,
+          createdAt: teacher.createdAt,
+        };
+      });
+
+      const nonTeacherStaff: StaffMember[] = staffList
+        .filter((item) => item.role !== 'TEACHER')
+        .map((item) => ({
+          id: item.id,
+          name: item.name || '',
+          email: item.email,
+          role: roleDisplayMap[item.role] || item.role,
+          teacherType: null,
+          assignedClass: null,
+          assignedSubjects: [],
+          isActive: item.isActive ?? true,
+          createdAt: item.createdAt,
+        }));
+
+      const combinedMap = new Map<string, StaffMember>();
+      mergedTeachers.forEach((t) => combinedMap.set(t.email, t));
+      nonTeacherStaff.forEach((s) => {
+        if (!combinedMap.has(s.email)) combinedMap.set(s.email, s);
+      });
+
+      return Array.from(combinedMap.values());
+    },
+  });
+
+  // Dropdown options: arms & subjects
+  const optionsQuery = useQuery<{ armOptions: { display: string; className: string }[]; subjectsList: string[] }>({
+    queryKey: ['staff-options'],
+    queryFn: async () => {
+      const [arms, subjects] = await Promise.all([
+        unwrap<any[]>(api.get('/arms')),
+        unwrap<any[]>(api.get('/subjects')),
+      ]);
+      const armOpts = (arms || []).map((arm) => {
         const className = arm.class?.name || arm.className || 'Unknown Class';
         return {
           display: `${className} ${formatArm(arm)}`.trim(),
-          className: className,
+          className,
         };
       });
-      setArmOptions(armOpts);
+      return { armOptions: armOpts, subjectsList: (subjects || []).map((s: any) => s.name) };
+    },
+    staleTime: 5 * 60 * 1000,
+  });
 
-      const subjectNames = subjectsRes.data.map((s: any) => s.name);
-      setSubjectsList(subjectNames);
-    } catch (err) {
-      console.error('Failed to fetch options for dropdowns', err);
-      toast.error('Could not load classes/subjects');
-    }
-  };
+  const staffList = staffQuery.data ?? [];
+  const loading = staffQuery.isLoading;
+  const error = staffQuery.error ? getErrorMessage(staffQuery.error, 'Failed to load staff') : null;
+  const armOptions = optionsQuery.data?.armOptions ?? [];
+  const subjectsList = optionsQuery.data?.subjectsList ?? [];
+
+  const invalidateStaff = () => queryClient.invalidateQueries({ queryKey: ['staff'] });
+
+  useEffect(() => {
+    if (staffQuery.error) toast.error(error!);
+  }, [staffQuery.error, error]);
+
+  // ---------- Mutations ----------
+  const createMutation = useMutation({
+    mutationFn: async (data: StaffFormData) =>
+      unwrap<any>(api.post('/staff', data)),
+    onSuccess: () => {
+      invalidateStaff();
+      toast.success('Staff added successfully');
+      setShowCreateModal(false);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to add staff')),
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: string; data: StaffFormData }) =>
+      unwrap<any>(api.put(`/staff/${id}`, data)),
+    onSuccess: () => {
+      invalidateStaff();
+      toast.success('Staff updated');
+      setEditingStaff(null);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Failed to update staff')),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => unwrap(api.delete(`/staff/${id}`)),
+    onSuccess: () => {
+      invalidateStaff();
+      toast.success('Staff deleted');
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Delete failed')),
+    onSettled: () => setDeletingId(null),
+  });
+
+  const bulkUploadMutation = useMutation({
+    mutationFn: async (file: File) => {
+      const formData = new FormData();
+      formData.append('file', file);
+      return unwrap<{ created: any[] }>(
+        api.post('/staff/bulk', formData, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (e) => {
+            if (e.total) setBulkUploadProgress(Math.round((e.loaded / e.total) * 100));
+          },
+        }),
+      );
+    },
+    onSuccess: () => {
+      invalidateStaff();
+      toast.success('Bulk upload successful');
+      setShowBulkModal(false);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Bulk upload failed')),
+    onSettled: () => setBulkUploadProgress(null),
+  });
 
   // ---------- Download Excel Template ----------
   const downloadTemplate = () => {
@@ -647,93 +786,11 @@ export default function AdminStaff() {
     toast.success('Template downloaded');
   };
 
-  // ---------- Fetch Staff (merge /staff and /teachers) ----------
-  const fetchStaff = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const [staffRes, teachersRes] = await Promise.all([
-        api.get('/staff'),
-        api.get('/teachers'),
-      ]);
-
-      const staffMap = new Map<string, any>();
-      (staffRes.data || []).forEach((item: any) => {
-        staffMap.set(item.email, {
-          teacherType: item.teacherType || null,
-          assignedClass: item.assignedClass || null,
-          assignedSubjects: item.assignedSubjects || [],
-          isActive: item.isActive ?? true,
-          role: roleDisplayMap[item.role] || item.role,
-          id: item.id,
-        });
-      });
-
-      const mergedTeachers: StaffMember[] = (teachersRes.data || []).map((teacher: any) => {
-        const staffInfo = staffMap.get(teacher.email);
-        return {
-          id: staffInfo?.id || teacher.id,
-          name: teacher.name || '',
-          email: teacher.email,
-          role: staffInfo?.role || 'Teacher',
-          teacherType: staffInfo?.teacherType || null,
-          assignedClass: staffInfo?.assignedClass || null,
-          assignedSubjects: staffInfo?.assignedSubjects || [],
-          isActive: staffInfo?.isActive ?? true,
-          createdAt: teacher.createdAt,
-        };
-      });
-
-      const nonTeacherStaff: StaffMember[] = (staffRes.data || [])
-        .filter((item: any) => item.role !== 'TEACHER')
-        .map((item: any) => ({
-          id: item.id,
-          name: item.name || '',
-          email: item.email,
-          role: roleDisplayMap[item.role] || item.role,
-          teacherType: null,
-          assignedClass: null,
-          assignedSubjects: [],
-          isActive: item.isActive ?? true,
-          createdAt: item.createdAt,
-        }));
-
-      const combinedMap = new Map<string, StaffMember>();
-      mergedTeachers.forEach((t: StaffMember) => combinedMap.set(t.email, t));
-      nonTeacherStaff.forEach((s: StaffMember) => {
-        if (!combinedMap.has(s.email)) combinedMap.set(s.email, s);
-      });
-
-      setStaffList(Array.from(combinedMap.values()));
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load staff';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchStaff();
-    fetchOptions();
-  }, []);
-
-  // ---------- CRUD ----------
+  // ---------- CRUD handlers ----------
   const createStaff = async (data: StaffFormData) => {
     setSubmitting(true);
     try {
-      const res = await api.post('/staff', data);
-      const newStaff = {
-        ...res.data,
-        role: roleDisplayMap[res.data.role] || res.data.role,
-      };
-      setStaffList((prev) => [...prev, newStaff]);
-      toast.success('Staff added successfully');
-      setShowCreateModal(false);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to add staff');
-      throw err;
+      await createMutation.mutateAsync(data);
     } finally {
       setSubmitting(false);
     }
@@ -743,19 +800,7 @@ export default function AdminStaff() {
     if (!editingStaff) return;
     setSubmitting(true);
     try {
-      const res = await api.put(`/staff/${editingStaff.id}`, data);
-      const updated = {
-        ...res.data,
-        role: roleDisplayMap[res.data.role] || res.data.role,
-      };
-      setStaffList((prev) =>
-        prev.map((s) => (s.id === editingStaff.id ? updated : s))
-      );
-      toast.success('Staff updated');
-      setEditingStaff(null);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to update staff');
-      throw err;
+      await updateMutation.mutateAsync({ id: editingStaff.id, data });
     } finally {
       setSubmitting(false);
     }
@@ -773,35 +818,14 @@ export default function AdminStaff() {
     if (!confirm.isConfirmed) return;
 
     setDeletingId(id);
-    try {
-      await api.delete(`/staff/${id}`);
-      setStaffList((prev) => prev.filter((s) => s.id !== id));
-      toast.success('Staff deleted');
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Delete failed');
-    } finally {
-      setDeletingId(null);
-    }
+    deleteMutation.mutate(id);
   };
 
   const bulkUpload = async (file: File) => {
     setSubmitting(true);
-    const formData = new FormData();
-    formData.append('file', file);
+    setBulkUploadProgress(0);
     try {
-      const res = await api.post('/staff/bulk', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-      const created = (res.data.created || []).map((staff: any) => ({
-        ...staff,
-        role: roleDisplayMap[staff.role] || staff.role,
-      }));
-      setStaffList((prev) => [...prev, ...created]);
-      toast.success('Bulk upload successful');
-      setShowBulkModal(false);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Bulk upload failed');
-      throw err;
+      await bulkUploadMutation.mutateAsync(file);
     } finally {
       setSubmitting(false);
     }
@@ -880,7 +904,7 @@ export default function AdminStaff() {
       }`}>
         <div className="text-center text-red-600 dark:text-red-400">
           <p>{error}</p>
-          <button onClick={fetchStaff} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+          <button onClick={() => staffQuery.refetch()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
             Retry
           </button>
         </div>
@@ -951,6 +975,11 @@ export default function AdminStaff() {
             </p>
           </div>
           <div className="flex flex-wrap gap-3 mt-4 sm:mt-0">
+            <ExportButtons
+              disabled={filteredStaff.length === 0}
+              onExcel={() => exportToExcel('staff', staffExportColumns, filteredStaff)}
+              onPDF={() => exportToPDF('staff', 'Staff List', staffExportColumns, filteredStaff)}
+            />
             <motion.button
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
@@ -1292,6 +1321,7 @@ export default function AdminStaff() {
             onUpload={bulkUpload}
             theme={theme}
             loading={submitting}
+            uploadProgress={bulkUploadProgress}
           />
         )}
       </AnimatePresence>

@@ -1,4 +1,5 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -6,7 +7,9 @@ import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
+import BulkPromoteModal from '../../components/BulkPromoteModal';
 import {
+  ArrowsRightLeftIcon,
   UsersIcon,
   AcademicCapIcon,
   UserGroupIcon,
@@ -34,11 +37,13 @@ interface Class {
   id: string;
   name: string;
   arms: Arm[];
+  gradingScaleGroup?: { id: string; name: string } | null;
 }
 
 interface Arm {
   id: string;
   letter: string;
+  classId?: string;
 }
 
 interface Student {
@@ -47,15 +52,18 @@ interface Student {
   admissionNumber?: string;
 }
 
+interface GradingScaleGroup {
+  id: string;
+  name: string;
+  grades: { grade: string; minScore: number; maxScore: number }[];
+}
+
 export default function AdminAcademic() {
   const { theme } = useTheme();
   const { token } = useAuth();
+  const queryClient = useQueryClient();
   const { currentYear, currentTerm, academicYears, addAcademicYear, setCurrentSession } =
     useAcademicSession();
-
-  // State for classes and arms
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [loadingClasses, setLoadingClasses] = useState(true);
 
   // Promotion state
   const [promotionType, setPromotionType] = useState<'class' | 'student'>('class');
@@ -63,16 +71,75 @@ export default function AdminAcademic() {
   const [sourceArmId, setSourceArmId] = useState('');
   const [targetClassId, setTargetClassId] = useState('');
   const [targetArmId, setTargetArmId] = useState('');
-  const [students, setStudents] = useState<Student[]>([]);
-  const [loadingStudents, setLoadingStudents] = useState(false);
   const [selectedStudents, setSelectedStudents] = useState<string[]>([]);
   const [isPromoting, setIsPromoting] = useState(false);
+  const [showBulkModal, setShowBulkModal] = useState(false);
 
-  // Grading scale state
+  // Grading scale state (scales remain editable locally; groups come from query)
   const [gradingScales, setGradingScales] = useState<{ grade: string; min: number | null; max: number | null }[]>([]);
+  const [activeGroupId, setActiveGroupId] = useState<string>(''); // '' = school default (ungrouped)
+  const [newGroupName, setNewGroupName] = useState('');
+  const [showNewGroupInput, setShowNewGroupInput] = useState(false);
   const [savingGrading, setSavingGrading] = useState(false);
-  const [loadingGrading, setLoadingGrading] = useState(true);
-  const [refreshKey, setRefreshKey] = useState(0);
+  const [assigningClassId, setAssigningClassId] = useState<string | null>(null);
+
+  // ---------- Cached queries ----------
+  const classesQuery = useQuery<Class[]>({
+    queryKey: ['academic-classes', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/classes', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const classes = classesQuery.data ?? [];
+  const loadingClasses = classesQuery.isLoading;
+
+  const gradingGroupsQuery = useQuery<GradingScaleGroup[]>({
+    queryKey: ['grading-scale-groups', token],
+    enabled: !!token,
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/grading-scale-groups', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+  const gradingGroups = gradingGroupsQuery.data ?? [];
+  const loadingGrading = gradingGroupsQuery.isLoading;
+
+  // School-wide (ungrouped) grading scales
+  const gradingScalesQuery = useQuery<any[]>({
+    queryKey: ['grading-scales', token],
+    enabled: !!token,
+    staleTime: 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/grading-scales', token!);
+      if (!res.ok) throw new Error(await res.text());
+      return res.json();
+    },
+  });
+
+  const studentsQuery = useQuery<Student[]>({
+    queryKey: ['academic-arm-students', sourceArmId, token],
+    enabled: !!token && !!sourceArmId,
+    queryFn: async () => {
+      const res = await api.get(`/students?armId=${sourceArmId}`, token!);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+  const students = studentsQuery.data ?? [];
+  const loadingStudents = studentsQuery.isLoading;
+
+  useEffect(() => {
+    if (classesQuery.error) {
+      console.error(classesQuery.error);
+      toast.error('Could not load classes');
+    }
+  }, [classesQuery.error]);
 
   // Academic year modal
   const [showYearModal, setShowYearModal] = useState(false);
@@ -80,97 +147,25 @@ export default function AdminAcademic() {
   const [newYearTerms, setNewYearTerms] = useState(['First Term', 'Second Term', 'Third Term']);
   const [addingYear, setAddingYear] = useState(false);
 
-  // Fetch classes
+  // 🔽 Derive the editable grading scales from the cached groups + school-wide scale.
+  // Editing target group takes priority; a brand-new empty group keeps the
+  // currently displayed rows as a starting point.
   useEffect(() => {
-    const fetchClasses = async () => {
-      if (!token) return;
-      try {
-        const res = await api.get('/classes', token);
-        if (res.ok) {
-          const data = await res.json();
-          setClasses(data);
-        } else {
-          const errorText = await res.text();
-          console.error('Classes fetch error:', res.status, errorText);
-          toast.error('Failed to load classes');
-        }
-      } catch (error) {
-        console.error(error);
-        toast.error('Could not load classes');
-      } finally {
-        setLoadingClasses(false);
+    const active = gradingGroups.find(g => g.id === activeGroupId);
+    if (active) {
+      if (active.grades.length > 0) {
+        setGradingScales(active.grades.map(g => ({ grade: g.grade, min: g.minScore, max: g.maxScore })));
       }
-    };
-    fetchClasses();
-  }, [token]);
-
-  // 🔽 FETCH GRADING SCALES – now with debugging and flexible parsing
-  useEffect(() => {
-    const fetchGradingScales = async () => {
-      if (!token) return;
-      setLoadingGrading(true);
-      try {
-        const res = await api.get('/grading-scales', token);
-        if (res.ok) {
-          const rawData = await res.json();
-          console.log('📊 Raw grading scales response:', rawData);
-
-          // Try to extract an array of grade objects
-          let gradesArray: any[] = [];
-
-          if (Array.isArray(rawData)) {
-            gradesArray = rawData;
-          } else if (rawData && typeof rawData === 'object') {
-            // Common patterns: { grades: [...] } or { data: [...] }
-            if (Array.isArray(rawData.grades)) gradesArray = rawData.grades;
-            else if (Array.isArray(rawData.data)) gradesArray = rawData.data;
-            else if (Array.isArray(rawData.items)) gradesArray = rawData.items;
-            else {
-              // If it's an object with keys like "A", "B", etc.
-              const values = Object.values(rawData);
-              if (values.every(v => typeof v === 'object' && v !== null)) {
-                gradesArray = values;
-              }
-            }
-          }
-
-          // Map to our expected shape { grade, min, max }
-          const mapped = gradesArray.map((item: any) => {
-            // Try common property names
-            const grade = item.grade || item.letter || item.name || '';
-            const min = item.min !== undefined ? item.min : (item.minScore !== undefined ? item.minScore : (item.minimum !== undefined ? item.minimum : (item.low !== undefined ? item.low : null)));
-            const max = item.max !== undefined ? item.max : (item.maxScore !== undefined ? item.maxScore : (item.maximum !== undefined ? item.maximum : (item.high !== undefined ? item.high : null)));
-            return { grade: String(grade), min: min !== null ? Number(min) : null, max: max !== null ? Number(max) : null };
-          }).filter(g => g.grade.trim() !== ''); // remove entries without a grade letter
-
-          if (mapped.length > 0) {
-            setGradingScales(mapped);
-            toast.success('Grading scales loaded');
-          } else {
-            // No valid grades found – use defaults with null values
-            console.warn('No grading scales found, using defaults');
-            setGradingScales([
-              { grade: 'A', min: 70, max: 100 },
-              { grade: 'B', min: 60, max: 69 },
-              { grade: 'C', min: 50, max: 59 },
-              { grade: 'D', min: 40, max: 49 },
-              { grade: 'F', min: 0, max: 39 },
-            ]);
-            toast('No grading scales found, using defaults', { icon: 'ℹ️' });
-          }
-        } else {
-          toast.error('Failed to load grading scales');
-          setGradingScales([
-            { grade: 'A', min: 70, max: 100 },
-            { grade: 'B', min: 60, max: 69 },
-            { grade: 'C', min: 50, max: 59 },
-            { grade: 'D', min: 40, max: 49 },
-            { grade: 'F', min: 0, max: 39 },
-          ]);
-        }
-      } catch (error) {
-        console.error('Fetch grading scales error:', error);
-        toast.error('Could not load grading scales');
+      return;
+    }
+    if (!activeGroupId) {
+      // School default (ungrouped grades)
+      const scales = gradingScalesQuery.data ?? [];
+      const ungrouped = scales.filter((s: any) => !s.groupId);
+      const source = ungrouped.length > 0 ? ungrouped : scales;
+      if (source.length > 0) {
+        setGradingScales(source.map((s: any) => ({ grade: s.grade, min: s.minScore, max: s.maxScore })));
+      } else {
         setGradingScales([
           { grade: 'A', min: 70, max: 100 },
           { grade: 'B', min: 60, max: 69 },
@@ -178,40 +173,15 @@ export default function AdminAcademic() {
           { grade: 'D', min: 40, max: 49 },
           { grade: 'F', min: 0, max: 39 },
         ]);
-      } finally {
-        setLoadingGrading(false);
       }
-    };
-    fetchGradingScales();
-  }, [token, refreshKey]);
-
-  // Fetch students when source arm changes
-  useEffect(() => {
-    if (!sourceArmId || !token) {
-      setStudents([]);
-      setSelectedStudents([]);
-      return;
     }
-    const fetchStudents = async () => {
-      setLoadingStudents(true);
-      try {
-        const res = await api.get(`/students?armId=${sourceArmId}`, token);
-        if (res.ok) {
-          const data = await res.json();
-          setStudents(data);
-          setSelectedStudents([]);
-        } else {
-          setStudents([]);
-        }
-      } catch (error) {
-        console.error(error);
-        setStudents([]);
-      } finally {
-        setLoadingStudents(false);
-      }
-    };
-    fetchStudents();
-  }, [sourceArmId, token]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token, gradingGroups, activeGroupId, gradingScalesQuery.data]);
+
+  const refreshGradingData = () => {
+    queryClient.invalidateQueries({ queryKey: ['grading-scales', token] });
+    queryClient.invalidateQueries({ queryKey: ['grading-scale-groups', token] });
+  };
 
   const getArmsForClass = (classId: string) => {
     const cls = classes.find(c => c.id === classId);
@@ -276,7 +246,7 @@ export default function AdminAcademic() {
     }
   };
 
-  // Save grading scales
+  // Save grading scales (to the active group, or school-wide if none selected)
   const handleSaveGradingScales = async () => {
     // Validate before saving
     for (const scale of gradingScales) {
@@ -301,14 +271,91 @@ export default function AdminAcademic() {
         min: scale.min ?? 0,
         max: scale.max ?? 0,
       }));
-      const res = await api.post('/grading-scales/bulk', { scales: payload }, token);
+      const res = await api.post('/grading-scales/bulk', { scales: payload, groupId: activeGroupId || null }, token);
       if (!res.ok) throw new Error(await res.text());
       toast.success('Grading scales saved');
-      setRefreshKey(prev => prev + 1);
+      refreshGradingData();
     } catch (err: any) {
       toast.error(err.message || 'Failed to save grading scales');
     } finally {
       setSavingGrading(false);
+    }
+  };
+
+  // Create a new grading scale group and switch to it
+  const handleCreateGroup = async () => {
+    const name = newGroupName.trim();
+    if (!name) {
+      toast.error('Enter a name for the grading scale group');
+      return;
+    }
+    try {
+      const res = await api.post('/grading-scale-groups', { name }, token);
+      if (!res.ok) throw new Error(await res.text());
+      const group: GradingScaleGroup = await res.json();
+      queryClient.setQueryData<GradingScaleGroup[]>(
+        ['grading-scale-groups', token],
+        (prev) => [...(prev ?? []), group]
+      );
+      setActiveGroupId(group.id);
+      // Keep the currently displayed rows as a starting point for the new group
+      setNewGroupName('');
+      setShowNewGroupInput(false);
+      toast.success(`Grading scale group "${name}" created`);
+    } catch (err: any) {
+      const msg = err.message || 'Failed to create group';
+      toast.error(msg.includes('already exists') ? 'A group with this name already exists' : msg);
+    }
+  };
+
+  // Switch the editing target between the school default and a group
+  const handleSelectGroup = (groupId: string) => {
+    setActiveGroupId(groupId);
+    const group = gradingGroups.find(g => g.id === groupId);
+    if (group && group.grades.length > 0) {
+      setGradingScales(group.grades.map(g => ({ grade: g.grade, min: g.minScore, max: g.maxScore })));
+    } else if (!group) {
+      // Switching back to school default – reload from server
+      queryClient.invalidateQueries({ queryKey: ['grading-scales', token] });
+    }
+  };
+
+  // Delete the active grading scale group
+  const handleDeleteGroup = async () => {
+    if (!activeGroupId) return;
+    const group = gradingGroups.find(g => g.id === activeGroupId);
+    if (!group) return;
+    if (!window.confirm(`Delete grading scale group "${group.name}" and all its grades?`)) return;
+    try {
+      const res = await api.del(`/grading-scale-groups/${activeGroupId}`, token);
+      if (!res.ok) throw new Error(await res.text());
+      toast.success('Group deleted');
+      setActiveGroupId('');
+      refreshGradingData();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to delete group');
+    }
+  };
+
+  // Assign (or clear) a grading scale group on a class
+  const handleAssignGroupToClass = async (classId: string, groupId: string) => {
+    setAssigningClassId(classId);
+    try {
+      const res = await api.put(`/classes/${classId}/grading-scale-group`, { groupId: groupId || null }, token);
+      if (!res.ok) throw new Error(await res.text());
+      queryClient.setQueryData<Class[]>(
+        ['academic-classes', token],
+        (prev) => (prev ?? []).map(c =>
+          c.id === classId
+            ? { ...c, gradingScaleGroup: groupId ? { id: groupId, name: gradingGroups.find(g => g.id === groupId)?.name || '' } : null }
+            : c
+        )
+      );
+      toast.success('Grading scale assigned to class');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to assign grading scale');
+    } finally {
+      setAssigningClassId(null);
     }
   };
 
@@ -452,10 +499,10 @@ export default function AdminAcademic() {
             <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
             <div className="relative z-10">
               <div className="flex justify-between items-start mb-4">
-                <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Grading Scale</h3>
+                <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Grading Scales</h3>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={() => setRefreshKey(prev => prev + 1)}
+                    onClick={refreshGradingData}
                     className="p-2 rounded-lg bg-gray-200/50 dark:bg-white/10 hover:bg-gray-300/50 dark:hover:bg-white/20 transition"
                     title="Refresh grading scales from server"
                   >
@@ -472,8 +519,56 @@ export default function AdminAcademic() {
                 </div>
               </div>
               <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                Define grade boundaries for result computation. Click the refresh icon to reload saved values.
+                Create multiple grading scale groups and assign each group to the classes that should use it. The default scale applies to classes without an assigned group.
               </p>
+
+              {/* Group selector */}
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <select
+                  value={activeGroupId}
+                  onChange={(e) => handleSelectGroup(e.target.value)}
+                  className={`rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/60 text-gray-900 border border-white/30'}`}
+                >
+                  <option value="">Default (school-wide)</option>
+                  {gradingGroups.map(g => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </select>
+                {showNewGroupInput ? (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={newGroupName}
+                      onChange={(e) => setNewGroupName(e.target.value)}
+                      onKeyDown={(e) => e.key === 'Enter' && handleCreateGroup()}
+                      placeholder="Group name (e.g. WAEC Standard)"
+                      className={`rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10 placeholder-gray-500' : 'bg-white/60 text-gray-900 border border-white/30 placeholder-gray-400'}`}
+                    />
+                    <button onClick={handleCreateGroup} className="p-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition" title="Create group">
+                      <CheckIcon className="h-4 w-4" />
+                    </button>
+                    <button onClick={() => setShowNewGroupInput(false)} className="p-2 rounded-lg bg-gray-200/50 dark:bg-white/10 hover:bg-gray-300/50 transition" title="Cancel">
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => setShowNewGroupInput(true)}
+                    className="inline-flex items-center gap-1 px-3 py-2 text-sm rounded-xl bg-blue-600 text-white hover:bg-blue-700 transition"
+                  >
+                    <PlusIcon className="h-4 w-4" /> New Group
+                  </button>
+                )}
+                {activeGroupId && (
+                  <button
+                    onClick={handleDeleteGroup}
+                    className="p-2 rounded-lg bg-red-500/10 text-red-500 hover:bg-red-500/20 transition"
+                    title="Delete this grading scale group"
+                  >
+                    <TrashIcon className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
               <div className="mt-5 overflow-x-auto">
                 {loadingGrading ? (
                   <div className="flex justify-center py-4">
@@ -544,6 +639,39 @@ export default function AdminAcademic() {
                     >
                       <PlusIcon className="h-4 w-4" /> Add Grade
                     </button>
+
+                    {/* Class assignments */}
+                    <div className="mt-5 border-t pt-4">
+                      <h4 className={`text-sm font-semibold mb-2 ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>
+                        Assign grading scales to classes
+                      </h4>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {classes.map(c => (
+                          <div key={c.id} className="flex items-center justify-between gap-2 rounded-xl px-3 py-2 border border-white/10 bg-white/5">
+                            <span className={`text-sm truncate ${theme === 'dark' ? 'text-gray-200' : 'text-gray-800'}`}>
+                              {c.name}
+                              {c.gradingScaleGroup && (
+                                <span className="ml-2 text-xs text-blue-400">({c.gradingScaleGroup.name})</span>
+                              )}
+                            </span>
+                            <select
+                              value={c.gradingScaleGroup?.id || ''}
+                              disabled={assigningClassId === c.id}
+                              onChange={(e) => handleAssignGroupToClass(c.id, e.target.value)}
+                              className={`rounded-lg px-2 py-1 text-xs focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-white/10 text-white border border-white/10' : 'bg-white/70 text-gray-900 border border-white/30'}`}
+                            >
+                              <option value="">Default</option>
+                              {gradingGroups.map(g => (
+                                <option key={g.id} value={g.id}>{g.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        ))}
+                      </div>
+                      {classes.length === 0 && (
+                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>No classes yet – create classes first.</p>
+                      )}
+                    </div>
                   </>
                 )}
               </div>
@@ -563,6 +691,13 @@ export default function AdminAcademic() {
                   <AcademicCapIcon className={`h-6 w-6 ${theme === 'dark' ? 'text-emerald-300' : 'text-emerald-600'}`} />
                 </div>
                 <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Class / Student Promotion</h3>
+                <button
+                  onClick={() => setShowBulkModal(true)}
+                  className="ml-auto inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-sm font-medium shadow-md hover:shadow-lg transition-all"
+                  title="Promote all classes at once with a configurable flow"
+                >
+                  <ArrowsRightLeftIcon className="h-4 w-4" /> Bulk Promote
+                </button>
               </div>
               <p className={`text-sm mb-5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
                 Move students to the next academic level. History will be preserved with the current academic session.
@@ -590,7 +725,7 @@ export default function AdminAcademic() {
                       <label className={`block text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Class</label>
                       <select
                         value={sourceClassId}
-                        onChange={(e) => { setSourceClassId(e.target.value); setSourceArmId(''); setStudents([]); setSelectedStudents([]); }}
+                        onChange={(e) => { setSourceClassId(e.target.value); setSourceArmId(''); setSelectedStudents([]); }}
                         style={selectStyle}
                         className={`mt-1 w-full rounded-xl border-0 bg-transparent px-3 py-2 text-sm shadow-sm focus:ring-2 focus:ring-emerald-500 ${theme === 'dark' ? 'bg-white/5 text-white border border-white/10' : 'bg-white/60 text-gray-900 border border-white/20'}`}
                       >
@@ -698,6 +833,17 @@ export default function AdminAcademic() {
         {theme === 'light' && <div className="fixed -top-20 -right-20 w-64 h-64 bg-blue-200/30 rounded-full blur-3xl pointer-events-none" />}
       </div>
 
+      {showBulkModal && (
+        <BulkPromoteModal
+          open={showBulkModal}
+          onClose={() => setShowBulkModal(false)}
+          classes={classes}
+          token={token || ''}
+          currentYearId={currentYear?.id || ''}
+          currentTermId={currentTerm?.id || ''}
+          onPromoted={() => queryClient.invalidateQueries({ queryKey: ['academic-years', token] })}
+        />
+      )}
       {/* Academic Year Modal */}
       {showYearModal && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center">

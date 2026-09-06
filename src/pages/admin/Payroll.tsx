@@ -1,9 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import { unwrap, getErrorMessage } from '../../hooks/queryHelpers';
 import {
   PlusIcon,
   PencilIcon,
@@ -59,12 +61,9 @@ export default function AdminPayroll() {
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
-  // ---------- State ----------
-  const [payrollEntries, setPayrollEntries] = useState<PayrollEntry[]>([]);
-  const [staffList, setStaffList] = useState<Staff[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const queryClient = useQueryClient();
 
+  // ---------- State ----------
   // Modal state
   const [showModal, setShowModal] = useState(false);
   const [editingEntry, setEditingEntry] = useState<PayrollEntry | null>(null);
@@ -75,7 +74,6 @@ export default function AdminPayroll() {
     status: 'PENDING' as 'PAID' | 'PENDING' | 'OVERDUE',
     notes: '',
   });
-  const [submitting, setSubmitting] = useState(false);
 
   // Filters & pagination
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,43 +83,44 @@ export default function AdminPayroll() {
   const [currentPage, setCurrentPage] = useState(1);
   const [rowsPerPage, setRowsPerPage] = useState(10);
 
-  // ---------- Data Fetching ----------
-  const fetchStaff = async () => {
-    try {
-      const res = await api.get('/payroll/staff?roles=TEACHER,PRINCIPAL,ACCOUNTANT,BURSAR,ADMIN');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      setStaffList(data);
-    } catch (err: any) {
-      console.error('Staff fetch error:', err);
-      toast.error('Failed to load staff list. Please check backend.');
-    }
-  };
+  // ---------- Data Fetching (cached queries) ----------
+  const staffQuery = useQuery<Staff[]>({
+    queryKey: ['payroll-staff'],
+    queryFn: async () => {
+      const data = await unwrap<Staff[]>(
+        api.get('/payroll/staff?roles=TEACHER,PRINCIPAL,ACCOUNTANT,BURSAR,ADMIN'),
+      );
+      return Array.isArray(data) ? data : [];
+    },
+    retry: false,
+  });
 
-  const fetchPayroll = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get('/payroll');
-      let data = res.data;
-      if (!Array.isArray(data)) data = [];
-      setPayrollEntries(data);
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load payroll';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const payrollQuery = useQuery<PayrollEntry[]>({
+    queryKey: ['payroll'],
+    queryFn: async () => {
+      const data = await unwrap<PayrollEntry[]>(api.get('/payroll'));
+      return Array.isArray(data) ? data : [];
+    },
+  });
 
-  const fetchAll = async () => {
-    await Promise.allSettled([fetchStaff(), fetchPayroll()]);
+  const staffList = staffQuery.data ?? [];
+  const payrollEntries = payrollQuery.data ?? [];
+  const loading = payrollQuery.isLoading;
+  const error = payrollQuery.error
+    ? getErrorMessage(payrollQuery.error, 'Failed to load payroll')
+    : null;
+
+  const refetchAll = () => {
+    staffQuery.refetch();
+    payrollQuery.refetch();
   };
 
   useEffect(() => {
-    fetchAll();
-  }, []);
+    if (staffQuery.error) {
+      console.error('Staff fetch error:', staffQuery.error);
+      toast.error('Failed to load staff list. Please check backend.');
+    }
+  }, [staffQuery.error]);
 
   // ---------- Filtered & Paginated Data ----------
   const filteredEntries = useMemo(() => {
@@ -182,7 +181,41 @@ export default function AdminPayroll() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async () => {
+  const invalidatePayroll = () => queryClient.invalidateQueries({ queryKey: ['payroll'] });
+
+  const saveMutation = useMutation({
+    mutationFn: async ({ editing, payload }: { editing: PayrollEntry | null; payload: { staffId: string; amount: number; month: string; status: string; notes: string } }) =>
+      editing
+        ? unwrap<PayrollEntry>(api.put(`/payroll/${editing.id}`, payload))
+        : unwrap<PayrollEntry>(api.post('/payroll', payload)),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.editing ? 'Payroll entry updated' : 'Payroll entry added');
+      invalidatePayroll();
+      setShowModal(false);
+    },
+    onError: (err) => toast.error(getErrorMessage(err, 'Operation failed')),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => unwrap(api.delete(`/payroll/${id}`)),
+    onSuccess: () => {
+      toast.success('Entry deleted');
+      invalidatePayroll();
+    },
+    onError: () => toast.error('Delete failed'),
+  });
+
+  const statusMutation = useMutation({
+    mutationFn: ({ entry, newStatus }: { entry: PayrollEntry; newStatus: 'PAID' | 'PENDING' | 'OVERDUE' }) =>
+      unwrap<PayrollEntry>(api.put(`/payroll/${entry.id}`, { ...entry, status: newStatus })),
+    onSuccess: (_data, vars) => {
+      toast.success(`Status updated to ${vars.newStatus}`);
+      invalidatePayroll();
+    },
+    onError: () => toast.error('Status update failed'),
+  });
+
+  const handleSubmit = () => {
     if (!formData.staffId || !formData.amount || !formData.month) {
       toast.error('Please fill all required fields');
       return;
@@ -192,34 +225,16 @@ export default function AdminPayroll() {
       toast.error('Amount must be a positive number');
       return;
     }
-
-    setSubmitting(true);
-    try {
-      const payload = {
+    saveMutation.mutate({
+      editing: editingEntry,
+      payload: {
         staffId: formData.staffId,
         amount: amountNum,
         month: formData.month,
         status: formData.status,
         notes: formData.notes,
-      };
-      if (editingEntry) {
-        const res = await api.put(`/payroll/${editingEntry.id}`, payload);
-        const updated = res.data;
-        setPayrollEntries(prev => prev.map(e => e.id === editingEntry.id ? updated : e));
-        toast.success('Payroll entry updated');
-      } else {
-        const res = await api.post('/payroll', payload);
-        const created = res.data;
-        setPayrollEntries(prev => [...prev, created]);
-        toast.success('Payroll entry added');
-      }
-      setShowModal(false);
-    } catch (err: any) {
-      console.error(err);
-      toast.error(err.response?.data?.error || 'Operation failed');
-    } finally {
-      setSubmitting(false);
-    }
+      },
+    });
   };
 
   const handleDelete = async (entry: PayrollEntry) => {
@@ -231,27 +246,12 @@ export default function AdminPayroll() {
       confirmButtonColor: '#d33',
       confirmButtonText: 'Delete',
     });
-    if (result.isConfirmed) {
-      try {
-        await api.delete(`/payroll/${entry.id}`);
-        setPayrollEntries(prev => prev.filter(e => e.id !== entry.id));
-        toast.success('Entry deleted');
-      } catch (err) {
-        toast.error('Delete failed');
-      }
-    }
+    if (result.isConfirmed) deleteMutation.mutate(entry.id);
   };
 
-  const updateStatus = async (entry: PayrollEntry, newStatus: 'PAID' | 'PENDING' | 'OVERDUE') => {
+  const updateStatus = (entry: PayrollEntry, newStatus: 'PAID' | 'PENDING' | 'OVERDUE') => {
     if (entry.status === newStatus) return;
-    try {
-      const res = await api.put(`/payroll/${entry.id}`, { ...entry, status: newStatus });
-      const updated = res.data;
-      setPayrollEntries(prev => prev.map(e => e.id === entry.id ? updated : e));
-      toast.success(`Status updated to ${newStatus}`);
-    } catch (err) {
-      toast.error('Status update failed');
-    }
+    statusMutation.mutate({ entry, newStatus });
   };
 
   const exportToCSV = () => {
@@ -292,7 +292,7 @@ export default function AdminPayroll() {
       <div className={`error-container ${isDark ? 'dark' : 'light'}`}>
         <div className="text-center">
           <p className={`text error ${isDark ? 'dark' : 'light'}`}>{error}</p>
-          <button onClick={fetchAll} className="btn-retry">Retry</button>
+          <button onClick={refetchAll} className="btn-retry">Retry</button>
         </div>
       </div>
     );
@@ -530,8 +530,8 @@ export default function AdminPayroll() {
                 </div>
                 <div className={`modal-footer ${isDark ? 'dark' : 'light'}`}>
                   <button onClick={() => setShowModal(false)} className={`btn-cancel ${isDark ? 'dark' : 'light'}`}>Cancel</button>
-                  <button onClick={handleSubmit} disabled={submitting} className="btn-submit">
-                    {submitting ? 'Saving...' : (editingEntry ? 'Update' : 'Add')}
+                  <button onClick={handleSubmit} disabled={saveMutation.isPending} className="btn-submit">
+                    {saveMutation.isPending ? 'Saving...' : (editingEntry ? 'Update' : 'Add')}
                   </button>
                 </div>
               </div>

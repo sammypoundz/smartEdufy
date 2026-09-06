@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
 import { motion } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -11,6 +12,7 @@ interface Class {
   id: string;
   name: string;
   arms: Arm[];
+  gradingScaleGroup?: { id: string; name: string } | null;
 }
 
 interface Arm {
@@ -55,6 +57,12 @@ interface GradingScale {
   grade: string;
 }
 
+interface GradingScaleGroup {
+  id: string;
+  name: string;
+  grades: GradingScale[];
+}
+
 const container = {
   hidden: { opacity: 0 },
   show: { opacity: 1, transition: { staggerChildren: 0.1 } },
@@ -70,84 +78,105 @@ export default function AdminBroadsheet() {
   const { token } = useAuth();
   const { academicYears, currentTerm } = useAcademicSession();
 
-  const [classes, setClasses] = useState<Class[]>([]);
-  const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [gradingScales, setGradingScales] = useState<GradingScale[]>([]);
   const [selectedClassId, setSelectedClassId] = useState('');
   const [selectedArmId, setSelectedArmId] = useState('');
   const [selectedAcademicYearId, setSelectedAcademicYearId] = useState('');
   const [selectedTermName, setSelectedTermName] = useState('');
-  const [studentResults, setStudentResults] = useState<StudentResult[]>([]);
-  const [loadingData, setLoadingData] = useState(false);
 
   const selectStyle = {
     backgroundColor: theme === 'dark' ? '#1e293b' : '#ffffff',
     color: theme === 'dark' ? '#f1f5f9' : '#0f172a',
   };
 
-  const fetchClasses = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/classes', token);
-      if (res.ok) {
-        const data = await res.json();
-        setClasses(data);
-      } else {
-        toast.error('Failed to load classes');
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error('Could not load classes');
-    }
-  }, [token]);
+  // ---------- Cached queries ----------
+  const classesQuery = useQuery<Class[]>({
+    queryKey: ['broadsheet-classes', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/classes', token!);
+      if (!res.ok) throw new Error('Failed to load classes');
+      return res.json();
+    },
+  });
 
-  const fetchSubjects = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/subjects', token);
-      if (res.ok) {
-        const data = await res.json();
-        setSubjects(data);
-      } else {
-        toast.error('Failed to load subjects');
-      }
-    } catch (err) {
-      console.error(err);
-      toast.error('Could not load subjects');
-    }
-  }, [token]);
+  const subjectsQuery = useQuery<Subject[]>({
+    queryKey: ['broadsheet-arm-subjects', selectedArmId, token],
+    enabled: !!token && !!selectedArmId,
+    queryFn: async () => {
+      const res = await api.get(`/arms/${selectedArmId}/subjects/list`, token!);
+      if (!res.ok) throw new Error('Failed to load subjects');
+      return res.json();
+    },
+  });
 
-  const fetchGradingScales = useCallback(async () => {
-    if (!token) return;
-    try {
-      const res = await api.get('/grading-scales', token);
-      if (res.ok) {
-        const data = await res.json();
-        setGradingScales(data);
-      } else {
-        setGradingScales([
+  const gradingScalesQuery = useQuery<GradingScale[]>({
+    queryKey: ['grading-scales', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/grading-scales', token!);
+      if (!res.ok) {
+        // Default fallback scale
+        return [
           { minScore: 80, maxScore: 100, grade: 'A' },
           { minScore: 70, maxScore: 79, grade: 'B' },
           { minScore: 60, maxScore: 69, grade: 'C' },
           { minScore: 50, maxScore: 59, grade: 'D' },
           { minScore: 0, maxScore: 49, grade: 'F' },
-        ]);
+        ];
       }
-    } catch (err) {
-      console.error(err);
-    }
-  }, [token]);
+      return res.json();
+    },
+  });
 
-  const computeGrade = useCallback((score: number): string => {
-    const scale = gradingScales.find(s => score >= s.minScore && score <= s.maxScore);
-    return scale?.grade || '?';
-  }, [gradingScales]);
+  const gradingGroupsQuery = useQuery<GradingScaleGroup[]>({
+    queryKey: ['grading-scale-groups', token],
+    enabled: !!token,
+    staleTime: 10 * 60 * 1000,
+    queryFn: async () => {
+      const res = await api.get('/grading-scale-groups', token!);
+      if (!res.ok) return [];
+      return res.json();
+    },
+  });
+
+  const classes = classesQuery.data ?? [];
+  const subjects = subjectsQuery.data ?? [];
+  const gradingScales = gradingScalesQuery.data ?? [];
+  const gradingGroups = gradingGroupsQuery.data ?? [];
 
   useEffect(() => {
-    fetchClasses();
-    fetchSubjects();
-    fetchGradingScales();
-  }, [fetchClasses, fetchSubjects, fetchGradingScales]);
+    if (classesQuery.error) {
+      console.error(classesQuery.error);
+      toast.error('Could not load classes');
+    }
+  }, [classesQuery.error]);
+
+  useEffect(() => {
+    if (subjectsQuery.error) {
+      console.error(subjectsQuery.error);
+      toast.error('Could not load subjects');
+    }
+  }, [subjectsQuery.error]);
+
+  // Scales for the selected class: use its assigned grading scale group if it
+  // has one, otherwise the school-wide (ungrouped) scales.
+  const effectiveGradingScales = useMemo(() => {
+    const selectedClass = classes.find(c => c.id === selectedClassId);
+    if (selectedClass?.gradingScaleGroup) {
+      const group = gradingGroups.find(g => g.id === selectedClass.gradingScaleGroup!.id);
+      if (group && group.grades.length > 0) return group.grades;
+    }
+    return gradingScales;
+  }, [classes, selectedClassId, gradingGroups, gradingScales]);
+
+  const computeGrade = useCallback((score: number): string => {
+    const scale = effectiveGradingScales.find(s => score >= s.minScore && score <= s.maxScore);
+    return scale?.grade || '?';
+  }, [effectiveGradingScales]);
+
+  // Subjects are loaded automatically by the arm-subjects query
 
   useEffect(() => {
     if (classes.length > 0 && !selectedClassId) {
@@ -179,103 +208,120 @@ export default function AdminBroadsheet() {
   const selectedClass = classes.find(c => c.id === selectedClassId);
   const arms = selectedClass?.arms || [];
 
-  useEffect(() => {
-    if (!selectedArmId || !selectedAcademicYearId || !selectedTermName || subjects.length === 0) {
-      setStudentResults([]);
-      return;
-    }
-    const fetchResults = async () => {
-      setLoadingData(true);
-      try {
-        const encodedTerm = encodeURIComponent(selectedTermName);
-        // ✅ Now we call the endpoint without subjectId (after backend change)
-        const res = await api.get(
-          `/results?armId=${selectedArmId}&academicYearId=${selectedAcademicYearId}&term=${encodedTerm}`,
-          token
-        );
-        if (!res.ok) throw new Error('Failed to fetch results');
-        const resultsData: Result[] = await res.json();
+  // ---------- Consolidated results (cached query) ----------
+  const resultsEnabled =
+    !!token &&
+    !!selectedArmId &&
+    !!selectedAcademicYearId &&
+    !!selectedTermName &&
+    subjects.length > 0;
 
-        const studentMap = new Map<string, { name: string; subjects: Map<string, number> }>();
-        const studentsRes = await api.get(`/students?armId=${selectedArmId}`, token);
-        if (studentsRes.ok) {
-          const students = await studentsRes.json();
-          for (const student of students) {
-            studentMap.set(student.id, { name: student.name, subjects: new Map() });
-          }
+  const resultsQuery = useQuery<StudentResult[]>({
+    queryKey: [
+      'broadsheet-results',
+      selectedArmId,
+      selectedAcademicYearId,
+      selectedTermName,
+      subjects.map(s => s.id).join(','),
+    ],
+    enabled: resultsEnabled,
+    placeholderData: keepPreviousData,
+    queryFn: async () => {
+      const encodedTerm = encodeURIComponent(selectedTermName);
+      // ✅ Now we call the endpoint without subjectId (after backend change)
+      const res = await api.get(
+        `/results?armId=${selectedArmId}&academicYearId=${selectedAcademicYearId}&term=${encodedTerm}`,
+        token!
+      );
+      if (!res.ok) throw new Error('Failed to fetch results');
+      const resultsData: Result[] = await res.json();
+
+      const studentMap = new Map<string, { name: string; subjects: Map<string, number> }>();
+      const studentsRes = await api.get(`/students?armId=${selectedArmId}`, token);
+      if (studentsRes.ok) {
+        const students = await studentsRes.json();
+        for (const student of students) {
+          studentMap.set(student.id, { name: student.name, subjects: new Map() });
         }
-
-        for (const result of resultsData) {
-          const student = studentMap.get(result.studentId);
-          if (student) {
-            const subject = subjects.find(s => s.id === result.subjectId);
-            if (subject) {
-              student.subjects.set(subject.id, result.total);
-            }
-          }
-        }
-
-        const studentResultList: StudentResult[] = [];
-        for (const [studentId, data] of studentMap.entries()) {
-          const subjectScores: { subjectId: string; subjectName: string; total: number; grade: string }[] = [];
-          let totalScore = 0;
-          let subjectsWithScores = 0;
-
-          for (const subject of subjects) {
-            const score = data.subjects.get(subject.id);
-            if (score !== undefined) {
-              subjectsWithScores++;
-              totalScore += score;
-              subjectScores.push({
-                subjectId: subject.id,
-                subjectName: subject.name,
-                total: score,
-                grade: computeGrade(score),
-              });
-            } else {
-              subjectScores.push({
-                subjectId: subject.id,
-                subjectName: subject.name,
-                total: 0,
-                grade: '—',
-              });
-            }
-          }
-          const average = subjectsWithScores > 0 ? totalScore / subjectsWithScores : 0;
-          const overallGrade = computeGrade(average);
-          studentResultList.push({
-            studentId,
-            studentName: data.name,
-            subjects: subjectScores,
-            totalScore,
-            average,
-            overallGrade,
-            position: 0,
-          });
-        }
-
-        studentResultList.sort((a, b) => b.average - a.average);
-        // Competition ranking: students tied on average share the same position,
-        // and the counter only advances past a tied group (1, 2, 2, 4, ...).
-        for (let i = 0; i < studentResultList.length; i++) {
-          if (i > 0 && studentResultList[i].average === studentResultList[i - 1].average) {
-            studentResultList[i].position = studentResultList[i - 1].position;
-          } else {
-            studentResultList[i].position = i + 1;
-          }
-        }
-
-        setStudentResults(studentResultList);
-      } catch (err: any) {
-        console.error(err);
-        toast.error(err.message || 'Failed to load results');
-        setStudentResults([]);
-      } finally {
-        setLoadingData(false);
       }
-    };
-    fetchResults();
-  }, [selectedArmId, selectedAcademicYearId, selectedTermName, subjects, token, computeGrade]);
+
+      for (const result of resultsData) {
+        const student = studentMap.get(result.studentId);
+        if (student) {
+          const subject = subjects.find(s => s.id === result.subjectId);
+          if (subject) {
+            student.subjects.set(subject.id, result.total);
+          }
+        }
+      }
+
+      const studentResultList: StudentResult[] = [];
+      for (const [studentId, data] of studentMap.entries()) {
+        const subjectScores: { subjectId: string; subjectName: string; total: number; grade: string }[] = [];
+        let totalScore = 0;
+        let subjectsWithScores = 0;
+
+        for (const subject of subjects) {
+          const score = data.subjects.get(subject.id);
+          if (score !== undefined) {
+            subjectsWithScores++;
+            totalScore += score;
+            subjectScores.push({
+              subjectId: subject.id,
+              subjectName: subject.name,
+              total: score,
+              grade: computeGrade(score),
+            });
+          } else {
+            subjectScores.push({
+              subjectId: subject.id,
+              subjectName: subject.name,
+              total: 0,
+              grade: '—',
+            });
+          }
+        }
+        const average = subjectsWithScores > 0 ? totalScore / subjectsWithScores : 0;
+        const overallGrade = computeGrade(average);
+        studentResultList.push({
+          studentId,
+          studentName: data.name,
+          subjects: subjectScores,
+          totalScore,
+          average,
+          overallGrade,
+          position: 0,
+        });
+      }
+
+      studentResultList.sort((a, b) => b.average - a.average);
+      // Competition ranking: students tied on average share the same position,
+      // and the counter only advances past a tied group (1, 2, 2, 4, ...).
+      for (let i = 0; i < studentResultList.length; i++) {
+        if (i > 0 && studentResultList[i].average === studentResultList[i - 1].average) {
+          studentResultList[i].position = studentResultList[i - 1].position;
+        } else {
+          studentResultList[i].position = i + 1;
+        }
+      }
+
+      return studentResultList;
+    },
+  });
+
+  useEffect(() => {
+    if (resultsQuery.error) {
+      console.error(resultsQuery.error);
+      toast.error(
+        resultsQuery.error instanceof Error
+          ? resultsQuery.error.message
+          : 'Failed to load results'
+      );
+    }
+  }, [resultsQuery.error]);
+
+  const studentResults = resultsQuery.data ?? [];
+  const loadingData = resultsQuery.isFetching;
 
   return (
     <div className={`min-h-screen px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 ${

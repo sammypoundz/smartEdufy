@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
@@ -75,13 +76,11 @@ const categories: { name: string; items: { name: string; href: string; icon: typ
       { name: 'Roles & Privileges', href: '/admin/roles', icon: UsersIcon, privilege: 'roles' },
       { name: 'Inventory', href: '/admin/inventory', icon: CubeIcon, privilege: 'inventory' },
       { name: 'Academic Setup', href: '/admin/academic', icon: CogIcon, privilege: 'academic' },
-      { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
     ],
   },
   {
     name: 'System',
     items: [
-      { name: 'Settings', href: '/teacher/settings', icon: CogIcon },
       { name: 'Help', href: '/teacher/help', icon: QuestionMarkCircleIcon },
     ],
   },
@@ -104,12 +103,66 @@ export default function TeacherLayout() {
   );
 
   // ---------- Top bar info states ----------
-  const [schoolName, setSchoolName] = useState<string>('');
-  const [currentTerm, setCurrentTerm] = useState<string>('');
+  // ---------- Top bar info (cached query) ----------
+  const { data: topBar } = useQuery({
+    queryKey: ['topbar-info'],
+    staleTime: 5 * 60 * 1000,
+    queryFn: async () => {
+      const [generalRes, academicRes] = await Promise.all([
+        api.get('/settings/general'),
+        api.get('/settings/academic'),
+      ]);
+      const general = generalRes.ok ? await generalRes.json() : {};
+      const academic = academicRes.ok ? await academicRes.json() : {};
+      return {
+        schoolName: (general.schoolName as string) || '',
+        currentTerm: (academic.currentTerm as string) || '',
+      };
+    },
+  });
+  const schoolName = topBar?.schoolName ?? '';
+  const currentTerm = topBar?.currentTerm ?? '';
+  // ---------- Teacher profile (cached query) ----------
+  const teacherProfileQuery = useQuery({
+    queryKey: ['teacher-profile', token, user?.id],
+    enabled: !!token,
+    staleTime: 5 * 60 * 1000,
+    retry: false,
+    queryFn: async () => {
+      const profileRes = await api.get('/teachers/me', token!);
+      if (profileRes.ok) {
+        const data = await profileRes.json();
+        return data;
+      }
+      if (profileRes.status === 404) {
+        toast.error('Teacher profile not found. Please contact your administrator.', { duration: 5000 });
+        return {
+          id: user?.id || 'unknown',
+          name: user?.name || 'Teacher',
+          arms: [],
+          subjectArms: [],
+          __profileError: 'Teacher profile not found. Please contact your administrator.',
+        };
+      }
+      const errorData = await profileRes.json().catch(() => ({}));
+      throw new Error(errorData?.message || 'Failed to load teacher profile');
+    },
+  });
 
-  // ---------- Teacher profile state ----------
-  const [teacherProfile, setTeacherProfile] = useState<any>(null);
-  const [profileError, setProfileError] = useState<string | null>(null);
+  useEffect(() => {
+    if (teacherProfileQuery.error) {
+      const msg =
+        teacherProfileQuery.error instanceof Error
+          ? teacherProfileQuery.error.message
+          : 'Network error while loading teacher profile';
+      toast.error(msg.includes('profile') ? msg : 'Could not load teacher profile. Please check your connection.');
+    }
+  }, [teacherProfileQuery.error]);
+
+  const teacherProfile = teacherProfileQuery.data ?? null;
+  const profileError =
+    teacherProfile?.__profileError ??
+    (teacherProfileQuery.error ? 'Failed to load teacher profile' : null);
 
   // ---------- Search states ----------
   const [searchQuery, setSearchQuery] = useState('');
@@ -146,80 +199,6 @@ export default function TeacherLayout() {
     if (href === '/teacher/dashboard') return location.pathname === '/teacher' || location.pathname === '/teacher/';
     return location.pathname.startsWith(href);
   };
-
-  // ---------- Fetch school & term info ----------
-  useEffect(() => {
-    const fetchTopBarInfo = async () => {
-      try {
-        const [generalRes, academicRes] = await Promise.all([
-          api.get('/settings/general'),
-          api.get('/settings/academic'),
-        ]);
-        if (generalRes.ok) {
-          const data = await generalRes.json();
-          setSchoolName(data.schoolName || '');
-        }
-        if (academicRes.ok) {
-          const data = await academicRes.json();
-          setCurrentTerm(data.currentTerm || '');
-        }
-      } catch (err) {
-        console.error('Failed to load top bar info', err);
-      }
-    };
-    fetchTopBarInfo();
-  }, []);
-
-  // ---------- Fetch teacher profile ----------
-  useEffect(() => {
-    const fetchTeacherProfile = async () => {
-      if (!token) {
-        return;
-      }
-
-      try {
-        console.log('🔍 Fetching teacher profile...');
-        const profileRes = await api.get('/teachers/me', token);
-
-        if (profileRes.ok) {
-          const data = await profileRes.json();
-          setTeacherProfile(data);
-          setProfileError(null);
-          console.log('✅ Teacher profile loaded:', data.name);
-          console.log('📚 Arms count:', data.arms?.length || 0);
-        } else if (profileRes.status === 404) {
-          // Teacher profile not found - show a message
-          console.warn('⚠️ Teacher profile not found (404)');
-          setProfileError('Teacher profile not found. Please contact your administrator.');
-
-          // Set a default profile so the UI doesn't break
-          setTeacherProfile({
-            id: user?.id || 'unknown',
-            name: user?.name || 'Teacher',
-            arms: [],
-            subjectArms: []
-          });
-
-          // Show toast notification
-          toast.error('Teacher profile not found. Please contact your administrator.', {
-            duration: 5000,
-          });
-        } else {
-          // Other error
-          console.error('Failed to fetch teacher profile:', profileRes.status);
-          const errorData = await profileRes.json().catch(() => ({}));
-          setProfileError(errorData?.message || 'Failed to load teacher profile');
-          toast.error(errorData?.message || 'Failed to load teacher profile');
-        }
-      } catch (err) {
-        console.error('Failed to load teacher profile:', err);
-        setProfileError('Network error while loading teacher profile');
-        toast.error('Could not load teacher profile. Please check your connection.');
-      }
-    };
-
-    fetchTeacherProfile();
-  }, [token, user]);
 
   // ---------- Search logic ----------
   useEffect(() => {

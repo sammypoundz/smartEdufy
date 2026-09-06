@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import {
@@ -16,9 +17,12 @@ import {
   UserMinusIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
+import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
+import { exportToExcel, exportToPDF, type ExportColumn } from '../../utils/exportData';
+import ExportButtons from '../../components/ExportButtons';
 
 // ---------- Types ----------
 interface Parent {
@@ -53,10 +57,8 @@ const item = {
 // ---------- Main Component ----------
 export default function AdminParent() {
   const { theme } = useTheme();
+  const queryClient = useQueryClient();
 
-  const [parents, setParents] = useState<Parent[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
 
   // Pagination
@@ -78,9 +80,22 @@ export default function AdminParent() {
   const [submitting, setSubmitting] = useState(false);
 
   // Children assignment
-  const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [selectedStudentId, setSelectedStudentId] = useState('');
   const [assigning, setAssigning] = useState(false);
+
+  const parentExportColumns: ExportColumn<Parent>[] = [
+    { header: 'Name', value: p => p.name },
+    { header: 'Email', value: p => p.email },
+    { header: 'Phone', value: p => p.phone || '' },
+    { header: 'Children', value: p => String(childCountMap.get(p.id) ?? p.children?.length ?? 0) },
+  ];
+
+  // ---------- Queries ----------
+  const studentsQuery = useQuery<Student[]>({
+    queryKey: ['students'],
+    queryFn: () => unwrap(api.get<Student[]>('/students')),
+  });
+  const allStudents = studentsQuery.data ?? [];
 
   // ---------- Compute child count per parent from allStudents ----------
   const childCountMap = useMemo(() => {
@@ -93,37 +108,19 @@ export default function AdminParent() {
     return map;
   }, [allStudents]);
 
-  // ---------- Fetch Parents ----------
-  const fetchParents = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await api.get('/parents');
-      setParents(res.data || []);
-    } catch (err: any) {
-      const msg = err.response?.data?.error || err.message || 'Failed to load parents';
-      setError(msg);
-      toast.error(msg);
-    } finally {
-      setLoading(false);
-    }
-  };
+  const parentsQuery = useQuery<Parent[]>({
+    queryKey: ['parents'],
+    queryFn: () => unwrap(api.get<Parent[]>('/parents')),
+  });
+  const parents = parentsQuery.data ?? [];
+  const loading = parentsQuery.isLoading;
+  const error = parentsQuery.error ? getErrorMessage(parentsQuery.error, 'Failed to load parents') : null;
 
-  // ---------- Fetch All Students (for assignment) ----------
-  const fetchStudents = async () => {
-    try {
-      const res = await api.get('/students');
-      setAllStudents(res.data || []);
-    } catch (err) {
-      console.error('Failed to fetch students', err);
-      toast.error('Could not load students for assignment');
-    }
-  };
+  const invalidateParents = () => queryClient.invalidateQueries({ queryKey: ['parents'] });
 
   useEffect(() => {
-    fetchParents();
-    fetchStudents();
-  }, []);
+    if (parentsQuery.error) toast.error(getErrorMessage(parentsQuery.error, 'Failed to load parents'));
+  }, [parentsQuery.error]);
 
   // ---------- Filter & Pagination ----------
   const filteredParents = useMemo(() => {
@@ -147,6 +144,41 @@ export default function AdminParent() {
     setCurrentPage(Math.max(1, Math.min(newPage, totalPages)));
   };
 
+  // ---------- Mutations: Create ----------
+  const addParentMutation = useMutation({
+    mutationFn: (body: typeof formData) => unwrap(api.post<Parent>('/parents', body)),
+    onSuccess: () => {
+      toast.success('Parent added successfully');
+      setShowAddModal(false);
+      setFormData({ name: '', email: '', phone: '' });
+      invalidateParents();
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, 'Failed to add parent')),
+    onSettled: () => setSubmitting(false),
+  });
+
+  const updateParentMutation = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: typeof formData }) =>
+      unwrap(api.put<Parent>(`/parents/${id}`, body)),
+    onSuccess: (updated) => {
+      toast.success('Parent updated successfully');
+      setShowEditModal(false);
+      setSelectedParent(updated);
+      invalidateParents();
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, 'Failed to update parent')),
+    onSettled: () => setSubmitting(false),
+  });
+
+  const deleteParentMutation = useMutation({
+    mutationFn: (id: string) => unwrap(api.delete(`/parents/${id}`)),
+    onSuccess: () => {
+      toast.success('Parent deleted');
+      invalidateParents();
+    },
+    onError: () => toast.error('Delete failed'),
+  });
+
   // ---------- CRUD: Create ----------
   const handleAddParent = async () => {
     if (!formData.name || !formData.email) {
@@ -154,17 +186,7 @@ export default function AdminParent() {
       return;
     }
     setSubmitting(true);
-    try {
-      const res = await api.post('/parents', formData);
-      setParents((prev) => [...prev, res.data]);
-      toast.success('Parent added successfully');
-      setShowAddModal(false);
-      setFormData({ name: '', email: '', phone: '' });
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to add parent');
-    } finally {
-      setSubmitting(false);
-    }
+    addParentMutation.mutate(formData);
   };
 
   // ---------- CRUD: Update ----------
@@ -174,19 +196,7 @@ export default function AdminParent() {
       return;
     }
     setSubmitting(true);
-    try {
-      const res = await api.put(`/parents/${selectedParent.id}`, formData);
-      setParents((prev) =>
-        prev.map((p) => (p.id === selectedParent.id ? res.data : p))
-      );
-      toast.success('Parent updated successfully');
-      setShowEditModal(false);
-      setSelectedParent(res.data);
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Failed to update parent');
-    } finally {
-      setSubmitting(false);
-    }
+    updateParentMutation.mutate({ id: selectedParent.id, body: formData });
   };
 
   // ---------- CRUD: Delete ----------
@@ -200,14 +210,7 @@ export default function AdminParent() {
       confirmButtonText: 'Delete',
     });
     if (!result.isConfirmed) return;
-
-    try {
-      await api.delete(`/parents/${parent.id}`);
-      setParents((prev) => prev.filter((p) => p.id !== parent.id));
-      toast.success('Parent deleted');
-    } catch (err) {
-      toast.error('Delete failed');
-    }
+    deleteParentMutation.mutate(parent.id);
   };
 
   // ---------- View Parent (with children) ----------
@@ -221,6 +224,33 @@ export default function AdminParent() {
     }
   };
 
+  // ---------- Mutations: assign / unassign child ----------
+  const assignChildMutation = useMutation({
+    mutationFn: ({ studentId, parentId }: { studentId: string; parentId: string }) =>
+      unwrap(api.patch(`/students/${studentId}`, { parentId })),
+    onSuccess: async (_d, vars) => {
+      toast.success('Child assigned successfully');
+      const res = await api.get(`/parents/${vars.parentId}`);
+      setSelectedParent(res.data);
+      setSelectedStudentId('');
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, 'Assignment failed')),
+    onSettled: () => setAssigning(false),
+  });
+
+  const unassignChildMutation = useMutation({
+    mutationFn: (studentId: string) =>
+      unwrap(api.patch(`/students/${studentId}/unassign-parent`)),
+    onSuccess: async (_d) => {
+      toast.success('Child unassigned');
+      const res = await api.get(`/parents/${selectedParent!.id}`);
+      setSelectedParent(res.data);
+      queryClient.invalidateQueries({ queryKey: ['students'] });
+    },
+    onError: (err: unknown) => toast.error(getErrorMessage(err, 'Failed to unassign child')),
+  });
+
   // ---------- Assign Child to Parent ----------
   const assignChild = async () => {
     if (!selectedParent || !selectedStudentId) {
@@ -228,27 +258,10 @@ export default function AdminParent() {
       return;
     }
     setAssigning(true);
-    try {
-      await api.patch(`/students/${selectedStudentId}`, {
-        parentId: selectedParent.id,
-      });
-      toast.success('Child assigned successfully');
-      const res = await api.get(`/parents/${selectedParent.id}`);
-      setSelectedParent(res.data);
-      setAllStudents((prev) =>
-        prev.map((s) =>
-          s.id === selectedStudentId ? { ...s, parentId: selectedParent.id } : s
-        )
-      );
-      setSelectedStudentId('');
-    } catch (err: any) {
-      toast.error(err.response?.data?.error || 'Assignment failed');
-    } finally {
-      setAssigning(false);
-    }
+    assignChildMutation.mutate({ studentId: selectedStudentId, parentId: selectedParent.id });
   };
 
-  // ---------- Remove Child from Parent (unassign) – NOW USING DEDICATED ENDPOINT ----------
+  // ---------- Remove Child from Parent ----------
   const removeChild = async (student: Student) => {
     const result = await Swal.fire({
       title: 'Unassign Child',
@@ -259,26 +272,7 @@ export default function AdminParent() {
       confirmButtonText: 'Remove',
     });
     if (!result.isConfirmed) return;
-
-    try {
-      // ✅ Use the new unassign-parent endpoint (no payload)
-      await api.patch(`/students/${student.id}/unassign-parent`);
-      toast.success('Child unassigned');
-
-      // Refresh parent details
-      const res = await api.get(`/parents/${selectedParent!.id}`);
-      setSelectedParent(res.data);
-
-      // Update local students
-      setAllStudents((prev) =>
-        prev.map((s) =>
-          s.id === student.id ? { ...s, parentId: null } : s
-        )
-      );
-    } catch (err: any) {
-      console.error('Unassign error:', err.response?.data || err.message);
-      toast.error(err.response?.data?.error || 'Failed to unassign child');
-    }
+    unassignChildMutation.mutate(student.id);
   };
 
   // ---------- Helper: get available students (not assigned to this parent) ----------
@@ -309,7 +303,7 @@ export default function AdminParent() {
       }`}>
         <div className="text-center text-red-600 dark:text-red-400">
           <p>{error}</p>
-          <button onClick={fetchParents} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
+          <button onClick={() => parentsQuery.refetch()} className="mt-4 px-4 py-2 bg-blue-600 text-white rounded-lg">
             Retry
           </button>
         </div>
@@ -338,7 +332,13 @@ export default function AdminParent() {
             }`}>Parent Management</h2>
             <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Manage parents, view children, and assign students.</p>
           </div>
-          <motion.button
+          <div className="flex flex-wrap gap-3 mt-4 sm:mt-0">
+            <ExportButtons
+              disabled={filteredParents.length === 0}
+              onExcel={() => exportToExcel('parents', parentExportColumns, filteredParents)}
+              onPDF={() => exportToPDF('parents', 'Parents List', parentExportColumns, filteredParents)}
+            />
+            <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => {
@@ -348,7 +348,8 @@ export default function AdminParent() {
             className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700"
           >
             <PlusIcon className="h-5 w-5 mr-2" /> Add Parent
-          </motion.button>
+            </motion.button>
+          </div>
         </motion.div>
 
         {/* Search */}

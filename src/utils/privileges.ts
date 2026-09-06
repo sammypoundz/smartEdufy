@@ -35,7 +35,8 @@ export const ALL_PRIVILEGES: PagePrivilege[] = [
   { key: 'users', label: 'User Management', group: 'Administration', adminHref: '/admin/users' },
   { key: 'roles', label: 'Roles & Privileges', group: 'Administration', adminHref: '/admin/roles' },
   { key: 'inventory', label: 'Inventory', group: 'Administration', adminHref: '/admin/inventory' },
-  { key: 'settings', label: 'Settings', group: 'Administration', adminHref: '/admin/settings', href: '/teacher/settings' },
+  { key: 'settings', label: 'Settings', group: 'Administration', adminHref: '/admin/settings' },
+  { key: 'audit-logs', label: 'Audit Logs', group: 'Administration', adminHref: '/admin/audit-logs', href: '/admin/audit-logs' },
 ];
 
 // Legacy alias — the short academic keys used by the teacher UI.
@@ -90,11 +91,11 @@ export const PRIVILEGE_ROUTES: Record<string, string[]> = Object.fromEntries(
   ])
 );
 
-// Always-available pages (Dashboard, Settings, Help, Notifications, Profile)
+// Always-available pages (Dashboard, Help, Notifications, Profile).
+// Settings is admin-only — teachers must not access it.
 export const TEACHER_ALWAYS_ALLOWED_HREFS = [
   '/teacher',
   '/teacher/dashboard',
-  '/teacher/settings',
   '/teacher/help',
   '/teacher/notifications',
   '/teacher/profile',
