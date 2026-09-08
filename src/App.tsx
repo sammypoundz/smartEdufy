@@ -42,6 +42,9 @@ import Students from './pages/admin/Students';
 import AdminSubjects from './pages/admin/AdminSubjects';
 import AdminRoles from './pages/admin/Roles';
 import AuditLogPage from './pages/admin/AuditLog';
+import ActivityPage from './pages/admin/Activity';
+import TeacherQuestions from './pages/teacher/Questions';
+import QuestionReviewPage from './pages/admin/QuestionReview';
 
 // Teacher layout
 import TeacherLayout from './layouts/TeacherLayout';
@@ -142,6 +145,8 @@ function App() {
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />
             <Route path="audit-logs" element={<AuditLogPage />} />
+            <Route path="activity" element={<ActivityPage />} />
+            <Route path="question-review" element={<QuestionReviewPage />} />
           </Route>
         </Route>
 
@@ -172,6 +177,7 @@ function App() {
             <Route path="cbt" element={<AdminCBT />} />
 
             {/* System routes */}
+            <Route path="questions" element={<TeacherQuestions />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />

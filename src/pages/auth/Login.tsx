@@ -14,6 +14,8 @@ import {
   AcademicCapIcon,
   ChartBarIcon,
   BoltIcon,
+  SunIcon,
+  MoonIcon,
 } from "@heroicons/react/24/outline";
 
 /** Deterministic pseudo-random particle field (stable across re-renders). */
@@ -76,7 +78,7 @@ export default function Login() {
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
-  const { theme } = useTheme(); // kept: theme context still used for consistency
+  const { theme, toggleTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,12 +120,39 @@ export default function Login() {
 
   return (
     <div
-      className={`min-h-screen flex transition-colors duration-300 ${
+      className={`min-h-dvh flex transition-colors duration-300 ${
         dark
-          ? "bg-[#050810]"
+          ? "bg-gray-900"
           : "bg-gradient-to-br from-blue-50 via-white to-indigo-100"
       }`}
     >
+      {/* ===== Light / dark mode toggle ===== */}
+      <button
+        type="button"
+        onClick={toggleTheme}
+        className={`fixed top-4 right-4 sm:top-6 sm:right-6 z-50 flex h-11 w-11 items-center justify-center rounded-full border backdrop-blur-md transition-all active:scale-90 ${
+          dark
+            ? "border-white/10 bg-white/[0.06] text-amber-300 shadow-lg shadow-black/30 hover:bg-white/[0.12]"
+            : "border-slate-200 bg-white/80 text-slate-600 shadow-lg shadow-blue-900/10 hover:bg-white"
+        }`}
+        aria-label={dark ? "Switch to light mode" : "Switch to dark mode"}
+        title={dark ? "Switch to light mode" : "Switch to dark mode"}
+      >
+        <motion.span
+          key={theme}
+          initial={{ rotate: -90, opacity: 0, scale: 0.6 }}
+          animate={{ rotate: 0, opacity: 1, scale: 1 }}
+          transition={{ duration: 0.3 }}
+          className="flex items-center justify-center"
+        >
+          {dark ? (
+            <SunIcon className="h-5 w-5" />
+          ) : (
+            <MoonIcon className="h-5 w-5" />
+          )}
+        </motion.span>
+      </button>
+
       {/* ===== Hovering background particles ===== */}
       <BackgroundParticles dark={dark} />
 
@@ -164,7 +193,7 @@ export default function Login() {
         </div>
 
         {/* Logo */}
-        <div className="relative z-10 flex items-center gap-3">
+        <div className="relative z-10 flex items-center gap-3 mb-5">
           <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
             <SparklesIcon className="h-5 w-5 text-white" />
           </div>
@@ -228,7 +257,7 @@ export default function Login() {
             <ClassroomIllustration dark={dark} />
           </motion.div>
 
-          <div className="mt-10 space-y-4">
+          <div className="mt-7 space-y-4">
             {[
               {
                 icon: BoltIcon,
@@ -281,7 +310,7 @@ export default function Login() {
         </div>
 
         <p
-          className={`relative z-10 text-xs ${dark ? "text-slate-500" : "text-slate-500"}`}
+          className={`relative z-10 mt-6 text-xs ${dark ? "text-slate-500" : "text-slate-500"}`}
         >
           © {new Date().getFullYear()} SmartEdufy — The AI-Powered School
           Management System.

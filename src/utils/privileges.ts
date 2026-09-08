@@ -21,6 +21,7 @@ export const ALL_PRIVILEGES: PagePrivilege[] = [
   { key: 'lesson-plan', label: 'Lesson Plan', group: 'Academic', href: '/teacher/lesson-plan', adminHref: '/admin/lesson-plan' },
   { key: 'timetable', label: 'Timetable', group: 'Academic', href: '/teacher/timetable', adminHref: '/admin/timetable' },
   { key: 'cbt', label: 'CBT', group: 'Academic', href: '/teacher/cbt', adminHref: '/admin/cbt' },
+  { key: 'question-review', label: 'Question Review', group: 'Academic', adminHref: '/admin/question-review' },
   { key: 'academic', label: 'Academic Sessions', group: 'Academic', adminHref: '/admin/academic' },
   // Finance
   { key: 'fees', label: 'Fees', group: 'Finance', adminHref: '/admin/fees' },

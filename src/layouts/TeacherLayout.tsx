@@ -8,6 +8,8 @@ import { api } from '../utils/api';
 import ViewControls from '../components/ViewControls';
 import toast from 'react-hot-toast';
 import {
+  FolderIcon,
+  FolderOpenIcon,
   HomeIcon,
   AcademicCapIcon,
   BookOpenIcon,
@@ -35,6 +37,7 @@ import {
   UsersIcon,
   ChatBubbleLeftIcon,
   CubeIcon,
+  DocumentTextIcon,
 } from '@heroicons/react/24/outline';
 
 // ---------- Teacher Categories ----------
@@ -59,6 +62,7 @@ const categories: { name: string; items: { name: string; href: string; icon: typ
       { name: 'Timetable', href: '/teacher/timetable', icon: CalendarIcon, privilege: 'timetable' },
       { name: 'Broadsheet', href: '/teacher/broadsheet', icon: ChartBarIcon, privilege: 'broadsheet' },
       { name: 'CBT', href: '/teacher/cbt', icon: AcademicCapIcon, privilege: 'cbt' },
+      { name: 'Exam Questions', href: '/teacher/questions', icon: DocumentTextIcon, anyRole: ['TEACHER', 'ADMIN', 'PRINCIPAL', 'VICE_PRINCIPAL'] },
     ],
   },
   {
@@ -134,6 +138,8 @@ export default function TeacherLayout() {
   const [openCategories, setOpenCategories] = useState<Record<string, boolean>>(
     categories.reduce((acc, cat) => ({ ...acc, [cat.name]: true }), {})
   );
+  // Mobile drawer: only one category folder open at a time
+  const [openMobileCategory, setOpenMobileCategory] = useState<string | null>(null);
 
   // ---------- Top bar info states ----------
   // ---------- Top bar info (cached query) ----------
@@ -213,7 +219,9 @@ export default function TeacherLayout() {
       .map(cat => ({
         ...cat,
         items: cat.items.filter(
-          item => !item.privilege || privileges.includes(item.privilege)
+          item =>
+            (!item.privilege || privileges.includes(item.privilege)) &&
+            (!item.anyRole || item.anyRole.some((r: string) => userRoles.includes(r)))
         ),
       }))
       .filter(cat => cat.items.length > 0);
@@ -554,133 +562,197 @@ export default function TeacherLayout() {
         </div>
       </div>
 
-      {/* ====== Mobile Sidebar ====== */}
+      {/* ====== Mobile Sidebar — bottom drawer with grid menu ====== */}
       {sidebarOpen && (
         <>
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden"
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden animate-fade-in"
             onClick={() => setSidebarOpen(false)}
           />
-          <div className={`fixed inset-y-0 left-0 w-72 z-40 md:hidden transition-transform duration-300 ease-in-out transform ${
-            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
-          }`}>
-            <div className={`relative h-full flex flex-col overflow-y-auto border-r pt-5 shadow-2xl ${
+          <div
+            className={`fixed inset-x-0 bottom-0 z-40 md:hidden max-h-[85vh] flex flex-col rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.35)] animate-sheet-up ${
               theme === 'dark'
-                ? 'bg-white/10 backdrop-blur-xl border-white/10'
-                : 'bg-white/30 backdrop-blur-md border-white/20'
-            }`}>
+                ? 'bg-[#111827]/95 backdrop-blur-xl border-t border-white/10'
+                : 'bg-white/95 backdrop-blur-xl border-t border-gray-200'
+            } ${sidebarOpen ? 'translate-y-0' : 'translate-y-full'}`}
+          >
+            <div className={`relative flex flex-col flex-1 overflow-y-auto`}>
+              {/* Drag handle */}
               <button
                 onClick={() => setSidebarOpen(false)}
-                className={`absolute top-4 right-4 p-2 rounded-lg ${
-                  theme === 'dark'
-                    ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                    : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-                }`}
+                className="w-full flex justify-center pt-2.5 pb-1"
+                aria-label="Close menu"
               >
-                <XMarkIcon className="h-5 w-5" />
+                <span className={`h-1.5 w-12 rounded-full ${
+                  theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'
+                }`} />
               </button>
 
-              <div className="flex flex-shrink-0 items-center px-6">
-                <h1 className={`text-xl font-bold ${
-                  theme === 'dark'
-                    ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent'
-                    : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'
-                }`}>
-                  SmartEdufy
-                </h1>
-                <span className={`ml-2 px-2 py-1 text-xs font-medium rounded-full border ${
-                  theme === 'dark'
-                    ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-                    : 'bg-white/40 text-blue-800 border-white/30 backdrop-blur-sm'
-                }`}>
-                  Teacher
-                </span>
+              <div className="flex items-center justify-between px-5 pb-3">
+                <div className="flex items-center gap-2">
+                  <h1 className={`text-lg font-bold ${
+                    theme === 'dark'
+                      ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent'
+                      : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'
+                  }`}>
+                    SmartEdufy
+                  </h1>
+                  <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${
+                    theme === 'dark'
+                      ? 'bg-blue-500/20 text-blue-300'
+                      : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    Teacher
+                  </span>
+                </div>
+                <button
+                  onClick={() => setSidebarOpen(false)}
+                  className={`p-1.5 rounded-full ${
+                    theme === 'dark'
+                      ? 'text-gray-400 hover:text-white hover:bg-white/10'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+                  aria-label="Close"
+                >
+                  <XMarkIcon className="h-5 w-5" />
+                </button>
               </div>
 
-              <div className="mt-8 flex flex-grow flex-col">
-                <nav className="flex-1 space-y-2 px-4">
-                  {allowedCategories.map((category) => (
-                    <div key={category.name} className="space-y-1">
+              {/* Folder menu — one category open at a time */}
+              <nav className="flex-1 px-3 py-2 space-y-2">
+                {allowedCategories.map((category) => {
+                  const isOpen = openMobileCategory === category.name;
+                  return (
+                    <div
+                      key={category.name}
+                      className={`rounded-2xl overflow-hidden transition-colors ${
+                        isOpen
+                          ? theme === 'dark'
+                            ? 'bg-white/5 ring-1 ring-blue-400/30'
+                            : 'bg-blue-50/60 ring-1 ring-blue-200'
+                          : theme === 'dark'
+                            ? 'bg-white/[0.03] ring-1 ring-white/5'
+                            : 'bg-gray-50 ring-1 ring-gray-200/60'
+                      }`}
+                    >
                       <button
-                        onClick={() => toggleCategory(category.name)}
-                        className={`w-full flex items-center justify-between px-4 py-2 text-xs font-semibold uppercase tracking-wider rounded-lg transition-colors ${
-                          theme === 'dark'
-                            ? 'text-gray-400 hover:text-white hover:bg-white/5'
-                            : 'text-gray-500 hover:text-gray-700 hover:bg-black/5'
-                        }`}
+                        onClick={() =>
+                          setOpenMobileCategory(isOpen ? null : category.name)
+                        }
+                        className="w-full flex items-center gap-2.5 px-3.5 py-3 text-left"
                       >
-                        <span>{category.name}</span>
+                        {isOpen ? (
+                          <FolderOpenIcon className={`h-5 w-5 flex-shrink-0 ${
+                            theme === 'dark' ? 'text-blue-400' : 'text-blue-600'
+                          }`} />
+                        ) : (
+                          <FolderIcon className={`h-5 w-5 flex-shrink-0 ${
+                            theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                          }`} />
+                        )}
+                        <span className={`flex-1 text-xs font-bold uppercase tracking-[0.15em] ${
+                          isOpen
+                            ? theme === 'dark' ? 'text-white' : 'text-blue-900'
+                            : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                        }`}>
+                          {category.name}
+                        </span>
+                        <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
+                          theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-white text-gray-500'
+                        }`}>
+                          {category.items.length}
+                        </span>
                         <ChevronDownIcon
                           className={`h-4 w-4 transition-transform duration-200 ${
-                            openCategories[category.name] ? 'rotate-0' : '-rotate-90'
+                            isOpen ? 'rotate-180' : ''
+                          } ${
+                            theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
                           }`}
                         />
                       </button>
-                      {openCategories[category.name] && (
-                        <div className="space-y-1 pl-2">
-                          {category.items.map((item) => {
+                      {isOpen && (
+                        <div className="grid grid-cols-3 gap-2.5 px-3 pb-3.5 pt-1">
+                          {category.items.map((item, idx) => {
                             const active = isActiveLink(item.href);
                             return (
                               <Link
                                 key={item.name}
                                 to={item.href}
                                 onClick={() => setSidebarOpen(false)}
-                                className={`group flex items-center px-4 py-3 text-sm font-medium rounded-xl transition-all duration-200 ${
+                                style={{ animationDelay: `${idx * 45}ms` }}
+                                className={`group flex flex-col items-center justify-center gap-1.5 px-2 py-3.5 rounded-2xl text-center transition-all duration-200 active:scale-95 animate-folder-content-in ${
                                   active
                                     ? theme === 'dark'
-                                      ? 'bg-gradient-to-r from-blue-500/30 to-indigo-500/30 shadow-lg shadow-blue-500/20 text-white'
-                                      : 'bg-gradient-to-r from-blue-500/20 to-indigo-500/20 shadow-md shadow-blue-500/10 text-blue-900'
+                                      ? 'bg-gradient-to-br from-blue-500/40 to-indigo-500/30 shadow-lg shadow-blue-500/20 ring-1 ring-blue-400/40'
+                                      : 'bg-gradient-to-br from-blue-500/15 to-indigo-500/10 shadow-md shadow-blue-500/10 ring-1 ring-blue-500/30'
                                     : theme === 'dark'
-                                      ? 'text-gray-300 hover:text-white hover:bg-white/10'
-                                      : 'text-gray-700 hover:text-blue-900 hover:bg-white/40'
+                                      ? 'bg-white/5 hover:bg-white/10 ring-1 ring-white/5'
+                                      : 'bg-white hover:bg-blue-50 ring-1 ring-gray-200/60 hover:ring-blue-200'
                                 }`}
                               >
-                                <item.icon className={`mr-3 h-5 w-5 transition-colors ${
+                                <span className={`h-10 w-10 flex items-center justify-center rounded-xl transition-all ${
                                   active
-                                    ? 'text-blue-400'
+                                    ? 'bg-blue-500 text-white shadow-md shadow-blue-500/40'
                                     : theme === 'dark'
-                                      ? 'text-gray-500 group-hover:text-blue-400'
-                                      : 'text-gray-500 group-hover:text-blue-600'
-                                }`} />
-                                {item.name}
+                                      ? 'bg-white/10 text-gray-300 group-hover:text-blue-400'
+                                      : 'bg-gray-50 text-gray-600 shadow-sm group-hover:text-blue-600'
+                                }`}>
+                                  <item.icon className="h-5 w-5" />
+                                </span>
+                                <span className={`text-[11px] font-medium leading-tight line-clamp-2 ${
+                                  active
+                                    ? theme === 'dark' ? 'text-white' : 'text-blue-900'
+                                    : theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                                }`}>
+                                  {item.name}
+                                </span>
+                                {active && (
+                                  <span className="h-1 w-1 rounded-full bg-blue-500" />
+                                )}
                               </Link>
                             );
                           })}
                         </div>
                       )}
                     </div>
-                  ))}
-                </nav>
-              </div>
+                  );
+                })}
+              </nav>
 
-              <div className={`flex flex-shrink-0 border-t p-6 ${
-                theme === 'dark' ? 'border-white/10' : 'border-white/20'
+              {/* Footer: user + logout */}
+              <div className={`sticky bottom-0 flex items-center gap-3 flex-shrink-0 px-5 py-3.5 ${
+                theme === 'dark'
+                  ? 'border-t border-white/10 bg-white/5'
+                  : 'border-t border-gray-200/70 bg-gray-50/90'
               }`}>
-                <div className="flex items-center w-full">
-                  <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium truncate ${
-                      theme === 'dark' ? 'text-white' : 'text-gray-900'
-                    }`}>
-                      {user?.name}
-                    </p>
-                    <p className={`text-xs truncate ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
-                    }`}>
-                      {user?.role}
-                    </p>
-                  </div>
-                  <button
-                    onClick={handleLogout}
-                    className={`ml-3 p-2 rounded-lg transition-colors ${
-                      theme === 'dark'
-                        ? 'bg-white/5 hover:bg-white/10 text-gray-400 hover:text-white'
-                        : 'bg-white/40 hover:bg-white/60 text-gray-700 hover:text-gray-900'
-                    }`}
-                    title="Logout"
-                  >
-                    <ArrowLeftOnRectangleIcon className="h-5 w-5" />
-                  </button>
+                <div className={`h-9 w-9 flex items-center justify-center rounded-full text-sm font-bold flex-shrink-0 text-white bg-gradient-to-br ${
+                  theme === 'dark' ? 'from-blue-500 to-indigo-500' : 'from-blue-600 to-indigo-600'
+                }`}>
+                  {(user?.name || 'U').charAt(0).toUpperCase()}
                 </div>
+                <div className="flex-1 min-w-0">
+                  <p className={`text-sm font-semibold truncate ${
+                    theme === 'dark' ? 'text-white' : 'text-gray-900'
+                  }`}>
+                    {user?.name}
+                  </p>
+                  <p className={`text-xs truncate ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}>
+                    {user?.email || user?.role}
+                  </p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className={`p-2.5 rounded-xl transition-colors flex-shrink-0 ${
+                    theme === 'dark'
+                      ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400'
+                      : 'bg-red-50 hover:bg-red-100 text-red-600'
+                  }`}
+                  title="Logout"
+                >
+                  <ArrowLeftOnRectangleIcon className="h-5 w-5" />
+                </button>
               </div>
 
               {theme === 'dark' ? (

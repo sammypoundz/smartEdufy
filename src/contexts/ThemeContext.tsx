@@ -16,6 +16,11 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
     // Apply theme class to html element
     document.documentElement.classList.remove('dark', 'light');
     document.documentElement.classList.add(theme);
+
+    // Paint the background at the body level so the theme always covers the
+    // full document — otherwise pages whose content is shorter than the
+    // viewport (or scrolling past their root div) show a white body strip.
+    document.body.style.backgroundColor = theme === 'dark' ? '#111827' : '#f8fafc';
   }, [theme]);
 
   const toggleTheme = () => {
