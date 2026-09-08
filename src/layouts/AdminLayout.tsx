@@ -277,30 +277,6 @@ export default function AdminLayout() {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showSearchDropdown) return;
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev + 1) % searchResults.length);
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev - 1 + searchResults.length) % searchResults.length);
-    } else if (e.key === 'Enter' && selectedIndex >= 0) {
-      e.preventDefault();
-      const selected = searchResults[selectedIndex];
-      if (selected) {
-        navigate(selected.href);
-        setShowSearchDropdown(false);
-        setSearchQuery('');
-        setSearchExpanded(false);
-      }
-    } else if (e.key === 'Escape') {
-      setShowSearchDropdown(false);
-      setSearchQuery('');
-      setSearchExpanded(false);
-    }
-  };
-
   const closeSearchModal = () => {
     setSearchModalOpen(false);
     setSearchQuery('');
@@ -345,24 +321,7 @@ export default function AdminLayout() {
   const effectiveIsCollapsed =
     (isCollapsed || tempCollapsedBySchoolName) && !isHoverExpanded;
 
-  // ---------- Search focus handling ----------
-  const handleSearchFocus = () => {
-    setSearchExpanded(true);
-    if (searchQuery.trim() !== '') {
-      setShowSearchDropdown(true);
-    }
-  };
-
-  // ✅ FIX: removed unused `e` parameter
-  const handleSearchBlur = () => {
-    setTimeout(() => {
-      if (!searchDropdownRef.current?.contains(document.activeElement)) {
-        setSearchExpanded(false);
-        setShowSearchDropdown(false);
-      }
-    }, 150);
-  };
-
+  // ---------- Search modal handling ----------
   const handleIconClick = () => {
     setSearchModalOpen(true);
   };
