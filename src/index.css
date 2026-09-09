@@ -50,3 +50,48 @@
 .animate-folder-content-in {
   animation: folder-content-in 300ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
+
+/* ===== Dark-mode-aware native <select> dropdowns =====
+   Native <option> elements don't inherit Tailwind classes from their parent,
+   so the dropdown list renders with the OS default (white) background.
+   .dark-select-dark/light set color-scheme so the browser paints the popup
+   correctly, and give <option> an explicit background/text color. */
+.dark-select-dark {
+  color-scheme: dark;
+}
+.dark-select-dark option {
+  background-color: #1f2937; /* gray-800 */
+  color: #f9fafb; /* gray-50 */
+}
+.dark-select-light {
+  color-scheme: light;
+}
+.dark-select-light option {
+  background-color: #ffffff;
+  color: #111827; /* gray-900 */
+}
+
+/* ===== Print support for compiled timetable view ===== */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-area,
+  .print-area * {
+    visibility: visible;
+  }
+  .print-area {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    max-height: none !important;
+    overflow: visible !important;
+    padding: 16px !important;
+    background: white !important;
+    color: black !important;
+    box-shadow: none !important;
+  }
+  .print-hidden {
+    display: none !important;
+  }
+}

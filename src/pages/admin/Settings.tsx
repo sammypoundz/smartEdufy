@@ -105,6 +105,17 @@ const categories = [
 export default function AdminSettings() {
   const { theme } = useTheme();
   const [activeCategory, setActiveCategory] = useState('general');
+  // Mobile app-style navigation: 'menu' shows the category launcher grid,
+  // 'detail' shows the selected category's content with a back button.
+  const [mobileView, setMobileView] = useState<'menu' | 'detail'>('menu');
+  const selectCategory = (id: string) => {
+    setActiveCategory(id);
+    setMobileView('detail');
+  };
+  // Scroll back to top when entering a category on mobile
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [mobileView, activeCategory]);
 
   // State for each section
   const [general, setGeneral] = useState<GeneralSettings>({ schoolName: '', language: 'en' });
@@ -607,7 +618,7 @@ export default function AdminSettings() {
                   <PlusIcon className="h-4 w-4" /> Add Rule
                 </button>
               </div>
-              <div className={`overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
+              <div className={`hidden md:block overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className={tableHeaderBgClass}>
                     <tr>
@@ -637,6 +648,29 @@ export default function AdminSettings() {
                     ))}
                   </tbody>
                 </table>
+              </div>
+              {/* Mobile: card list */}
+              <div className="md:hidden space-y-3">
+                {promotionRules.map((rule) => (
+                  <div key={rule.id} className={`rounded-2xl border p-4 ${tableBgClass} border-gray-200 dark:border-gray-700`}>
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className={`text-sm font-semibold ${tableCellTextClass}`}>{rule.fromClass} → {rule.toClass}</span>
+                      <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${rule.isAutomatic ? 'bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300' : 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'}`}>
+                        {rule.isAutomatic ? 'Auto' : 'Manual'}
+                      </span>
+                    </div>
+                    <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Minimum average: {rule.minAverage !== null ? `${rule.minAverage}%` : '-'}
+                    </p>
+                    <div className="flex justify-end gap-3 mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700/60">
+                      <button onClick={() => openPromotionModal(rule)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400"><PencilIcon className="h-4 w-4" /> Edit</button>
+                      <button onClick={() => deletePromotionRule(rule.id)} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /> Delete</button>
+                    </div>
+                  </div>
+                ))}
+                {promotionRules.length === 0 && (
+                  <p className={`text-center py-6 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No promotion rules yet.</p>
+                )}
               </div>
             </div>
           </div>
@@ -699,7 +733,7 @@ export default function AdminSettings() {
             <div className="flex justify-end">
               <button onClick={() => openGradingModal()} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-md"><PlusIcon className="h-4 w-4" /> Add Grade</button>
             </div>
-            <div className={`overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
+            <div className={`hidden md:block overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className={tableHeaderBgClass}>
                   <tr>
@@ -726,6 +760,29 @@ export default function AdminSettings() {
                 </tbody>
               </table>
             </div>
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-3">
+              {gradingScales.map(scale => (
+                <div key={scale.id} className={`rounded-2xl border p-4 ${tableBgClass} border-gray-200 dark:border-gray-700`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{scale.grade}</span>
+                    <span className={`text-sm ${tableCellTextClass}`}>
+                      {scale.minScore ?? '-'} – {scale.maxScore ?? '-'}%
+                    </span>
+                  </div>
+                  {scale.points !== null && (
+                    <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Points: {scale.points}</p>
+                  )}
+                  <div className="flex justify-end gap-3 mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700/60">
+                    <button onClick={() => openGradingModal(scale)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400"><PencilIcon className="h-4 w-4" /> Edit</button>
+                    <button onClick={() => deleteGradingScale(scale.id)} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /> Delete</button>
+                  </div>
+                </div>
+              ))}
+              {gradingScales.length === 0 && (
+                <p className={`text-center py-6 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No grading scales yet.</p>
+              )}
+            </div>
           </div>
         );
 
@@ -735,7 +792,7 @@ export default function AdminSettings() {
             <div className="flex justify-end">
               <button onClick={() => openTemplateModal()} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white"><PlusIcon className="h-4 w-4" /> Add Template</button>
             </div>
-            <div className={`overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
+            <div className={`hidden md:block overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className={tableHeaderBgClass}>
                   <tr>
@@ -767,6 +824,31 @@ export default function AdminSettings() {
                   ))}
                 </tbody>
               </table>
+            </div>
+            {/* Mobile: card list */}
+            <div className="md:hidden space-y-3">
+              {templates.map(tpl => (
+                <div key={tpl.id} className={`rounded-2xl border p-4 ${tableBgClass} border-gray-200 dark:border-gray-700`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className={`text-sm font-semibold ${tableCellTextClass}`}>{tpl.name}</span>
+                    {tpl.isDefault ? (
+                      <span className="inline-flex items-center gap-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 px-2.5 py-1 text-xs font-medium"><CheckBadgeIcon className="h-3.5 w-3.5" /> Default</span>
+                    ) : (
+                      <button onClick={() => setDefaultTemplate(tpl.id)} className="text-xs text-blue-600 dark:text-blue-400 font-medium">Set Default</button>
+                    )}
+                  </div>
+                  {tpl.description && (
+                    <p className={`text-xs mt-1.5 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{tpl.description}</p>
+                  )}
+                  <div className="flex justify-end gap-3 mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700/60">
+                    <button onClick={() => openTemplateModal(tpl)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400"><PencilIcon className="h-4 w-4" /> Edit</button>
+                    <button onClick={() => deleteTemplate(tpl.id)} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /> Delete</button>
+                  </div>
+                </div>
+              ))}
+              {templates.length === 0 && (
+                <p className={`text-center py-6 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No templates yet.</p>
+              )}
             </div>
           </div>
         );
@@ -877,72 +959,141 @@ export default function AdminSettings() {
         </div>
       )}
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
-        <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="mb-12 text-center lg:text-left">
-          <h1 className="text-4xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-300 bg-clip-text text-transparent inline-block">Settings</h1>
-          <p className="text-gray-600 dark:text-gray-400 mt-2 text-lg">Configure your school's preferences, security, and workflows</p>
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-10">
+        <motion.div
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className={`mb-6 sm:mb-12 text-center lg:text-left ${
+            mobileView === 'detail' ? 'hidden md:block' : ''
+          }`}
+        >
+          <h1 className="text-3xl sm:text-4xl font-extrabold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-300 bg-clip-text text-transparent inline-block">Settings</h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2 text-base sm:text-lg">Configure your school's preferences, security, and workflows</p>
         </motion.div>
 
-        {/* ========== TOP TABS ========== */}
-        <div className="mb-8 overflow-x-auto scrollbar-hide">
-          <div className={`flex gap-1 p-1 rounded-2xl shadow-lg min-w-max ${
-            theme === 'dark'
-              ? 'bg-gray-800/50 border border-white/10'
-              : 'bg-white border border-gray-200/80'
-          }`}>
-            {categories.map((cat) => {
-              const isActive = activeCategory === cat.id;
-              return (
-                <motion.button
-                  key={cat.id}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.97 }}
-                  onClick={() => setActiveCategory(cat.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 whitespace-nowrap ${
-                    isActive
-                      ? `bg-gradient-to-r ${cat.gradient} text-white shadow-md`
-                      : theme === 'dark'
-                        ? 'text-gray-300 hover:bg-white/10'
-                        : 'text-gray-700 hover:bg-gray-100/80'
+        <div className="flex flex-col md:flex-row gap-6">
+          {/* ========== DESKTOP SIDEBAR NAV ========== */}
+          <aside className="hidden md:block w-64 shrink-0">
+            <div
+              className={`sticky top-6 rounded-3xl border p-3 space-y-1 shadow-lg ${
+                theme === 'dark'
+                  ? 'bg-gray-800/50 border border-white/10'
+                  : 'bg-white border border-gray-200/80'
+              }`}
+            >
+              {categories.map((cat) => {
+                const isActive = activeCategory === cat.id;
+                return (
+                  <button
+                    key={cat.id}
+                    onClick={() => setActiveCategory(cat.id)}
+                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
+                      isActive
+                        ? `bg-gradient-to-r ${cat.gradient} text-white shadow-md`
+                        : theme === 'dark'
+                          ? 'text-gray-300 hover:bg-white/10'
+                          : 'text-gray-700 hover:bg-gray-100/80'
+                    }`}
+                  >
+                    <span
+                      className={`p-1.5 rounded-lg ${
+                        isActive
+                          ? 'bg-white/20'
+                          : `bg-gradient-to-br ${cat.gradient} bg-clip-text`
+                      }`}
+                    >
+                      <cat.icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
+                    </span>
+                    <span>{cat.label}</span>
+                    {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse" />}
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+
+          <div className="flex-1 min-w-0">
+            {/* ========== MOBILE LAUNCHER GRID (app-style home) ========== */}
+            {mobileView === 'menu' && (
+              <div className="md:hidden">
+                <div className="grid grid-cols-2 gap-3">
+                  {categories.map((cat, i) => (
+                    <motion.button
+                      key={cat.id}
+                      initial={{ opacity: 0, scale: 0.95 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      transition={{ delay: i * 0.04 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => selectCategory(cat.id)}
+                      className={`flex flex-col items-start gap-3 p-4 rounded-3xl border text-left shadow-sm transition-colors ${
+                        theme === 'dark'
+                          ? 'bg-gray-900/80 border-white/10 active:bg-white/10'
+                          : 'bg-white border-gray-200/80 active:bg-gray-50'
+                      }`}
+                    >
+                      <span className={`p-2.5 rounded-2xl bg-gradient-to-br ${cat.gradient} shadow-md`}>
+                        <cat.icon className="h-5 w-5 text-white" />
+                      </span>
+                      <span className={`text-sm font-semibold ${theme === 'dark' ? 'text-gray-100' : 'text-gray-900'}`}>{cat.label}</span>
+                    </motion.button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ========== MOBILE DETAIL HEADER (app-style app bar) ========== */}
+            {mobileView === 'detail' && (
+              <div className="md:hidden sticky top-0 z-20 -mx-4 px-4 py-3 mb-4 flex items-center gap-3 backdrop-blur-xl bg-gradient-to-b from-white/95 to-white/85 dark:from-[#0B1120]/95 dark:to-[#0B1120]/85 border-b border-gray-200/60 dark:border-white/10">
+                <button
+                  onClick={() => setMobileView('menu')}
+                  className={`p-2 -ml-1 rounded-full transition-colors ${
+                    theme === 'dark' ? 'hover:bg-white/10 text-gray-200' : 'hover:bg-gray-100 text-gray-700'
                   }`}
+                  aria-label="Back to settings menu"
                 >
-                  <cat.icon className="h-4 w-4" />
-                  <span>{cat.label}</span>
-                  {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white/70 animate-pulse ml-1" />}
-                </motion.button>
-              );
-            })}
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="h-5 w-5">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+                  </svg>
+                </button>
+                <div className={`p-2 rounded-xl bg-gradient-to-br ${activeCat.gradient} shadow-md`}>
+                  <activeCat.icon className="h-5 w-5 text-white" />
+                </div>
+                <h2 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{activeCat.label}</h2>
+              </div>
+            )}
+
+            {/* ========== CONTENT ========== */}
+            <div className={mobileView === 'menu' ? 'hidden md:block' : ''}>
+            <AnimatePresence mode="wait">
+              <motion.div
+                key={activeCategory}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -20 }}
+                transition={{ duration: 0.25, type: 'spring', stiffness: 300, damping: 25 }}
+                className={`relative overflow-hidden rounded-3xl shadow-2xl border ${
+                  theme === 'dark'
+                    ? 'bg-gray-900/80 backdrop-blur-md border-white/10'
+                    : 'bg-white border-gray-200/80'
+                }`}
+              >
+                <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${activeCat.gradient}`} />
+
+                <div className="hidden md:flex px-8 pt-8 pb-4 items-center gap-3 border-b border-gray-200/50 dark:border-gray-700/50">
+                  <div className={`p-2.5 rounded-xl bg-gradient-to-br ${activeCat.gradient} shadow-md`}>
+                    <activeCat.icon className="h-6 w-6 text-white" />
+                  </div>
+                  <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-300 bg-clip-text text-transparent">
+                    {activeCat.label}
+                  </h2>
+                </div>
+
+                <div className="p-4 sm:p-8">{renderContent()}</div>
+              </motion.div>
+            </AnimatePresence>
+            </div>
           </div>
         </div>
-
-        {/* ========== CONTENT ========== */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={activeCategory}
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.25, type: 'spring', stiffness: 300, damping: 25 }}
-            className={`relative overflow-hidden rounded-3xl shadow-2xl border ${
-              theme === 'dark'
-                ? 'bg-gray-900/80 backdrop-blur-md border-white/10'
-                : 'bg-white border-gray-200/80'
-            }`}
-          >
-            <div className={`absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r ${activeCat.gradient}`} />
-
-            <div className="px-8 pt-8 pb-4 flex items-center gap-3 border-b border-gray-200/50 dark:border-gray-700/50">
-              <div className={`p-2.5 rounded-xl bg-gradient-to-br ${activeCat.gradient} shadow-md`}>
-                <activeCat.icon className="h-6 w-6 text-white" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 dark:from-blue-400 dark:to-indigo-300 bg-clip-text text-transparent">
-                {activeCat.label}
-              </h2>
-            </div>
-
-            <div className="p-8">{renderContent()}</div>
-          </motion.div>
-        </AnimatePresence>
       </div>
 
       {/* ====== TERM PICKER MODAL ====== */}

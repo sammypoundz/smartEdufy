@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { effectivePrivileges } from '../utils/privileges';
 import { api } from '../utils/api';
+import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import toast from 'react-hot-toast';
 import {
@@ -227,6 +228,16 @@ export default function TeacherLayout() {
       .filter(cat => cat.items.length > 0);
   })();
   const allowedNavItems = allowedCategories.flatMap(cat => cat.items);
+
+  // Red badge on the Timetable nav item when the workflow needs this teacher.
+  const { attention: timetableAttention } = useTimetableWorkflowAttention('teacher');
+  const isTimetableItem = (href: string) => href.endsWith('/timetable');
+  // A category folder shows the badge when ANY of its items needs attention.
+  const categoryNeedsAttention = (categoryName: string) =>
+    timetableAttention &&
+    allowedCategories
+      .find((c) => c.name === categoryName)
+      ?.items.some((i) => isTimetableItem(i.href)) === true;
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [searchExpanded, setSearchExpanded] = useState(false);
@@ -375,7 +386,7 @@ export default function TeacherLayout() {
           setIsHoverExpanded(false);
         }}
       >
-        <div className={`relative flex flex-grow flex-col overflow-y-auto border-r pt-5 shadow-2xl transition-all duration-300 ${
+        <div className={`relative flex flex-grow flex-col overflow-y-auto overflow-x-hidden border-r pt-5 shadow-2xl transition-all duration-300 ${
           theme === 'dark'
             ? 'bg-white/5 backdrop-blur-xl border-white/10'
             : 'bg-white/30 backdrop-blur-md border-white/20'
@@ -436,6 +447,7 @@ export default function TeacherLayout() {
                             ? 'text-gray-500 group-hover:text-blue-400'
                             : 'text-gray-500 group-hover:text-blue-600'
                       }`} />
+                      {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                     </Link>
                   );
                 })
@@ -451,6 +463,7 @@ export default function TeacherLayout() {
                       }`}
                     >
                       <span>{category.name}</span>
+                      <AttentionBadge show={categoryNeedsAttention(category.name)} compact />
                       <ChevronDownIcon
                         className={`h-4 w-4 transition-transform duration-200 ${
                           openCategories[category.name] ? 'rotate-0' : '-rotate-90'
@@ -483,6 +496,7 @@ export default function TeacherLayout() {
                                     : 'text-gray-500 group-hover:text-blue-600'
                               }`} />
                               {item.name}
+                              {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                             </Link>
                           );
                         })}
@@ -657,6 +671,7 @@ export default function TeacherLayout() {
                         }`}>
                           {category.name}
                         </span>
+                        <AttentionBadge show={categoryNeedsAttention(category.name)} compact />
                         <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
                           theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-white text-gray-500'
                         }`}>
@@ -698,6 +713,7 @@ export default function TeacherLayout() {
                                       : 'bg-gray-50 text-gray-600 shadow-sm group-hover:text-blue-600'
                                 }`}>
                                   <item.icon className="h-5 w-5" />
+                                  {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                                 </span>
                                 <span className={`text-[11px] font-medium leading-tight line-clamp-2 ${
                                   active
@@ -776,14 +792,21 @@ export default function TeacherLayout() {
         }`}>
           {/* Left side: sidebar toggle buttons + school/term info */}
           <div className="flex items-center flex-1 min-w-0">
-            {/* Mobile hamburger */}
+            {/* Mobile hamburger — pulsing dot when the timetable workflow
+                needs this user's attention, so they know to open the menu */}
             <button
-              className="md:hidden p-2 rounded-lg text-gray-500 hover:text-gray-700"
+              className="md:hidden relative p-2 rounded-lg text-gray-500 hover:text-gray-700"
               onClick={() => setSidebarOpen(true)}
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
+              {timetableAttention && (
+                <span className="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white dark:ring-gray-900" />
+                </span>
+              )}
             </button>
 
             {/* Desktop collapse toggle */}

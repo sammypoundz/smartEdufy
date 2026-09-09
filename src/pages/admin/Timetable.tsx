@@ -14,6 +14,10 @@ import {
   ClockIcon,
   CalendarIcon,
   AcademicCapIcon,
+  DocumentChartBarIcon,
+  PrinterIcon,
+  ArrowRightOnRectangleIcon,
+  ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline';
 
 // --- Types from backend ---
@@ -78,11 +82,60 @@ export default function TimetablePage() {
   const [editGrid, setEditGrid] = useState<{ [day: string]: { [slot: string]: string } }>({});
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [showTimeSlotModal, setShowTimeSlotModal] = useState(false);
+  const [showCompiled, setShowCompiled] = useState(false);
   const [editableTimeSlots, setEditableTimeSlots] = useState<string[]>(DEFAULT_TIME_SLOTS);
 
   // Loading states for buttons
   const [savingTimetable, setSavingTimetable] = useState(false);
   const [savingTimeSlots, setSavingTimeSlots] = useState(false);
+
+  // Teachers get read-only timetables — editing is admin-only.
+  const isAdmin = !location.pathname.startsWith('/teacher');
+
+  // Attention indicator for the Timetable Workflow button:
+  // true when the workflow needs THIS user's action.
+  const [workflowAttention, setWorkflowAttention] = useState(false);
+
+  // Check the workflow state on mount (lightweight, best-effort)
+  useEffect(() => {
+    if (!token) return;
+    const isTeacher = location.pathname.startsWith('/teacher');
+    (async () => {
+      try {
+        if (isTeacher) {
+          const res = await api.get('/timetable-workflow/mine', token);
+          if (!res.ok) return;
+          const data = await res.json();
+          const assignments = (data.assignments || []) as {
+            id: string;
+            armId: string;
+            periodsPerWeek: number;
+            slots: { dayOfWeek: string; timeSlot: string }[];
+          }[];
+          const reviews = (data.reviews || []) as { armId: string; status: string }[];
+          const reviewFor = (armId: string) => reviews.find((r) => r.armId === armId);
+          const needs = assignments.some((a) => {
+            const status = reviewFor(a.armId)?.status || 'DRAFT';
+            if (status === 'CHANGES_REQUESTED') return true; // admin asked for revisions
+            if (status === 'APPROVED') return false; // locked, nothing to do
+            return (a.slots?.length || 0) < a.periodsPerWeek; // submission incomplete
+          });
+          setWorkflowAttention(needs);
+        } else {
+          const res = await api.get('/timetable-workflow/reviews', token);
+          if (!res.ok) return;
+          const reviews = (await res.json()) as { status: string }[];
+          // Admin action needed when an arm's teachers have submitted and it's
+          // awaiting review/approval (or was pushed back and is being revised
+          // again after submission).
+          setWorkflowAttention(reviews.some((r) => r.status === 'PENDING_REVIEW'));
+        }
+      } catch {
+        /* indicator is best-effort only */
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
 
   // Pre‑select from navigation state
   useEffect(() => {
@@ -397,14 +450,29 @@ export default function TimetablePage() {
               </div>
             )}
           </div>
-          <div className="flex items-end">
+          <div className="flex items-end gap-2">
             <button
-              onClick={openTimeSlotModal}
-              className="w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+              onClick={() => navigate(`${isAdmin ? '/admin' : '/teacher'}/timetable-workflow`)}
+              className="relative w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium border transition-colors border-indigo-500 text-indigo-600 hover:bg-indigo-50 dark:text-indigo-300 dark:hover:bg-indigo-500/10"
             >
-              <ClockIcon className="h-4 w-4 mr-2" />
-              Edit Time Slots
+              <ArrowRightOnRectangleIcon className="h-4 w-4 mr-2" />
+              Timetable Workflow
+              {workflowAttention && (
+                <span className="absolute -top-2.5 -right-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-red-600 text-white shadow-md animate-pulse">
+                  <ExclamationTriangleIcon className="h-3 w-3" />
+                  Action needed
+                </span>
+              )}
             </button>
+            {isAdmin && (
+              <button
+                onClick={openTimeSlotModal}
+                className="w-full flex items-center justify-center px-4 py-2 rounded-lg text-sm font-medium bg-indigo-600 hover:bg-indigo-700 text-white transition-colors"
+              >
+                <ClockIcon className="h-4 w-4 mr-2" />
+                Edit Time Slots
+              </button>
+            )}
           </div>
         </div>
 
@@ -420,7 +488,16 @@ export default function TimetablePage() {
                 Timetable for {selectedClass.name} {formatArm(selectedArm)}
               </h2>
               <div className="space-x-2 mt-2 sm:mt-0">
-                {timetableEntries.length > 0 ? (
+                {timetableEntries.length > 0 && (
+                  <button
+                    onClick={() => setShowCompiled(true)}
+                    className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-purple-600 hover:bg-purple-700 text-white mr-2"
+                  >
+                    <DocumentChartBarIcon className="h-4 w-4 mr-1" />
+                    Compiled View
+                  </button>
+                )}
+                {isAdmin && timetableEntries.length > 0 ? (
                   <button
                     onClick={openEditModal}
                     disabled={savingTimetable}
@@ -433,7 +510,7 @@ export default function TimetablePage() {
                     )}
                     Edit Timetable
                   </button>
-                ) : (
+                ) : isAdmin && (
                   <button
                     onClick={openCreateModal}
                     disabled={savingTimetable}
@@ -458,7 +535,7 @@ export default function TimetablePage() {
               <div className="text-center py-16 text-gray-500">
                 <AcademicCapIcon className="h-16 w-16 mx-auto mb-4 opacity-30" />
                 <p className="text-lg">No timetable found for this class and arm.</p>
-                <p className="text-sm mt-2">Click "Create New" to build one.</p>
+                <p className="text-sm mt-2">{isAdmin ? 'Click "Create New" to build one.' : 'No timetable has been published for this arm yet.'}</p>
               </div>
             ) : (
               renderTimetableTable(
@@ -523,6 +600,148 @@ export default function TimetablePage() {
                     )}
                   </button>
                 </div>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Compiled Timetable View Modal */}
+      <AnimatePresence>
+        {showCompiled && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowCompiled(false)}
+              className="fixed inset-0 bg-black/30 backdrop-blur-sm z-40 print-hidden"
+            />
+            <motion.div
+              initial={{ scale: 0.92, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.92, opacity: 0 }}
+              className="fixed inset-0 flex items-center justify-center z-50 p-2 sm:p-4 print:static print:block"
+            >
+              <div className={`w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl p-4 sm:p-6 shadow-2xl print-area ${
+                theme === 'dark' ? 'bg-gray-900 print:bg-white' : 'bg-white'
+              }`}>
+                {/* Header */}
+                <div className="flex justify-between items-start mb-4">
+                  <div>
+                    <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                      Compiled Timetable
+                    </h2>
+                    <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                      {selectedClass?.name} {selectedArm ? formatArm(selectedArm) : ''} · Term Overview
+                    </p>
+                  </div>
+                  <div className="flex space-x-2 print-hidden">
+                    <button
+                      onClick={() => window.print()}
+                      className="inline-flex items-center px-3 py-2 rounded-lg text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white"
+                    >
+                      <PrinterIcon className="h-4 w-4 mr-1" />
+                      Print
+                    </button>
+                    <button onClick={() => setShowCompiled(false)} className="p-1 rounded-full hover:bg-gray-200 dark:hover:bg-white/10">
+                      <XMarkIcon className="h-5 w-5" />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Desktop: grid (rows = periods, cols = days) — always used for printing */}
+                <div className="hidden md:block print:block overflow-x-auto">
+                  <table className="min-w-full border-collapse">
+                    <thead>
+                      <tr>
+                        <th className={`p-2 text-left text-xs font-semibold uppercase tracking-wide ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Period</th>
+                        {daysOfWeek.map(day => (
+                          <th key={day} className={`p-2 text-center text-sm font-semibold border-b-2 ${theme === 'dark' ? 'text-blue-300 border-blue-500/50' : 'text-blue-700 border-blue-500'}`}>
+                            {day}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {timeSlots.map((slot, idx) => {
+                        const isBreak = slot === 'Break' || slot === 'Lunch';
+                        return (
+                          <tr key={idx} className={`border-t ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'}`}>
+                            <td className={`p-2 text-xs font-medium whitespace-nowrap ${
+                              isBreak
+                                ? 'text-yellow-600 dark:text-yellow-400'
+                                : theme === 'dark' ? 'text-gray-400' : 'text-gray-600'
+                            }`}>
+                              {slot}
+                            </td>
+                            {daysOfWeek.map(day => {
+                              const subjectId = timetableEntries.find(
+                                e => e.dayOfWeek === day && e.timeSlot === slot
+                              )?.subjectId || '';
+                              const name = getSubjectName(subjectId);
+                              return (
+                                <td key={day} className="p-1">
+                                  {isBreak ? (
+                                    <div className="rounded-md bg-yellow-50 dark:bg-yellow-900/20 text-center text-xs font-medium text-yellow-700 dark:text-yellow-300 py-2">
+                                      {slot === 'Break' ? '☕ Break' : '🍲 Lunch'}
+                                    </div>
+                                  ) : name && name !== '—' ? (
+                                    <div className="rounded-md px-2 py-2 text-center text-sm font-medium shadow-sm border-l-4 border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-800 dark:text-blue-200">
+                                      {name}
+                                    </div>
+                                  ) : (
+                                    <div className={`rounded-md py-2 text-center text-xs ${theme === 'dark' ? 'text-gray-600' : 'text-gray-300'}`}>
+                                      —
+                                    </div>
+                                  )}
+                                </td>
+                              );
+                            })}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Mobile: stacked per-day cards (screen only, never printed) */}
+                <div className="md:hidden print:hidden space-y-4">
+                  {daysOfWeek.map(day => (
+                    <div key={day} className={`rounded-xl overflow-hidden border ${theme === 'dark' ? 'border-gray-800 bg-gray-800/40' : 'border-gray-200 bg-gray-50'}`}>
+                      <div className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold">{day}</div>
+                      <div className="divide-y divide-gray-200 dark:divide-gray-700">
+                        {timeSlots.map((slot, idx) => {
+                          const isBreak = slot === 'Break' || slot === 'Lunch';
+                          const subjectId = timetableEntries.find(
+                            e => e.dayOfWeek === day && e.timeSlot === slot
+                          )?.subjectId || '';
+                          const name = getSubjectName(subjectId);
+                          return (
+                            <div key={idx} className="flex items-center justify-between px-4 py-2">
+                              <span className={`text-xs ${isBreak ? 'text-yellow-600 dark:text-yellow-400 font-medium' : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {slot}
+                              </span>
+                              <span className={`text-sm font-medium ${
+                                isBreak
+                                  ? 'text-yellow-600 dark:text-yellow-400'
+                                  : name && name !== '—'
+                                    ? theme === 'dark' ? 'text-blue-300' : 'text-blue-700'
+                                    : theme === 'dark' ? 'text-gray-600' : 'text-gray-300'
+                              }`}>
+                                {isBreak ? slot : name && name !== '—' ? name : '—'}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <p className={`mt-4 text-xs text-center ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                  Printed on {new Date().toLocaleDateString()} · SmartEdufy Timetable System
+                </p>
               </div>
             </motion.div>
           </>

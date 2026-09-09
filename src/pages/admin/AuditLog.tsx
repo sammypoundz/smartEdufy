@@ -69,7 +69,11 @@ export default function AuditLogPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
 
-  const { data, isLoading: loading, refetch } = useQuery({
+  const {
+    data,
+    isLoading: loading,
+    refetch,
+  } = useQuery({
     queryKey: ["audit-logs", page, limit, search.trim(), action, from, to],
     queryFn: async () => {
       const params = new URLSearchParams({
@@ -94,9 +98,10 @@ export default function AuditLogPage() {
     : "bg-white border-gray-200";
   const inputCls = `px-3 py-2 rounded-lg border text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 ${
     dark
-      ? "bg-white/10 border-white/20 text-white"
-      : "bg-white border-gray-300 text-gray-900"
+      ? "bg-white/10 border-white/20 text-white [color-scheme:dark]"
+      : "bg-white border-gray-300 text-gray-900 [color-scheme:light]"
   }`;
+  const selectCls = `${inputCls} ${dark ? "dark-select-dark" : "dark-select-light"}`;
 
   const fmtDate = (iso: string) =>
     new Date(iso).toLocaleString(undefined, {
@@ -131,7 +136,7 @@ export default function AuditLogPage() {
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
@@ -197,7 +202,7 @@ export default function AuditLogPage() {
                 setAction(e.target.value);
                 setPage(1);
               }}
-              className={inputCls}
+              className={selectCls}
             >
               {ACTIONS.map((a) => (
                 <option key={a} value={a}>
@@ -229,7 +234,8 @@ export default function AuditLogPage() {
 
       {/* Table */}
       <div className={`rounded-xl border overflow-hidden ${card}`}>
-        <div className="overflow-x-auto">
+        {/* Desktop table */}
+        <div className="hidden md:block overflow-x-auto">
           <table className="min-w-full text-sm">
             <thead className={dark ? "bg-white/5" : "bg-gray-50"}>
               <tr className={dark ? "text-gray-400" : "text-gray-500"}>
@@ -338,6 +344,81 @@ export default function AuditLogPage() {
               ))}
             </tbody>
           </table>
+        </div>
+
+        {/* Mobile: app-style activity feed */}
+        <div className="md:hidden divide-y divide-gray-100 dark:divide-white/10">
+          {logs.length === 0 && !loading && (
+            <p className="px-4 py-10 text-center text-gray-400 text-sm">
+              No audit entries found.
+            </p>
+          )}
+          {logs.map((log) => (
+            <div key={log.id} className="px-4 py-3.5">
+              <div className="flex items-start gap-3">
+                <span
+                  className={`mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-semibold whitespace-nowrap ${actionColor(log.action)}`}
+                >
+                  {log.action}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p
+                    className={`text-sm font-medium leading-snug ${dark ? "text-gray-100" : "text-gray-900"}`}
+                  >
+                    {log.description}
+                  </p>
+                  <p
+                    className={`text-xs mt-0.5 truncate ${dark ? "text-gray-400" : "text-gray-500"}`}
+                  >
+                    {log.userName || "Unknown"}
+                    {log.userEmail ? ` · ${log.userEmail}` : ""}
+                  </p>
+                  <div
+                    className={`flex items-center gap-2 mt-1.5 text-[11px] ${dark ? "text-gray-500" : "text-gray-400"}`}
+                  >
+                    <span>{fmtDate(log.createdAt)}</span>
+                    {log.entity && (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span className="truncate">{log.entity}</span>
+                      </>
+                    )}
+                  </div>
+                  <button
+                    onClick={() =>
+                      setExpanded(expanded === log.id ? null : log.id)
+                    }
+                    className={`mt-1.5 text-xs font-medium underline-offset-2 ${dark ? "text-blue-300" : "text-blue-600"} underline`}
+                  >
+                    {expanded === log.id ? "Hide details" : "View details"}
+                  </button>
+                  {expanded === log.id && (
+                    <div
+                      className={`mt-2 rounded-xl p-3 grid grid-cols-1 gap-1.5 text-xs ${dark ? "bg-white/5 text-gray-300" : "bg-gray-50 text-gray-600"}`}
+                    >
+                      <div>
+                        <span className="font-semibold">User:</span>{" "}
+                        {log.userName || "Someone"}
+                        {log.userRole ? ` (${log.userRole})` : ""}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Page:</span>{" "}
+                        {log.path || "—"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">IP Address:</span>{" "}
+                        {log.ipAddress || "—"}
+                      </div>
+                      <div>
+                        <span className="font-semibold">Device:</span>{" "}
+                        {formatUserAgent(log.userAgent)}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Pagination */}

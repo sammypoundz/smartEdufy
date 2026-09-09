@@ -30,6 +30,14 @@ interface User {
   createdAt?: string;
 }
 
+interface RoleDef {
+  id: string;
+  name: string;
+  label?: string;
+  privileges: string[];
+  isSystem: boolean;
+}
+
 // Staff roles that can be granted page privileges (students/parents excluded)
 const NON_PRIVILEGED_ROLES = ['STUDENT', 'PARENT'];
 const isPrivilegeable = (role: string) => !NON_PRIVILEGED_ROLES.includes(role);
@@ -96,6 +104,29 @@ export default function AdminUsers() {
       return Array.isArray(data) ? data : [];
     },
   });
+
+  // Live role definitions — so privilege checkboxes always reflect the role's
+  // CURRENT privileges, not a stale frontend snapshot.
+  const rolesQuery = useQuery<RoleDef[]>({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const res = await api.get('/roles');
+      return Array.isArray(res.data) ? res.data : [];
+    },
+  });
+
+  /** Combined current privileges for a set of role names. */
+  const combinedPrivileges = (roleNames: string[]): string[] =>
+    Array.from(
+      new Set(
+        roleNames.flatMap(
+          n =>
+            rolesQuery.data?.find(r => r.name === n)?.privileges ??
+            SYSTEM_ROLE_PRIVILEGES[n] ??
+            [],
+        ),
+      ),
+    );
 
   const users = usersQuery.data ?? [];
   const loading = usersQuery.isLoading;
@@ -230,8 +261,7 @@ export default function AdminUsers() {
     }
   };
 
-  const defaultsForRoles = (roles: string[]): string[] =>
-    Array.from(new Set(roles.flatMap(r => SYSTEM_ROLE_PRIVILEGES[r] || [])));
+  const defaultsForRoles = (roles: string[]): string[] => combinedPrivileges(roles);
 
   const handleRoleToggle = (role: string) => {
     setFormData(prev => {
@@ -933,11 +963,9 @@ export default function AdminUsers() {
                           type="button"
                           onClick={() => setFormData(prev => ({
                             ...prev,
-                            allowedPages: Array.from(new Set(
-                              (prev.roles.length ? prev.roles : [prev.role].filter(Boolean)).flatMap(
-                                r => SYSTEM_ROLE_PRIVILEGES[r] || []
-                              )
-                            )),
+                            allowedPages: combinedPrivileges(
+                              prev.roles.length ? prev.roles : [prev.role].filter(Boolean),
+                            ),
                           }))}
                           className="ml-3 shrink-0 text-xs text-blue-600 hover:underline whitespace-nowrap"
                           title="Clear the list so the user falls back to their role's default pages"

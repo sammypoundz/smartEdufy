@@ -23,6 +23,7 @@ import AdminCBT from './pages/admin/CBT';
 import AdminLessonPlan from './pages/admin/LessonPlan';
 import AdminMessaging from './pages/admin/Messaging';
 import AdminTimetable from './pages/admin/Timetable';
+import TimetableWorkflow from './pages/timetable/TimetableWorkflow';
 import AdminAssessmentFormat from './pages/admin/AssessmentFormat';
 import AdminExpenses from './pages/admin/Expenses';
 import AdminInventory from './pages/admin/Inventory';
@@ -135,6 +136,7 @@ function App() {
             <Route path="messaging" element={<AdminMessaging />} />
             <Route path="staff" element={<AdminStaff />} />
             <Route path="timetable" element={<AdminTimetable />} />
+            <Route path="timetable-workflow" element={<TimetableWorkflow />} />
             <Route path="broadsheet" element={<AdminBroadsheet />} />
             <Route path="cbt" element={<AdminCBT />} />
             <Route path="assessment-format" element={<AdminAssessmentFormat />} />
@@ -173,6 +175,7 @@ function App() {
             <Route path="assessment-format" element={<AdminAssessmentFormat />} />
             <Route path="lesson-plan" element={<AdminLessonPlan />} />
             <Route path="timetable" element={<AdminTimetable />} />
+            <Route path="timetable-workflow" element={<TimetableWorkflow />} />
             <Route path="broadsheet" element={<AdminBroadsheet />} />
             <Route path="cbt" element={<AdminCBT />} />
 

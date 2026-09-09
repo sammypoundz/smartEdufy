@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { ALL_PRIVILEGES } from '../utils/privileges';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
+import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import {
   FolderIcon,
@@ -158,8 +160,35 @@ export default function AdminLayout() {
   })();
   const allowedNavItems = allowedCategories.flatMap(cat => cat.items);
 
+  // Red badge on the Time Table nav item when the workflow needs the admin
+  // (an arm is pending review/approval).
+  const { attention: timetableAttention } = useTimetableWorkflowAttention('admin');
+  const isTimetableItem = (href: string) => href.endsWith('/timetable');
+  // A category folder shows the badge when ANY of its items needs attention.
+  const categoryNeedsAttention = (categoryName: string) =>
+    timetableAttention &&
+    allowedCategories
+      .find((c) => c.name === categoryName)
+      ?.items.some((i) => isTimetableItem(i.href)) === true;
+
   // ---------- Sidebar states ----------
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Keeps the drawer mounted during its slide-down exit animation
+  const [sidebarVisible, setSidebarVisible] = useState(false);
+
+  const openSidebar = () => {
+    // Mount off-screen first, then open on the next frame so the slide-up
+    // transition actually runs from translate-y-full to translate-y-0.
+    setSidebarVisible(true);
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => setSidebarOpen(true));
+    });
+  };
+
+  const closeSidebar = () => {
+    setSidebarOpen(false); // slides the sheet down / fades the backdrop
+    setTimeout(() => setSidebarVisible(false), 350);
+  };
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [isHoverExpanded, setIsHoverExpanded] = useState(false);
   // Temporary collapse while hovering the school name in the top bar.
@@ -365,7 +394,7 @@ export default function AdminLayout() {
           setIsHoverExpanded(false);
         }}
       >
-        <div className={`relative flex flex-grow flex-col overflow-y-auto border-r pt-5 shadow-2xl transition-all duration-300 ${
+        <div className={`relative flex flex-grow flex-col overflow-y-auto overflow-x-hidden border-r pt-5 shadow-2xl transition-all duration-300 ${
           theme === 'dark'
             ? 'bg-white/5 backdrop-blur-xl border-white/10'
             : 'bg-white/30 backdrop-blur-md border-white/20'
@@ -426,6 +455,7 @@ export default function AdminLayout() {
                             ? 'text-gray-500 group-hover:text-blue-400'
                             : 'text-gray-500 group-hover:text-blue-600'
                       }`} />
+                      {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                     </Link>
                   );
                 })
@@ -441,6 +471,7 @@ export default function AdminLayout() {
                       }`}
                     >
                       <span>{category.name}</span>
+                      <AttentionBadge show={categoryNeedsAttention(category.name)} compact />
                       <ChevronDownIcon
                         className={`h-4 w-4 transition-transform duration-200 ${
                           openCategories[category.name] ? 'rotate-0' : '-rotate-90'
@@ -473,6 +504,7 @@ export default function AdminLayout() {
                                     : 'text-gray-500 group-hover:text-blue-600'
                               }`} />
                               {item.name}
+                              {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                             </Link>
                           );
                         })}
@@ -541,14 +573,16 @@ export default function AdminLayout() {
       </div>
 
       {/* ====== Mobile Sidebar — bottom drawer with grid menu ====== */}
-      {sidebarOpen && (
+      {sidebarVisible && (
         <>
           <div
-            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden animate-fade-in"
-            onClick={() => setSidebarOpen(false)}
+            className={`fixed inset-0 bg-black/50 backdrop-blur-sm z-30 md:hidden transition-opacity duration-300 ${
+              sidebarOpen ? 'opacity-100' : 'opacity-0'
+            }`}
+            onClick={closeSidebar}
           />
           <div
-            className={`fixed inset-x-0 bottom-0 top-auto z-40 md:hidden max-h-[85vh] flex flex-col rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.35)] animate-sheet-up ${
+            className={`fixed inset-x-0 bottom-0 top-auto z-40 md:hidden max-h-[85vh] flex flex-col rounded-t-3xl shadow-[0_-8px_40px_rgba(0,0,0,0.35)] transition-transform duration-300 ease-in-out ${
               theme === 'dark'
                 ? 'bg-[#111827]/95 backdrop-blur-xl border-t border-white/10'
                 : 'bg-white/95 backdrop-blur-xl border-t border-gray-200'
@@ -558,7 +592,7 @@ export default function AdminLayout() {
           >
             {/* Drag handle */}
             <button
-              onClick={() => setSidebarOpen(false)}
+              onClick={closeSidebar}
               className="w-full flex flex-col items-center pt-2.5 pb-1 cursor-pointer"
               aria-label="Close menu"
             >
@@ -588,7 +622,7 @@ export default function AdminLayout() {
                 </span>
               </div>
               <button
-                onClick={() => setSidebarOpen(false)}
+                onClick={closeSidebar}
                 className={`p-1.5 rounded-full ${
                   theme === 'dark'
                     ? 'text-gray-400 hover:text-white hover:bg-white/10'
@@ -639,6 +673,7 @@ export default function AdminLayout() {
                       }`}>
                         {category.name}
                       </span>
+                      <AttentionBadge show={categoryNeedsAttention(category.name)} compact />
                       <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${
                         theme === 'dark' ? 'bg-white/10 text-gray-400' : 'bg-white text-gray-500'
                       }`}>
@@ -660,7 +695,9 @@ export default function AdminLayout() {
                             <Link
                               key={item.name}
                               to={item.href}
-                              onClick={() => setSidebarOpen(false)}
+                              onClick={() => {
+                                closeSidebar();
+                              }}
                               style={{ animationDelay: `${idx * 45}ms` }}
                               className={`group flex flex-col items-center justify-center gap-1.5 px-2 py-3.5 rounded-2xl text-center transition-all duration-200 active:scale-95 animate-folder-content-in ${
                                 active
@@ -680,6 +717,7 @@ export default function AdminLayout() {
                                     : 'bg-gray-50 text-gray-600 shadow-sm group-hover:text-blue-600'
                               }`}>
                                 <item.icon className="h-5 w-5" />
+                                {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
                               </span>
                               <span className={`text-[11px] font-medium leading-tight line-clamp-2 ${
                                 active
@@ -753,14 +791,21 @@ export default function AdminLayout() {
         }`}>
           {/* Left side: sidebar toggle buttons + school/term info */}
           <div className="flex items-center flex-1 min-w-0">
-            {/* Mobile hamburger */}
+            {/* Mobile hamburger — pulsing dot when the timetable workflow
+                needs this user's attention, so they know to open the menu */}
             <button
-              className="md:hidden p-2 rounded-lg text-gray-500 hover:text-gray-700"
-              onClick={() => setSidebarOpen(true)}
+              className="md:hidden relative p-2 rounded-lg text-gray-500 hover:text-gray-700"
+              onClick={openSidebar}
             >
               <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
               </svg>
+              {timetableAttention && (
+                <span className="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
+                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white dark:ring-gray-900" />
+                </span>
+              )}
             </button>
 
             {/* Desktop collapse toggle */}
@@ -844,8 +889,8 @@ export default function AdminLayout() {
             </div>
           </div>
 
-          {/* ====== Search Modal ====== */}
-          {searchModalOpen && (
+          {/* ====== Search Modal (ported to body so the backdrop covers the full viewport) ====== */}
+          {searchModalOpen && createPortal(
             <div
               className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 pt-24"
               onClick={closeSearchModal}
@@ -930,7 +975,8 @@ export default function AdminLayout() {
                   </div>
                 )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
 
           {/* Right icons */}
