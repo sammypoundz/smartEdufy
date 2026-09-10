@@ -6,6 +6,7 @@ import { ALL_PRIVILEGES } from '../utils/privileges';
 import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
+import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import {
@@ -119,6 +120,7 @@ function getSchoolNameTextClass(name: string): string {
 export default function AdminLayout() {
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const unreadCount = getUnreadNotificationCount();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -791,23 +793,6 @@ export default function AdminLayout() {
         }`}>
           {/* Left side: sidebar toggle buttons + school/term info */}
           <div className="flex items-center flex-1 min-w-0">
-            {/* Mobile hamburger — pulsing dot when the timetable workflow
-                needs this user's attention, so they know to open the menu */}
-            <button
-              className="md:hidden relative p-2 rounded-lg text-gray-500 hover:text-gray-700"
-              onClick={openSidebar}
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-              {timetableAttention && (
-                <span className="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white dark:ring-gray-900" />
-                </span>
-              )}
-            </button>
-
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebar}
@@ -986,13 +971,18 @@ export default function AdminLayout() {
             </div>
             <Link
               to="/admin/notifications"
-              className={`p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 theme === 'dark'
                   ? 'text-gray-400 hover:text-white hover:bg-white/10'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
               }`}
             >
               <BellIcon className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-900">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Link>
             <button
               onClick={toggleTheme}
@@ -1004,23 +994,93 @@ export default function AdminLayout() {
             >
               {theme === 'dark' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
             </button>
-            <Link
-              to="/admin/profile"
-              className={`p-1 rounded-full transition-colors ${
-                theme === 'dark'
-                  ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-              }`}
-            >
-              <UserCircleIcon className="h-8 w-8" />
-            </Link>
           </div>
         </header>
 
-        <main className="flex-1">
+        <main className="flex-1 pb-20 md:pb-0">
           <Outlet />
         </main>
       </div>
+
+      {/* ====== MOBILE FLOATING BOTTOM NAV (app-style, mobile only, all pages) ====== */}
+      <nav
+        className={`md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5 rounded-full shadow-2xl border backdrop-blur-xl transition-opacity duration-300 ${
+          theme === 'dark'
+            ? 'bg-gray-900/85 border-white/10'
+            : 'bg-white/90 border-gray-200/70'
+        } ${sidebarVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+        aria-label="Quick navigation"
+      >
+        {/* Menu — opens the folder-grid drawer */}
+        <button
+          onClick={openSidebar}
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            theme === 'dark'
+              ? 'text-gray-400 active:bg-white/10'
+              : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Open menu"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          <span className="text-[10px] font-medium">Menu</span>
+        </button>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Notifications with unread badge */}
+        <Link
+          to="/admin/notifications"
+          className={`relative flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            isActiveLink('/admin/notifications')
+              ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400'
+              : theme === 'dark'
+                ? 'text-gray-400 active:bg-white/10'
+                : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Notifications"
+        >
+          <BellIcon className="h-6 w-6" />
+          {unreadCount > 0 && (
+            <span className="absolute top-1 right-3 flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-red-600 text-[9px] font-bold text-white">
+              {unreadCount > 9 ? '9+' : unreadCount}
+            </span>
+          )}
+          <span className="text-[10px] font-medium">Alerts</span>
+        </Link>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            theme === 'dark'
+              ? 'text-gray-400 active:bg-white/10'
+              : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Log out"
+        >
+          <ArrowLeftOnRectangleIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Logout</span>
+        </button>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Profile */}
+        <Link
+          to="/admin/profile"
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            isActiveLink('/admin/profile')
+              ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400'
+              : theme === 'dark'
+                ? 'text-gray-400 active:bg-white/10'
+                : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="My profile"
+        >
+          <UserCircleIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Profile</span>
+        </Link>
+      </nav>
     </div>
   );
 }

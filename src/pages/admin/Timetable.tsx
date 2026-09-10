@@ -61,6 +61,17 @@ const DEFAULT_TIME_SLOTS = [
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
 
+// Any slot whose name marks it as a non-instructional break period.
+// Case-insensitive so "Break", "Lunch", "Short Break", "RECESS", etc. all count.
+const BREAK_KEYWORDS = ['break', 'lunch', 'recess'];
+export const isBreakSlot = (slot: string) => {
+  const s = (slot || '').trim().toLowerCase();
+  return BREAK_KEYWORDS.some(k => s.includes(k));
+};
+
+// Labels offered by the "Add Break" quick action.
+const BREAK_PRESETS = ['Break', 'Lunch', 'Short Break'];
+
 export default function TimetablePage() {
   const { theme } = useTheme();
   const { token } = useAuth();
@@ -190,9 +201,21 @@ export default function TimetablePage() {
         if (res.ok) {
           const entries = await res.json() as TimetableEntry[];
           setTimetableEntries(entries);
+          // Prefer the persisted slot layout for this arm; fall back to slots
+          // seen in the entries, then the defaults for a fresh arm.
+          try {
+            const slotsRes = await api.get(`/timetable/arm/${selectedArmId}/time-slots`, token);
+            if (slotsRes.ok) {
+              const data = await slotsRes.json() as { timeSlots?: string[] };
+              if (data.timeSlots?.length) {
+                setTimeSlots(data.timeSlots);
+                return;
+              }
+            }
+          } catch { /* fall back below */ }
           const slots = Array.from(new Set(entries.map((e: TimetableEntry) => e.timeSlot)))
             .sort((a, b) => DEFAULT_TIME_SLOTS.indexOf(a) - DEFAULT_TIME_SLOTS.indexOf(b));
-          if (slots.length) setTimeSlots(slots);
+          setTimeSlots(slots.length ? slots : DEFAULT_TIME_SLOTS);
         } else {
           setTimetableEntries([]);
         }
@@ -243,7 +266,7 @@ export default function TimetablePage() {
     for (const day of daysOfWeek) {
       for (const slot of timeSlots) {
         const subjectId = editGrid[day]?.[slot];
-        if (subjectId && subjectId.trim() !== '' && slot !== 'Break' && slot !== 'Lunch') {
+        if (subjectId && subjectId.trim() !== '' && !isBreakSlot(slot)) {
           entriesToSave.push({ dayOfWeek: day, timeSlot: slot, subjectId });
         }
       }
@@ -295,7 +318,7 @@ export default function TimetablePage() {
               <th
                 key={idx}
                 className={`p-2 text-center text-xs font-medium ${
-                  slot === 'Break' || slot === 'Lunch'
+                  isBreakSlot(slot)
                     ? 'text-yellow-600 dark:text-yellow-400'
                     : theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
                 }`}
@@ -311,7 +334,7 @@ export default function TimetablePage() {
               <td className={`p-2 font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{day}</td>
               {timeSlots.map((slot, idx) => {
                 const subjectId = grid[day]?.[slot] || '';
-                const isBreak = slot === 'Break' || slot === 'Lunch';
+                const isBreak = isBreakSlot(slot);
                 return (
                   <td key={idx} className="p-1">
                     {editable ? (
@@ -356,19 +379,62 @@ export default function TimetablePage() {
     setShowTimeSlotModal(true);
   };
   const addTimeSlot = () => setEditableTimeSlots([...editableTimeSlots, 'New Period']);
+  // Privileged quick action: insert a break slot (non-instructional).
+  // Break slots are never saved as class entries — isBreakSlot() filters them
+  // out of saveTimetable, and the grid disables subject selection on them.
+  const addBreakSlot = (label: string) => {
+    setEditableTimeSlots(prev => [...prev, label]);
+    toast.success(`"${label}" break slot added — it won't count as a class period`);
+  };
   const removeTimeSlot = (idx: number) => {
     if (editableTimeSlots.length <= 1) return;
     setEditableTimeSlots(editableTimeSlots.filter((_, i) => i !== idx));
   };
   const saveTimeSlots = async () => {
+    // Basic validation: no empty or duplicate slot names.
+    const cleaned = editableTimeSlots.map(s => s.trim()).filter(Boolean);
+    if (cleaned.length !== editableTimeSlots.length) {
+      toast.error('Time slot names cannot be empty');
+      return;
+    }
+    if (new Set(cleaned.map(s => s.toLowerCase())).size !== cleaned.length) {
+      toast.error('Duplicate time slot names are not allowed');
+      return;
+    }
     setSavingTimeSlots(true);
-    // Simulate async (if you need to save to backend, add API call)
-    await new Promise(resolve => setTimeout(resolve, 500));
-    setTimeSlots(editableTimeSlots);
-    setShowTimeSlotModal(false);
-    if (selectedArmId) buildEditGrid();
-    setSavingTimeSlots(false);
-    toast.success('Time slots updated');
+    try {
+      if (!selectedArmId) {
+        // No arm selected yet — keep the local-only behaviour.
+        setTimeSlots(cleaned);
+      } else {
+        // Persist the layout. The backend recomputes the timetable: any class
+        // entries on removed slots or break slots are deleted, so breaks are
+        // always off for classes.
+        const res = await api.put(`/timetable/arm/${selectedArmId}/time-slots`, { timeSlots: cleaned }, token);
+        if (!res.ok) {
+          const text = await res.text();
+          throw new Error(text || 'Failed to save time slots');
+        }
+        const data = await res.json() as { timeSlots: string[]; removedEntries: number };
+        setTimeSlots(data.timeSlots);
+        if (data.removedEntries > 0) {
+          toast.success(`Time slots updated — ${data.removedEntries} class period(s) on removed/break slots were cleared`);
+        } else {
+          toast.success('Time slots updated');
+        }
+        // Refresh entries so the grid reflects pruned slots immediately.
+        const refreshRes = await api.get(`/timetable/arm/${selectedArmId}`, token);
+        if (refreshRes.ok) {
+          setTimetableEntries(await refreshRes.json() as TimetableEntry[]);
+        }
+      }
+      setShowTimeSlotModal(false);
+      if (selectedArmId) buildEditGrid();
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save time slots');
+    } finally {
+      setSavingTimeSlots(false);
+    }
   };
 
   return (
@@ -665,7 +731,7 @@ export default function TimetablePage() {
                     </thead>
                     <tbody>
                       {timeSlots.map((slot, idx) => {
-                        const isBreak = slot === 'Break' || slot === 'Lunch';
+                        const isBreak = isBreakSlot(slot);
                         return (
                           <tr key={idx} className={`border-t ${theme === 'dark' ? 'border-gray-800' : 'border-gray-200'}`}>
                             <td className={`p-2 text-xs font-medium whitespace-nowrap ${
@@ -712,7 +778,7 @@ export default function TimetablePage() {
                       <div className="px-4 py-2 bg-blue-600 text-white text-sm font-semibold">{day}</div>
                       <div className="divide-y divide-gray-200 dark:divide-gray-700">
                         {timeSlots.map((slot, idx) => {
-                          const isBreak = slot === 'Break' || slot === 'Lunch';
+                          const isBreak = isBreakSlot(slot);
                           const subjectId = timetableEntries.find(
                             e => e.dayOfWeek === day && e.timeSlot === slot
                           )?.subjectId || '';
@@ -781,8 +847,15 @@ export default function TimetablePage() {
                           newSlots[idx] = e.target.value;
                           setEditableTimeSlots(newSlots);
                         }}
-                        className={`flex-1 px-3 py-2 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
+                        className={`flex-1 px-3 py-2 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'} ${
+                          isBreakSlot(slot) ? 'border-yellow-500/60' : ''
+                        }`}
                       />
+                      {isBreakSlot(slot) && (
+                        <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 text-[10px] font-bold uppercase tracking-wide">
+                          Break
+                        </span>
+                      )}
                       <button
                         onClick={() => removeTimeSlot(idx)}
                         disabled={editableTimeSlots.length <= 1}
@@ -803,6 +876,26 @@ export default function TimetablePage() {
                 >
                   <PlusIcon className="h-4 w-4 mr-2" /> Add Time Slot
                 </button>
+                {/* Add Break quick action: inserts a non-instructional slot.
+                    Break slots never count as class periods in the system. */}
+                <div className="mt-2 flex items-center justify-center gap-2">
+                  {BREAK_PRESETS.map(label => (
+                    <button
+                      key={label}
+                      onClick={() => addBreakSlot(label)}
+                      className={`flex-1 flex items-center justify-center px-3 py-2 rounded-lg text-sm font-medium transition-colors border ${
+                        theme === 'dark'
+                          ? 'border-yellow-600/50 text-yellow-300 hover:bg-yellow-900/20'
+                          : 'border-yellow-400 text-yellow-700 hover:bg-yellow-50'
+                      }`}
+                    >
+                      <PlusIcon className="h-4 w-4 mr-1" /> {label}
+                    </button>
+                  ))}
+                </div>
+                <p className={`mt-2 text-xs text-center ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                  Break slots are off for classes — no subjects can be scheduled on them and they don't count toward periods.
+                </p>
                 <div className="mt-6 flex justify-end space-x-3">
                   <button onClick={() => setShowTimeSlotModal(false)} className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200">
                     Cancel

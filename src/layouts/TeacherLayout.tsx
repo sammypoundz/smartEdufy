@@ -5,6 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useTheme } from '../contexts/ThemeContext';
 import { effectivePrivileges } from '../utils/privileges';
 import { api } from '../utils/api';
+import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import toast from 'react-hot-toast';
@@ -109,6 +110,7 @@ function getSchoolNameTextClass(name: string): string {
 export default function TeacherLayout() {
   const { user, logout, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
+  const unreadCount = getUnreadNotificationCount();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -947,13 +949,18 @@ export default function TeacherLayout() {
             </div>
             <Link
               to="/teacher/notifications"
-              className={`p-2 rounded-lg transition-colors ${
+              className={`relative p-2 rounded-lg transition-colors ${
                 theme === 'dark'
                   ? 'text-gray-400 hover:text-white hover:bg-white/10'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
               }`}
             >
               <BellIcon className="h-5 w-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-red-600 text-[10px] font-bold text-white ring-2 ring-white dark:ring-gray-900">
+                  {unreadCount > 9 ? '9+' : unreadCount}
+                </span>
+              )}
             </Link>
             <button
               onClick={toggleTheme}

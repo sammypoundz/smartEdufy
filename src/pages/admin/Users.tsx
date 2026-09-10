@@ -147,6 +147,9 @@ export default function AdminUsers() {
     password: '',
     isActive: true,
     allowedPages: [] as string[],
+    idMode: 'AUTO' as 'AUTO' | 'MANUAL',
+    customId: '',
+    nextIdPreview: '' as string,
   });
 
   // ---------- Per‑action loading states ----------
@@ -232,8 +235,9 @@ export default function AdminUsers() {
 
   const openAddModal = () => {
     setEditingUser(null);
-    setFormData({ name: '', email: '', role: 'STUDENT', roles: ['STUDENT'], password: '', isActive: true, allowedPages: [...SYSTEM_ROLE_PRIVILEGES['STUDENT']] });
+    setFormData({ name: '', email: '', role: 'STUDENT', roles: ['STUDENT'], password: '', isActive: true, allowedPages: [...SYSTEM_ROLE_PRIVILEGES['STUDENT']], idMode: 'AUTO', customId: '', nextIdPreview: '' });
     setShowModal(true);
+    fetchNextIdPreview('STUDENT');
   };
 
   const openEditModal = (user: User) => {
@@ -247,8 +251,23 @@ export default function AdminUsers() {
       password: '',
       isActive: user.isActive,
       allowedPages: user.allowedPages || [],
+      idMode: 'AUTO',
+      customId: '',
+      nextIdPreview: '',
     });
     setShowModal(true);
+  };
+
+  /** Fetch the next auto-generated ID for a role (preview only, not consumed). */
+  const fetchNextIdPreview = async (role: string) => {
+    if (!role) return;
+    try {
+      const res = await api.get(`/users/next-id?role=${encodeURIComponent(role)}`);
+      if (res.status === 200) {
+        const data = res.data as { nextId?: string };
+        setFormData(prev => ({ ...prev, nextIdPreview: data.nextId || '' }));
+      }
+    } catch { /* preview is best-effort */ }
   };
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
@@ -272,6 +291,8 @@ export default function AdminUsers() {
       // defaults of the roles now selected (admin can still adjust after).
       return { ...prev, roles, role: roles[0] || '', allowedPages: defaultsForRoles(roles) };
     });
+    // Refresh the auto-ID preview for the new primary role.
+    fetchNextIdPreview(role);
   };
 
   const handlePrivilegeToggle = (key: string) => {
@@ -306,6 +327,10 @@ export default function AdminUsers() {
       toast.error('Password is required for new users');
       return;
     }
+    if (!editingUser && formData.idMode === 'MANUAL' && !formData.customId.trim()) {
+      toast.error('Please enter a custom ID or switch back to Auto ID');
+      return;
+    }
 
     const roles = formData.roles.length ? formData.roles : [formData.role].filter(Boolean);
     const showPrivileges = roles.some(isPrivilegeable);
@@ -317,6 +342,10 @@ export default function AdminUsers() {
       isActive: formData.isActive,
       allowedPages: showPrivileges ? formData.allowedPages : [],
       ...(formData.password && { password: formData.password }),
+      ...(!editingUser && {
+        idMode: formData.idMode,
+        ...(formData.idMode === 'MANUAL' && { customId: formData.customId }),
+      }),
     };
     saveMutation.mutate({ id: editingUser?.id, payload });
   };
@@ -914,6 +943,64 @@ export default function AdminUsers() {
                         required={!editingUser}
                       />
                     </div>
+
+                    {!editingUser && (
+                      <div>
+                        <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                          User ID
+                        </label>
+                        <div className="flex gap-2 mb-2">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setFormData(prev => ({ ...prev, idMode: 'AUTO' }));
+                              fetchNextIdPreview(formData.role);
+                            }}
+                            className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                              formData.idMode === 'AUTO'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                : theme === 'dark' ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'
+                            }`}
+                          >
+                            Auto ID (default)
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setFormData(prev => ({ ...prev, idMode: 'MANUAL' }))}
+                            className={`flex-1 px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-colors ${
+                              formData.idMode === 'MANUAL'
+                                ? 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300'
+                                : theme === 'dark' ? 'border-gray-600 text-gray-400' : 'border-gray-300 text-gray-500'
+                            }`}
+                          >
+                            Manual ID
+                          </button>
+                        </div>
+                        {formData.idMode === 'AUTO' ? (
+                          <div className={`rounded-lg px-3 py-2 text-sm font-mono ${theme === 'dark' ? 'bg-gray-800/70 text-blue-300' : 'bg-blue-50 text-blue-700'}`}>
+                            Next ID: <strong>{formData.nextIdPreview || '…'}</strong>
+                          </div>
+                        ) : (
+                          <input
+                            type="text"
+                            name="customId"
+                            value={formData.customId}
+                            onChange={handleFormChange}
+                            className={`w-full px-3 py-2 border rounded-lg font-mono focus:ring-2 focus:ring-blue-500 ${
+                              theme === 'dark'
+                                ? 'bg-gray-800 border-gray-600 text-white'
+                                : 'bg-white border-gray-300 text-gray-900'
+                            }`}
+                            placeholder="e.g. STU-2025-0100"
+                          />
+                        )}
+                        <p className={`mt-1 text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {formData.idMode === 'AUTO'
+                            ? 'Assigned automatically from the role\'s format (Settings → ID Generator).'
+                            : 'Duplicates are rejected; a higher number advances the role counter.'}
+                        </p>
+                      </div>
+                    )}
 
                     <div className={`flex items-center gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
                       <input

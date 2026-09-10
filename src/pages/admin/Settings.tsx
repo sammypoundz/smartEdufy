@@ -13,7 +13,6 @@ import {
   AcademicCapIcon,
   CurrencyDollarIcon,
   DocumentTextIcon,
-  ChartBarIcon,
   PlusIcon,
   TrashIcon,
   PencilIcon,
@@ -22,14 +21,6 @@ import {
 } from '@heroicons/react/24/outline';
 
 // Types
-interface GradingScale {
-  id: string;
-  minScore: number | null;
-  maxScore: number | null;
-  grade: string;
-  points?: number | null;
-}
-
 interface ReportCardTemplate {
   id: string;
   name: string;
@@ -93,14 +84,40 @@ interface AcademicYear {
 
 const categories = [
   { id: 'general', label: 'General', icon: Cog6ToothIcon, gradient: 'from-blue-500 to-cyan-400', bg: 'bg-blue-50 dark:bg-blue-900/20' },
+  { id: 'id-generator', label: 'ID Generator', icon: CheckBadgeIcon, gradient: 'from-fuchsia-500 to-purple-400', bg: 'bg-fuchsia-50 dark:bg-fuchsia-900/20' },
   { id: 'academic', label: 'Academic', icon: AcademicCapIcon, gradient: 'from-purple-500 to-pink-400', bg: 'bg-purple-50 dark:bg-purple-900/20' },
   { id: 'financial', label: 'Financial', icon: CurrencyDollarIcon, gradient: 'from-green-500 to-emerald-400', bg: 'bg-green-50 dark:bg-green-900/20' },
-  { id: 'grading', label: 'Grading', icon: ChartBarIcon, gradient: 'from-orange-500 to-amber-400', bg: 'bg-orange-50 dark:bg-orange-900/20' },
   { id: 'templates', label: 'Report Cards', icon: DocumentTextIcon, gradient: 'from-indigo-500 to-blue-400', bg: 'bg-indigo-50 dark:bg-indigo-900/20' },
   { id: 'notifications', label: 'Notifications', icon: BellIcon, gradient: 'from-pink-500 to-rose-400', bg: 'bg-pink-50 dark:bg-pink-900/20' },
   { id: 'security', label: 'Security', icon: ShieldCheckIcon, gradient: 'from-red-500 to-orange-400', bg: 'bg-red-50 dark:bg-red-900/20' },
   { id: 'backup', label: 'Backup', icon: ArrowPathIcon, gradient: 'from-teal-500 to-cyan-400', bg: 'bg-teal-50 dark:bg-teal-900/20' },
 ];
+
+interface IdGeneratorConfig {
+  id: string;
+  role: string;
+  format: string;
+  counter: number;
+  lastResetYear?: number | null;
+}
+
+const ID_ROLES = ['STUDENT', 'TEACHER', 'PARENT', 'ADMIN', 'PRINCIPAL', 'BURSAR', 'ACCOUNTANT', 'LIBRARIAN'];
+const DEFAULT_ID_FORMATS: Record<string, string> = {
+  STUDENT: 'STU-{YEAR}-{####}',
+  TEACHER: 'TCH-{###}',
+  PARENT: 'PAR-{###}',
+  ADMIN: 'ADM-{###}',
+  PRINCIPAL: 'PRN-{###}',
+  BURSAR: 'BUR-{###}',
+  ACCOUNTANT: 'ACC-{###}',
+  LIBRARIAN: 'LIB-{###}',
+};
+/** Client-side mirror of the backend renderId() for live preview. */
+const renderIdPreview = (format: string, counter: number, role: string) =>
+  format
+    .replace(/\{(#+)\}/g, (_m, h: string) => String(counter).padStart(h.length, '0'))
+    .replace(/\{YEAR\}/g, String(new Date().getFullYear()))
+    .replace(/\{ROLE\}/g, role);
 
 export default function AdminSettings() {
   const { theme } = useTheme();
@@ -126,11 +143,12 @@ export default function AdminSettings() {
   const [backupSettings, setBackupSettings] = useState<BackupSettings>({ autoBackup: true });
   const [templates, setTemplates] = useState<ReportCardTemplate[]>([]);
   const [promotionRules, setPromotionRules] = useState<PromotionRule[]>([]);
-  const [gradingScales, setGradingScales] = useState<GradingScale[]>([]);
+
+  // ID Generator state
+  const [idConfigs, setIdConfigs] = useState<IdGeneratorConfig[]>([]);
+  const [idDrafts, setIdDrafts] = useState<Record<string, { format: string }>>({});
 
   // Modal states
-  const [showGradingModal, setShowGradingModal] = useState(false);
-  const [editingScale, setEditingScale] = useState<GradingScale | null>(null);
   const [showTemplateModal, setShowTemplateModal] = useState(false);
   const [editingTemplate, setEditingTemplate] = useState<ReportCardTemplate | null>(null);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
@@ -155,7 +173,7 @@ export default function AdminSettings() {
         backupRes,
         templatesRes,
         promotionRes,
-        gradingRes,
+        idGenRes,
       ] = await Promise.all([
         api.get('/settings/general'),
         api.get('/settings/academic'),
@@ -165,7 +183,7 @@ export default function AdminSettings() {
         api.get('/settings/backup'),
         api.get('/settings/templates'),
         api.get('/settings/promotion-rules'),
-        api.get('/grading-scales'),
+        api.get('/settings/id-generator'),
       ]);
 
       const load = async <T,>(res: Response, fallback: T): Promise<T> =>
@@ -180,7 +198,7 @@ export default function AdminSettings() {
         backupSettings: await load<BackupSettings>(backupRes, { autoBackup: true }),
         templates: await load<ReportCardTemplate[]>(templatesRes, []),
         promotionRules: await load<PromotionRule[]>(promotionRes, []),
-        gradingScales: await load<GradingScale[]>(gradingRes, []),
+        idConfigs: await load<IdGeneratorConfig[]>(idGenRes, []),
       };
     },
   });
@@ -203,7 +221,14 @@ export default function AdminSettings() {
     setBackupSettings(d.backupSettings);
     setTemplates(d.templates);
     setPromotionRules(d.promotionRules);
-    setGradingScales(d.gradingScales);
+    setIdConfigs(d.idConfigs);
+    // Seed drafts: saved format, else the default format for the role.
+    setIdDrafts(Object.fromEntries(
+      ID_ROLES.map(role => {
+        const saved = d.idConfigs.find(c => c.role === role);
+        return [role, { format: saved?.format ?? DEFAULT_ID_FORMATS[role] }];
+      })
+    ));
   }, [settingsQuery.data]);
 
   useEffect(() => {
@@ -405,58 +430,6 @@ export default function AdminSettings() {
     }
   };
 
-  // ---------- Grading Scales ----------
-  const openGradingModal = (scale?: GradingScale) => {
-    if (scale) {
-      setEditingScale({ ...scale });
-    } else {
-      setEditingScale({
-        id: Date.now().toString(),
-        minScore: null,
-        maxScore: null,
-        grade: '',
-        points: null
-      });
-    }
-    setShowGradingModal(true);
-  };
-
-  const saveGradingScale = () => {
-    if (!editingScale) return;
-    if (editingScale.grade.trim() === '') {
-      toast.error('Grade letter is required');
-      return;
-    }
-    if (editingScale.minScore === null || editingScale.minScore === undefined) {
-      toast.error('Min score is required');
-      return;
-    }
-    if (editingScale.maxScore === null || editingScale.maxScore === undefined) {
-      toast.error('Max score is required');
-      return;
-    }
-    if (editingScale.minScore >= editingScale.maxScore) {
-      toast.error('Min score must be less than max score');
-      return;
-    }
-    const exists = gradingScales.find(s => s.id === editingScale.id);
-    let newScales;
-    if (exists) {
-      newScales = gradingScales.map(s => s.id === editingScale.id ? editingScale : s);
-    } else {
-      newScales = [...gradingScales, editingScale];
-    }
-    setGradingScales(newScales);
-    setShowGradingModal(false);
-    setEditingScale(null);
-    toast.success('Grading scale saved');
-  };
-
-  const deleteGradingScale = (id: string) => {
-    setGradingScales(scales => scales.filter(s => s.id !== id));
-    toast.success('Grading scale deleted');
-  };
-
   const openTemplateModal = (template?: ReportCardTemplate) => {
     if (template) setEditingTemplate(template);
     else setEditingTemplate({ id: Date.now().toString(), name: '', description: '', isDefault: false });
@@ -510,6 +483,51 @@ export default function AdminSettings() {
     }
     setShowPromotionModal(false);
     setEditingPromotion(null);
+  };
+
+  // ---------- ID Generator handlers ----------
+  const saveIdConfig = async (role: string) => {
+    const draft = idDrafts[role];
+    if (!draft?.format.trim()) {
+      toast.error('Format is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const res = await api.put('/settings/id-generator', { role, format: draft.format.trim() });
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error((data as any)?.error || await res.text() || 'Failed to save');
+      }
+      const saved = await res.json();
+      setIdConfigs(prev => {
+        const others = prev.filter(c => c.role !== role);
+        return [...others, saved];
+      });
+      toast.success(`${role} ID format saved`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const resetIdCounter = async (role: string) => {
+    setSaving(true);
+    try {
+      const res = await api.put('/settings/id-generator', { role, format: idDrafts[role]?.format || DEFAULT_ID_FORMATS[role], resetCounter: true });
+      if (!res.ok) throw new Error('Failed to reset counter');
+      const saved = await res.json();
+      setIdConfigs(prev => {
+        const others = prev.filter(c => c.role !== role);
+        return [...others, saved];
+      });
+      toast.success(`${role} counter reset to 0`);
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to reset');
+    } finally {
+      setSaving(false);
+    }
   };
 
   // ---------- Term picker ----------
@@ -571,6 +589,66 @@ export default function AdminSettings() {
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
             </div>
+          </div>
+        );
+
+      case 'id-generator':
+        return (
+          <div className="space-y-6">
+            <div className={`rounded-2xl p-4 text-sm ${theme === 'dark' ? 'bg-fuchsia-900/20 text-fuchsia-200' : 'bg-fuchsia-50 text-fuchsia-800'}`}>
+              Configure how IDs are auto-generated for each role. Tokens: <code className="font-mono font-semibold">{'{####}'}</code> = zero-padded counter, <code className="font-mono font-semibold">{'{YEAR}'}</code> = current year, <code className="font-mono font-semibold">{'{ROLE}'}</code> = role name. Formats with <code className="font-mono">{'{YEAR}'}</code> reset their counter each year automatically.
+            </div>
+            {ID_ROLES.map(role => {
+              const saved = idConfigs.find(c => c.role === role);
+              const draft = idDrafts[role]?.format ?? DEFAULT_ID_FORMATS[role];
+              const preview = renderIdPreview(draft, (saved?.counter ?? 0) + 1, role);
+              return (
+                <div key={role} className={`rounded-2xl border p-4 ${theme === 'dark' ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-gray-50/60'}`}>
+                  <div className="flex flex-col md:flex-row md:items-end gap-3">
+                    <div className="md:w-40">
+                      <label className={`block text-sm font-medium ${labelTextClass} mb-2`}>{role}</label>
+                      <span className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        Counter: <strong>{saved?.counter ?? 0}</strong>{saved ? '' : ' (default format)'}
+                      </span>
+                    </div>
+                    <div className="flex-1">
+                      <input
+                        type="text"
+                        value={draft}
+                        onChange={(e) => setIdDrafts(prev => ({ ...prev, [role]: { format: e.target.value } }))}
+                        className={`w-full rounded-2xl border-0 ${inputBgClass} ${inputTextClass} px-5 py-3 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 focus:ring-2 focus:ring-blue-500 transition-all font-mono`}
+                      />
+                    </div>
+                    <div className="md:w-56">
+                      <span className={`block text-xs mb-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Next ID preview</span>
+                      <span className="inline-block rounded-xl bg-gradient-to-r from-fuchsia-600 to-purple-600 px-4 py-2.5 text-sm font-mono font-semibold text-white shadow-md">
+                        {preview}
+                      </span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => saveIdConfig(role)}
+                        disabled={saving}
+                        className="inline-flex items-center rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all disabled:opacity-50"
+                      >
+                        Save
+                      </button>
+                      {saved && (
+                        <button
+                          onClick={() => resetIdCounter(role)}
+                          disabled={saving}
+                          className={`inline-flex items-center rounded-2xl px-4 py-2.5 text-sm font-medium transition-all disabled:opacity-50 ${
+                            theme === 'dark' ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                          }`}
+                        >
+                          Reset counter
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
         );
 
@@ -723,65 +801,6 @@ export default function AdminSettings() {
               >
                 {saving ? 'Saving...' : 'Save Changes'}
               </button>
-            </div>
-          </div>
-        );
-
-      case 'grading':
-        return (
-          <div className="space-y-6">
-            <div className="flex justify-end">
-              <button onClick={() => openGradingModal()} className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-md"><PlusIcon className="h-4 w-4" /> Add Grade</button>
-            </div>
-            <div className={`hidden md:block overflow-x-auto rounded-2xl border border-gray-200 dark:border-gray-700 ${tableBgClass}`}>
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className={tableHeaderBgClass}>
-                  <tr>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-500'}`}>Min</th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-500'}`}>Max</th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-500'}`}>Grade</th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-500'}`}>Points</th>
-                    <th className={`px-6 py-4 text-left text-xs font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-500'}`}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {gradingScales.map(scale => (
-                    <tr key={scale.id} className="hover:bg-gray-50/80 dark:hover:bg-white/5">
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.minScore !== null ? scale.minScore : '-'}</td>
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.maxScore !== null ? scale.maxScore : '-'}</td>
-                      <td className={`px-6 py-4 font-bold text-blue-600 dark:text-blue-400`}>{scale.grade}</td>
-                      <td className={`px-6 py-4 ${tableCellTextClass}`}>{scale.points !== null ? scale.points : '-'}</td>
-                      <td className="px-6 py-4">
-                        <button onClick={() => openGradingModal(scale)} className="text-blue-600 mr-3 dark:text-blue-400"><PencilIcon className="h-4 w-4" /></button>
-                        <button onClick={() => deleteGradingScale(scale.id)} className="text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /></button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {/* Mobile: card list */}
-            <div className="md:hidden space-y-3">
-              {gradingScales.map(scale => (
-                <div key={scale.id} className={`rounded-2xl border p-4 ${tableBgClass} border-gray-200 dark:border-gray-700`}>
-                  <div className="flex items-center justify-between">
-                    <span className="text-2xl font-bold text-blue-600 dark:text-blue-400">{scale.grade}</span>
-                    <span className={`text-sm ${tableCellTextClass}`}>
-                      {scale.minScore ?? '-'} – {scale.maxScore ?? '-'}%
-                    </span>
-                  </div>
-                  {scale.points !== null && (
-                    <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Points: {scale.points}</p>
-                  )}
-                  <div className="flex justify-end gap-3 mt-3 pt-3 border-t border-gray-200/60 dark:border-gray-700/60">
-                    <button onClick={() => openGradingModal(scale)} className="inline-flex items-center gap-1 text-xs font-medium text-blue-600 dark:text-blue-400"><PencilIcon className="h-4 w-4" /> Edit</button>
-                    <button onClick={() => deleteGradingScale(scale.id)} className="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400"><TrashIcon className="h-4 w-4" /> Delete</button>
-                  </div>
-                </div>
-              ))}
-              {gradingScales.length === 0 && (
-                <p className={`text-center py-6 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No grading scales yet.</p>
-              )}
             </div>
           </div>
         );
@@ -1184,61 +1203,6 @@ export default function AdminSettings() {
       </AnimatePresence>
 
       {/* ====== MODALS ====== */}
-      <AnimatePresence>
-        {showGradingModal && editingScale && (
-          <Modal onClose={() => setShowGradingModal(false)} title="Grading Scale Entry" theme={theme}>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Min Score</label>
-                  <input
-                    type="number"
-                    value={editingScale.minScore !== null ? editingScale.minScore : ''}
-                    onChange={(e) => setEditingScale({ ...editingScale, minScore: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
-                    placeholder="-"
-                    className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
-                  />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Max Score</label>
-                  <input
-                    type="number"
-                    value={editingScale.maxScore !== null ? editingScale.maxScore : ''}
-                    onChange={(e) => setEditingScale({ ...editingScale, maxScore: e.target.value === '' ? null : parseInt(e.target.value) || 0 })}
-                    placeholder="-"
-                    className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
-                  />
-                </div>
-              </div>
-              <div>
-                <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Grade</label>
-                <input
-                  type="text"
-                  value={editingScale.grade}
-                  onChange={(e) => setEditingScale({ ...editingScale, grade: e.target.value.toUpperCase() })}
-                  className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
-                />
-              </div>
-              <div>
-                <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-900'}`}>Points (optional)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  value={editingScale.points !== null ? editingScale.points : ''}
-                  onChange={(e) => setEditingScale({ ...editingScale, points: e.target.value === '' ? null : parseFloat(e.target.value) || 0 })}
-                  placeholder="-"
-                  className={`mt-1 w-full rounded-xl border ${theme === 'dark' ? 'bg-gray-800 text-white border-gray-700' : 'bg-white text-gray-900 border-gray-300'} px-3 py-2 focus:ring-2 focus:ring-blue-500 outline-none`}
-                />
-              </div>
-              <div className="flex justify-end gap-3 pt-4">
-                <button onClick={() => setShowGradingModal(false)} className={`px-4 py-2 rounded-lg ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600 text-white' : 'bg-gray-200 hover:bg-gray-300 text-gray-800'}`}>Cancel</button>
-                <button onClick={saveGradingScale} className="px-4 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700">Save</button>
-              </div>
-            </div>
-          </Modal>
-        )}
-      </AnimatePresence>
-
       <AnimatePresence>
         {showTemplateModal && editingTemplate && (
           <Modal onClose={() => setShowTemplateModal(false)} title="Report Card Template" theme={theme}>
