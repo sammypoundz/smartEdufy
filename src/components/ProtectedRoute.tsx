@@ -27,11 +27,14 @@ export default function ProtectedRoute({ allowedRoles, privilege }: ProtectedRou
   }
 
   const userRoles = user.roles?.length ? user.roles : [user.role].filter(Boolean);
+  // Case-insensitive comparison: roles are stored uppercase in the DB/token
+  // (e.g. 'PARENT') but some route guards specify lowercase ('parent').
+  const norm = (r: string) => r.toLowerCase();
   const pass = () => <Outlet />;
 
   // Role check: passes if the user holds ANY of the allowed roles
   if (allowedRoles && allowedRoles.length > 0) {
-    const hasRole = allowedRoles.some(r => userRoles.includes(r));
+    const hasRole = allowedRoles.some(r => userRoles.map(norm).includes(r.toLowerCase()));
     if (hasRole) return pass();
   }
 

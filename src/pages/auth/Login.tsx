@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { useTheme } from "../../contexts/ThemeContext";
 import toast from "react-hot-toast";
@@ -480,6 +480,17 @@ export default function Login() {
                 )}
               </motion.button>
             </form>
+
+            {/* Teacher self-registration link */}
+            <p className={`mt-4 text-center text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Are you a teacher?{' '}
+              <Link
+                to="/register/teacher"
+                className={`font-semibold ${dark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+              >
+                Register here →
+              </Link>
+            </p>
 
             {/* Divider */}
             <div className="mt-8 flex items-center gap-3">

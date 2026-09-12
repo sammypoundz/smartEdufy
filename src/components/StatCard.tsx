@@ -24,7 +24,7 @@ export default function StatCard({ icon, title, value, trend, subtitle, color = 
     <motion.div
       whileHover={{ y: -4 }}
       transition={{ type: 'spring', stiffness: 300 }}
-      className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${
+      className={`group relative overflow-hidden rounded-2xl p-4 md:p-6 shadow-xl transition-all duration-300 ${
         theme === 'dark'
           ? 'bg-white/5 backdrop-blur-xl border border-white/10'
           : 'bg-white/30 backdrop-blur-md border border-white/20'
@@ -39,11 +39,11 @@ export default function StatCard({ icon, title, value, trend, subtitle, color = 
 
       {/* Content */}
       <div className="relative z-10 flex items-start justify-between">
-        <div>
-          <p className={`text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+        <div className="min-w-0">
+          <p className={`text-xs md:text-sm font-medium ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
             {title}
           </p>
-          <p className={`text-3xl font-bold mt-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          <p className={`text-2xl md:text-3xl font-bold mt-1.5 md:mt-2 truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
             {value}
           </p>
           {subtitle && <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-500'}`}>{subtitle}</p>}
@@ -53,7 +53,7 @@ export default function StatCard({ icon, title, value, trend, subtitle, color = 
             </p>
           )}
         </div>
-        <div className="p-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg">
+        <div className="p-2.5 md:p-3 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg flex-shrink-0">
           {icon}
         </div>
       </div>

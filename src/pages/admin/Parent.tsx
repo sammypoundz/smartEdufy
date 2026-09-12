@@ -15,6 +15,7 @@ import {
   UsersIcon,
   UserPlusIcon,
   UserMinusIcon,
+  CheckIcon,
 } from '@heroicons/react/24/outline';
 import api from '../../services/api';
 import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
@@ -25,6 +26,22 @@ import { exportToExcel, exportToPDF, type ExportColumn } from '../../utils/expor
 import ExportButtons from '../../components/ExportButtons';
 
 // ---------- Types ----------
+interface ParentLinkRequest {
+  id: string;
+  status: 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED' | 'CHANGES_REQUESTED';
+  parentNote?: string | null;
+  reviewNote?: string | null;
+  createdAt: string;
+  parent?: { id: string; name: string; email: string } | null;
+  student?: {
+    id: string;
+    name: string;
+    admissionNumber?: string;
+    class?: { name: string } | null;
+    arm?: { letter: string } | null;
+  } | null;
+}
+
 interface Parent {
   id: string;
   name: string;
@@ -117,6 +134,88 @@ export default function AdminParent() {
   const error = parentsQuery.error ? getErrorMessage(parentsQuery.error, 'Failed to load parents') : null;
 
   const invalidateParents = () => queryClient.invalidateQueries({ queryKey: ['parents'] });
+
+  // ---------- Parent → child link requests (approve / reject) ----------
+  const linkRequestsQuery = useQuery<ParentLinkRequest[]>({
+    queryKey: ['parent-link-requests-admin'],
+    queryFn: async () => {
+      const res = await api.get<{ requests: ParentLinkRequest[] }>('/parent-links/requests');
+      return res.data.requests ?? [];
+    },
+  });
+  const linkRequests = linkRequestsQuery.data ?? [];
+  const pendingLinkRequests = linkRequests.filter((r) => r.status === 'PENDING_REVIEW');
+
+  // Requests panel: status tab, search, pagination (handles large volumes)
+  const [linkTab, setLinkTab] = useState<'PENDING' | 'APPROVED' | 'REJECTED' | 'ALL'>('PENDING');
+  const [linkSearch, setLinkSearch] = useState('');
+  const [linkPage, setLinkPage] = useState(1);
+  const LINK_PAGE_SIZE = 5;
+
+  const filteredLinkRequests = useMemo(() => {
+    const q = linkSearch.trim().toLowerCase();
+    return linkRequests.filter((r) => {
+      if (linkTab !== 'ALL') {
+        if (linkTab === 'PENDING') {
+          if (r.status !== 'PENDING_REVIEW' && r.status !== 'CHANGES_REQUESTED') return false;
+        } else if (r.status !== linkTab) return false;
+      }
+      if (!q) return true;
+      return [
+        r.student?.name, r.student?.admissionNumber, r.student?.class?.name,
+        r.parent?.name, r.parent?.email, r.parentNote,
+      ].some((f) => (f || '').toLowerCase().includes(q));
+    });
+  }, [linkRequests, linkTab, linkSearch]);
+
+  const linkPageCount = Math.max(1, Math.ceil(filteredLinkRequests.length / LINK_PAGE_SIZE));
+  const safeLinkPage = Math.min(linkPage, linkPageCount);
+  const pagedLinkRequests = filteredLinkRequests.slice(
+    (safeLinkPage - 1) * LINK_PAGE_SIZE,
+    safeLinkPage * LINK_PAGE_SIZE,
+  );
+
+  const reviewLinkRequest = useMutation({
+    mutationFn: (vars: { id: string; action: 'approve' | 'reject'; note?: string }) =>
+      api.post(`/parent-links/requests/${vars.id}/${vars.action}`, { reviewNote: vars.note }),
+    onSuccess: (_data, vars) => {
+      toast.success(vars.action === 'approve' ? 'Request approved — child linked to parent' : 'Request rejected');
+      queryClient.invalidateQueries({ queryKey: ['parent-link-requests-admin'] });
+      queryClient.invalidateQueries({ queryKey: ['parent-link-pending-count'] });
+      queryClient.invalidateQueries({ queryKey: ['parents'] });
+    },
+    onError: (err: unknown) =>
+      toast.error(getErrorMessage(err, 'Failed to update link request')),
+  });
+
+  const handleReview = (req: ParentLinkRequest, action: 'approve' | 'reject') => {
+    if (action === 'approve') {
+      Swal.fire({
+        title: 'Approve link request?',
+        text: `${req.parent?.name || 'This parent'} will be linked to ${req.student?.name || 'the student'}.`,
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#2563eb',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Yes, approve',
+      }).then((r) => {
+        if (r.isConfirmed) reviewLinkRequest.mutate({ id: req.id, action });
+      });
+    } else {
+      Swal.fire({
+        title: 'Reject link request?',
+        input: 'text',
+        inputPlaceholder: 'Reason (optional) — sent to the parent',
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#dc2626',
+        cancelButtonColor: '#6b7280',
+        confirmButtonText: 'Yes, reject',
+      }).then((r) => {
+        if (r.isConfirmed) reviewLinkRequest.mutate({ id: req.id, action, note: r.value || undefined });
+      });
+    }
+  };
 
   useEffect(() => {
     if (parentsQuery.error) toast.error(getErrorMessage(parentsQuery.error, 'Failed to load parents'));
@@ -350,6 +449,188 @@ export default function AdminParent() {
             <PlusIcon className="h-5 w-5 mr-2" /> Add Parent
             </motion.button>
           </div>
+        </motion.div>
+
+        {/* Child Link Requests (from parents) */}
+        <motion.div variants={item} initial="hidden" animate="show" className="mb-6 rounded-2xl shadow-xl overflow-hidden">
+          {/* Header: title + refresh */}
+          <div className={`px-4 sm:px-5 py-4 flex items-center justify-between gap-3 border-b ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border-white/10' : 'bg-white/60 backdrop-blur-md border-white/20'}`}>
+            <div className="flex items-center gap-2 min-w-0">
+              <UserPlusIcon className={`h-5 w-5 flex-shrink-0 ${theme === 'dark' ? 'text-orange-400' : 'text-orange-500'}`} />
+              <h3 className={`text-sm font-bold uppercase tracking-wide truncate ${theme === 'dark' ? 'text-gray-200' : 'text-gray-700'}`}>
+                Child Link Requests
+              </h3>
+              {pendingLinkRequests.length > 0 && (
+                <span className="flex-shrink-0 px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold animate-pulse">
+                  {pendingLinkRequests.length} pending
+                </span>
+              )}
+            </div>
+            <button
+              onClick={() => queryClient.invalidateQueries({ queryKey: ['parent-link-requests-admin'] })}
+              className={`flex-shrink-0 text-xs font-medium ${theme === 'dark' ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-800'}`}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {/* Status tabs (horizontally scrollable on small screens) */}
+          <div className={`px-4 sm:px-5 pt-3 pb-2 flex gap-1.5 overflow-x-auto border-b ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border-white/10' : 'bg-white/40 backdrop-blur-md border-gray-200/60'}`}>
+            {([
+              ['PENDING', `Pending (${pendingLinkRequests.length})`],
+              ['APPROVED', 'Approved'],
+              ['REJECTED', 'Rejected'],
+              ['ALL', 'All'],
+            ] as const).map(([key, label]) => {
+              const active = linkTab === key;
+              return (
+                <button
+                  key={key}
+                  onClick={() => { setLinkTab(key); setLinkPage(1); }}
+                  className={`flex-shrink-0 px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+                    active
+                      ? 'bg-blue-600 text-white shadow'
+                      : theme === 'dark'
+                        ? 'bg-white/5 text-gray-400 hover:text-white hover:bg-white/10'
+                        : 'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200'
+                  }`}
+                >
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Requests search */}
+          <div className={`px-4 sm:px-5 py-2.5 border-b ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white/40 border-gray-200/60'}`}>
+            <input
+              type="text"
+              value={linkSearch}
+              onChange={(e) => { setLinkSearch(e.target.value); setLinkPage(1); }}
+              placeholder="Search by student, parent, or class…"
+              className={`w-full rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-blue-500 ${
+                theme === 'dark'
+                  ? 'bg-white/5 text-white placeholder-gray-500 border border-white/10'
+                  : 'bg-white text-gray-900 placeholder-gray-400 border border-gray-200'
+              }`}
+            />
+          </div>
+
+          <div className={`divide-y ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl divide-white/10' : 'bg-white/40 backdrop-blur-md divide-gray-200/60'}`}>
+            {linkRequestsQuery.isLoading ? (
+              <p className={`px-4 sm:px-5 py-6 text-sm text-center ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Loading link requests…</p>
+            ) : pagedLinkRequests.length === 0 ? (
+              <p className={`px-4 sm:px-5 py-6 text-sm text-center ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                {linkRequests.length === 0
+                  ? 'No link requests from parents yet.'
+                  : 'No requests match this filter.'}
+              </p>
+            ) : (
+              pagedLinkRequests.map((req) => {
+                const pending = req.status === 'PENDING_REVIEW' || req.status === 'CHANGES_REQUESTED';
+                const statusCls =
+                  req.status === 'APPROVED'
+                    ? 'bg-green-500/20 text-green-600 dark:text-green-400'
+                    : req.status === 'REJECTED'
+                      ? 'bg-red-500/20 text-red-600 dark:text-red-400'
+                      : 'bg-orange-500/20 text-orange-600 dark:text-orange-300';
+                return (
+                  <div key={req.id} className="px-4 sm:px-5 py-3.5 flex flex-col sm:flex-row sm:items-center gap-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <p className={`text-sm font-semibold min-w-0 break-words ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                          {req.student?.name || 'Unknown student'}
+                          {req.student?.admissionNumber ? ` (${req.student.admissionNumber})` : ''}
+                        </p>
+                        {/* Status pill — shown inline on mobile, moved to the right column on sm+ via hidden ordering */}
+                        <span className={`sm:hidden flex-shrink-0 px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${statusCls}`}>
+                          {req.status.replace('_', ' ').toLowerCase()}
+                        </span>
+                      </div>
+                      <p className={`text-xs mt-0.5 break-words ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {req.student?.class?.name || 'No class'}
+                        {req.student?.arm?.letter ? ` · Arm ${req.student.arm.letter}` : ''}
+                        {' — '}
+                        requested by <span className="font-medium">{req.parent?.name || 'Unknown parent'}</span>
+                        {req.createdAt ? ` · ${new Date(req.createdAt).toLocaleDateString()}` : ''}
+                      </p>
+                      {req.parent?.email && (
+                        <p className={`text-xs break-all sm:hidden ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                          {req.parent.email}
+                        </p>
+                      )}
+                      {req.parentNote && (
+                        <p className={`mt-1 text-xs italic break-words ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                          “{req.parentNote}”
+                        </p>
+                      )}
+                      {req.reviewNote && !pending && (
+                        <p className={`mt-1 text-xs italic break-words ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                          Reviewer note: “{req.reviewNote}”
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex sm:flex-col sm:items-end items-center justify-between sm:justify-center gap-2 flex-shrink-0">
+                      <span className={`hidden sm:inline-flex px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${statusCls}`}>
+                        {req.status.replace('_', ' ').toLowerCase()}
+                      </span>
+                      {pending && (
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleReview(req, 'approve')}
+                            disabled={reviewLinkRequest.isPending}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-xs font-semibold shadow disabled:opacity-50"
+                          >
+                            <CheckIcon className="h-4 w-4" /> Approve
+                          </button>
+                          <button
+                            onClick={() => handleReview(req, 'reject')}
+                            disabled={reviewLinkRequest.isPending}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-semibold shadow disabled:opacity-50"
+                          >
+                            <XMarkIcon className="h-4 w-4" /> Reject
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          {/* Pagination footer */}
+          {filteredLinkRequests.length > LINK_PAGE_SIZE && (
+            <div className={`px-4 sm:px-5 py-3 flex items-center justify-between gap-3 border-t ${theme === 'dark' ? 'bg-white/5 border-white/10' : 'bg-white/40 border-gray-200/60'}`}>
+              <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                {(safeLinkPage - 1) * LINK_PAGE_SIZE + 1}–{Math.min(safeLinkPage * LINK_PAGE_SIZE, filteredLinkRequests.length)} of{' '}
+                {filteredLinkRequests.length} requests
+              </p>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setLinkPage((p) => Math.max(1, p - 1))}
+                  disabled={safeLinkPage <= 1}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-40 ${
+                    theme === 'dark' ? 'bg-white/5 text-gray-300 hover:bg-white/10' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Prev
+                </button>
+                <span className={`px-2 text-xs font-semibold ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                  {safeLinkPage} / {linkPageCount}
+                </span>
+                <button
+                  onClick={() => setLinkPage((p) => Math.min(linkPageCount, p + 1))}
+                  disabled={safeLinkPage >= linkPageCount}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-medium disabled:opacity-40 ${
+                    theme === 'dark' ? 'bg-white/5 text-gray-300 hover:bg-white/10' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
         </motion.div>
 
         {/* Search */}

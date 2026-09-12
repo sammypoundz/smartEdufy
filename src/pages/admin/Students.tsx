@@ -109,9 +109,36 @@ export default function Students() {
     admissionNumber: "",
     classId: "",
     armId: "",
+    // When on, the admission number is auto-generated from the admin's
+    // ID Generator config (Settings → ID Generator) instead of typed in.
+    useDefaultId: true,
   });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [dragActive, setDragActive] = useState(false);
+
+  /*
+   * Preview the next auto-generated admission ID from the admin's ID
+   * Generator config (Settings → ID Generator). Only fetched while the
+   * "use default ID generator" toggle is on in the Add Student modal.
+   */
+  const [nextAutoId, setNextAutoId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!showAddModal || !newStudentForm.useDefaultId || !token) return;
+    let cancelled = false;
+    api
+      .get("/users/next-id?role=STUDENT", token)
+      .then(async (res) => {
+        if (!res.ok || cancelled) return setNextAutoId(null);
+        const data = await res.json();
+        if (!cancelled) setNextAutoId(data.nextId ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setNextAutoId(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [showAddModal, newStudentForm.useDefaultId, token]);
   const [uploading, setUploading] = useState(false);
   const [bulkClassId, setBulkClassId] = useState<string>("");
   const [bulkArmId, setBulkArmId] = useState<string>("");
@@ -249,7 +276,10 @@ export default function Students() {
         {
           name: newStudentForm.name,
           gender: newStudentForm.gender,
-          admissionNumber: newStudentForm.admissionNumber || undefined,
+          admissionNumber: newStudentForm.useDefaultId
+            ? undefined
+            : newStudentForm.admissionNumber || undefined,
+          useDefaultId: newStudentForm.useDefaultId,
           classId: newStudentForm.classId || undefined,
           armId: newStudentForm.armId || undefined,
         },
@@ -278,6 +308,7 @@ export default function Students() {
         admissionNumber: "",
         classId: "",
         armId: "",
+        useDefaultId: true,
       });
     } catch (err: any) {
       toast.error(err.message);
@@ -777,7 +808,8 @@ export default function Students() {
               Manage all students, view metrics, and perform bulk operations.
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 flex space-x-3">
+          {/* App-style action grid on mobile, inline buttons on sm+ */}
+          <div className="mt-4 sm:mt-0 grid grid-cols-2 gap-2 sm:flex sm:space-x-3">
             <ExportButtons
               dark={theme === "dark"}
               disabled={filteredStudents.length === 0}
@@ -809,14 +841,14 @@ export default function Students() {
             />
             <button
               onClick={() => setShowAddModal(true)}
-              className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium shadow-lg hover:shadow-xl transition-all"
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white text-sm font-medium shadow-lg hover:shadow-xl active:scale-[0.97] transition-all"
             >
               <PlusIcon className="h-4 w-4 mr-2" />
               Add Student
             </button>
             <button
               onClick={() => setShowBulkDrawer(true)}
-              className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium shadow-lg hover:shadow-xl transition-all"
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white text-sm font-medium shadow-lg hover:shadow-xl active:scale-[0.97] transition-all"
             >
               <ArrowUpTrayIcon className="h-4 w-4 mr-2" />
               Bulk Upload
@@ -824,89 +856,123 @@ export default function Students() {
           </div>
         </div>
 
-        {/* Metrics Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        {/* Metrics Cards — 2×2 compact app grid on mobile */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 mb-8">
           <div
-            className={`p-4 rounded-xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
+            className={`p-4 rounded-2xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
           >
-            <div className="flex items-center justify-between">
-              <p
-                className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
-              >
-                Total Students
-              </p>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center mb-2 ${theme === "dark" ? "bg-blue-500/15" : "bg-blue-50"}`}
+            >
               <UsersIcon className="h-5 w-5 text-blue-500" />
             </div>
             <p
-              className={`text-2xl font-bold mt-1 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
+            >
+              Total Students
+            </p>
+            <p
+              className={`text-xl sm:text-2xl font-bold mt-0.5 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               {totalStudents}
             </p>
           </div>
           <div
-            className={`p-4 rounded-xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
+            className={`p-4 rounded-2xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
           >
-            <div className="flex items-center justify-between">
-              <p
-                className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
-              >
-                Male
-              </p>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center mb-2 ${theme === "dark" ? "bg-blue-500/15" : "bg-blue-50"}`}
+            >
               <UserIcon className="h-5 w-5 text-blue-500" />
             </div>
             <p
-              className={`text-2xl font-bold mt-1 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
+            >
+              Male
+            </p>
+            <p
+              className={`text-xl sm:text-2xl font-bold mt-0.5 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               {maleCount}
             </p>
           </div>
           <div
-            className={`p-4 rounded-xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
+            className={`p-4 rounded-2xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
           >
-            <div className="flex items-center justify-between">
-              <p
-                className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
-              >
-                Female
-              </p>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center mb-2 ${theme === "dark" ? "bg-pink-500/15" : "bg-pink-50"}`}
+            >
               <UserGroupIcon className="h-5 w-5 text-pink-500" />
             </div>
             <p
-              className={`text-2xl font-bold mt-1 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
+            >
+              Female
+            </p>
+            <p
+              className={`text-xl sm:text-2xl font-bold mt-0.5 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               {femaleCount}
             </p>
           </div>
           <div
-            className={`p-4 rounded-xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
+            className={`p-4 rounded-2xl shadow-md ${theme === "dark" ? "bg-white/5 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200 shadow-sm"}`}
           >
-            <div className="flex items-center justify-between">
-              <p
-                className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
-              >
-                Classes
-              </p>
+            <div
+              className={`h-9 w-9 rounded-xl flex items-center justify-center mb-2 ${theme === "dark" ? "bg-purple-500/15" : "bg-purple-50"}`}
+            >
               <ChartBarIcon className="h-5 w-5 text-purple-500" />
             </div>
             <p
-              className={`text-2xl font-bold mt-1 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-600"}`}
+            >
+              Classes
+            </p>
+            <p
+              className={`text-xl sm:text-2xl font-bold mt-0.5 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               {Object.keys(classDistribution).length}
             </p>
           </div>
         </div>
 
-        {/* Charts */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Charts — full-width cards on mobile */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-6 mb-8">
           <div
-            className={`p-4 rounded-2xl shadow-xl ${theme === "dark" ? "bg-white/5 backdrop-blur-xl border border-white/10" : "bg-white/80 backdrop-blur-md border border-gray-200/60"}`}
+            className={`p-4 sm:p-5 rounded-2xl shadow-xl ${theme === "dark" ? "bg-white/5 backdrop-blur-xl border border-white/10" : "bg-white/80 backdrop-blur-md border border-gray-200/60"}`}
           >
             <h3
-              className={`text-lg font-medium mb-4 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-base sm:text-lg font-medium mb-4 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               Student Growth (Year over Year)
             </h3>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={220} className="sm:hidden">
+              <LineChart data={growthData}>
+                <CartesianGrid
+                  strokeDasharray="3 3"
+                  stroke={theme === "dark" ? "#374151" : "#e5e7eb"}
+                />
+                <XAxis
+                  dataKey="year"
+                  stroke={theme === "dark" ? "#9ca3af" : "#4b5563"}
+                />
+                <YAxis stroke={theme === "dark" ? "#9ca3af" : "#4b5563"} />
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: theme === "dark" ? "#1f2937" : "#fff",
+                    borderColor: theme === "dark" ? "#374151" : "#e5e7eb",
+                  }}
+                />
+                <Line
+                  type="monotone"
+                  dataKey="students"
+                  stroke="#3b82f6"
+                  strokeWidth={2}
+                  dot={{ r: 3 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={300} className="hidden sm:block">
               <LineChart data={growthData}>
                 <CartesianGrid
                   strokeDasharray="3 3"
@@ -935,14 +1001,40 @@ export default function Students() {
             </ResponsiveContainer>
           </div>
           <div
-            className={`p-4 rounded-2xl shadow-xl ${theme === "dark" ? "bg-white/5 backdrop-blur-xl border border-white/10" : "bg-white/80 backdrop-blur-md border border-gray-200/60"}`}
+            className={`p-4 sm:p-5 rounded-2xl shadow-xl ${theme === "dark" ? "bg-white/5 backdrop-blur-xl border border-white/10" : "bg-white/80 backdrop-blur-md border border-gray-200/60"}`}
           >
             <h3
-              className={`text-lg font-medium mb-4 ${theme === "dark" ? "text-white" : "text-black"}`}
+              className={`text-base sm:text-lg font-medium mb-4 ${theme === "dark" ? "text-white" : "text-black"}`}
             >
               Class Distribution
             </h3>
-            <ResponsiveContainer width="100%" height={300}>
+            <ResponsiveContainer width="100%" height={220} className="sm:hidden">
+              <PieChart>
+                <Pie
+                  data={classChartData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  outerRadius={70}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {classChartData.map((_entry, index) => (
+                    <Cell
+                      key={`cell-m-${index}`}
+                      fill={COLORS[index % COLORS.length]}
+                    />
+                  ))}
+                </Pie>
+                <Tooltip
+                  contentStyle={{
+                    backgroundColor: theme === "dark" ? "#1f2937" : "#fff",
+                    borderColor: theme === "dark" ? "#374151" : "#e5e7eb",
+                  }}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+            <ResponsiveContainer width="100%" height={300} className="hidden sm:block">
               <PieChart>
                 <Pie
                   data={classChartData}
@@ -974,16 +1066,16 @@ export default function Students() {
           </div>
         </div>
 
-        {/* Filters and View All button */}
-        <div className="flex flex-wrap gap-4 mb-6 items-center justify-between">
-          <div className="flex flex-wrap gap-4">
+        {/* Filters and View All button — app-style */}
+        <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 mb-6 items-stretch sm:items-center sm:justify-between">
+          <div className="flex gap-2 sm:flex-wrap sm:gap-4 overflow-x-auto no-scrollbar -mx-1 px-1 sm:mx-0 sm:px-0">
             <select
               value={selectedClassId}
               onChange={(e) => {
                 setSelectedClassId(e.target.value);
                 setSelectedArmId("");
               }}
-              className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-black focus:ring-blue-400"}`}
+              className={`shrink-0 px-4 py-2.5 rounded-full border focus:outline-none focus:ring-2 text-sm font-medium ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-black focus:ring-blue-400"}`}
             >
               <option value="">All Classes</option>
               {classes.map((cls) => (
@@ -996,7 +1088,7 @@ export default function Students() {
               <select
                 value={selectedArmId}
                 onChange={(e) => setSelectedArmId(e.target.value)}
-                className={`px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-black focus:ring-blue-400"}`}
+                className={`shrink-0 px-4 py-2.5 rounded-full border focus:outline-none focus:ring-2 text-sm font-medium ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white focus:ring-blue-500" : "bg-white border-gray-300 text-black focus:ring-blue-400"}`}
               >
                 <option value="">All Arms</option>
                 {classes
@@ -1011,7 +1103,7 @@ export default function Students() {
           </div>
           <button
             onClick={openAllModal}
-            className="inline-flex items-center px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 transition"
+            className="inline-flex items-center justify-center px-4 py-2.5 rounded-full bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 active:scale-[0.97] transition shadow-lg shadow-purple-600/20"
           >
             <UsersIcon className="h-4 w-4 mr-2" />
             View All Students
@@ -1019,8 +1111,110 @@ export default function Students() {
         </div>
 
         {/* Main Student Table – Summary view */}
+        {/* Mobile: app-style cards (hidden on md+) */}
+        <div className="md:hidden space-y-2.5 mb-6">
+          {summaryStudents.map((student) => {
+            const isSuspended = student.isActive === false;
+            return (
+              <div
+                key={student.id}
+                onClick={() => navigate(`/admin/student/${student.id}`)}
+                className={`rounded-2xl border p-3.5 active:scale-[0.985] transition-transform cursor-pointer ${
+                  isSuspended
+                    ? theme === "dark"
+                      ? "bg-red-900/20 border-red-500/30"
+                      : "bg-red-50/70 border-red-200"
+                    : theme === "dark"
+                      ? "bg-gray-900/80 backdrop-blur-sm border border-white/10"
+                      : "bg-white border border-gray-200 shadow-sm"
+                }`}
+              >
+                <div className="flex items-center gap-3">
+                  {/* Avatar */}
+                  <div
+                    className={`h-11 w-11 shrink-0 rounded-full flex items-center justify-center text-sm font-bold ${
+                      student.gender === "female"
+                        ? theme === "dark"
+                          ? "bg-pink-500/20 text-pink-300"
+                          : "bg-pink-100 text-pink-600"
+                        : theme === "dark"
+                          ? "bg-blue-500/20 text-blue-300"
+                          : "bg-blue-100 text-blue-600"
+                    }`}
+                  >
+                    {student.name.slice(0, 2).toUpperCase()}
+                  </div>
+                  {/* Info */}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className={`font-semibold truncate text-[15px] ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                        {student.name}
+                      </p>
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ${
+                          isSuspended
+                            ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-900/40 dark:text-red-300 dark:ring-red-800"
+                            : "bg-green-50 text-green-700 ring-green-200 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-800"
+                        }`}
+                      >
+                        <span className={`h-1.5 w-1.5 rounded-full ${isSuspended ? "bg-red-500" : "bg-green-500"}`} />
+                        {isSuspended ? "Suspended" : "Active"}
+                      </span>
+                    </div>
+                    <p className={`text-xs mt-0.5 font-mono ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                      {student.admissionNumber || "No admission no."}
+                    </p>
+                    <div className="flex items-center gap-1.5 mt-1.5">
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-medium ${theme === "dark" ? "bg-white/10 text-gray-300" : "bg-gray-100 text-gray-600"}`}
+                      >
+                        {student.class?.name || "No class"}
+                        {student.arm?.letter ? ` · ${student.arm.letter}` : ""}
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-md text-[11px] font-medium truncate max-w-[45%] ${theme === "dark" ? "bg-white/10 text-gray-300" : "bg-gray-100 text-gray-600"}`}
+                      >
+                        {student.parent?.name || "No parent"}
+                      </span>
+                    </div>
+                  </div>
+                  {/* Actions */}
+                  <div className="flex flex-col gap-1.5 shrink-0">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        viewPerformance(student);
+                      }}
+                      className={`p-1.5 rounded-lg active:scale-90 transition-transform ${theme === "dark" ? "text-green-400 bg-white/5" : "text-green-600 bg-green-50"}`}
+                      title="View Performance"
+                    >
+                      <AcademicCapIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {filteredStudents.length === 0 && (
+            <div className={`rounded-2xl border p-6 text-center text-sm empty-state ${theme === "dark" ? "bg-gray-900/80 border-white/10 text-gray-400" : "bg-white border-gray-200 text-gray-500"}`}>
+              No students found. Try adjusting filters or add a student.
+            </div>
+          )}
+          {hasMoreStudents && (
+            <button
+              onClick={openAllModal}
+              className={`w-full py-3 rounded-2xl text-sm font-semibold active:scale-[0.98] transition-all ${
+                theme === "dark"
+                  ? "text-blue-300 bg-blue-500/10 border border-blue-500/20"
+                  : "text-blue-700 bg-blue-50 border border-blue-100"
+              }`}
+            >
+              + View all {filteredStudents.length} students
+            </button>
+          )}
+        </div>
         <div
-          className={`overflow-x-auto rounded-2xl shadow-xl student-table ${theme === "dark" ? "bg-gray-900/80 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200"}`}
+          className={`hidden md:block overflow-x-auto rounded-2xl shadow-xl student-table ${theme === "dark" ? "bg-gray-900/80 backdrop-blur-sm border border-white/10" : "bg-white border border-gray-200"}`}
         >
           <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead
@@ -1169,7 +1363,7 @@ export default function Students() {
                       name: e.target.value,
                     })
                   }
-                  className={`w-full px-4 py-2 rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
+                  className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
                   placeholder="e.g., John Doe"
                 />
               </div>
@@ -1179,8 +1373,8 @@ export default function Students() {
                 >
                   Gender
                 </label>
-                <div className="flex space-x-4">
-                  <label className="flex items-center space-x-2">
+                <div className="flex flex-wrap gap-x-4 gap-y-2">
+                  <label className="flex items-center space-x-2 cursor-pointer py-1">
                     <input
                       type="radio"
                       value="male"
@@ -1200,7 +1394,7 @@ export default function Students() {
                       Male
                     </span>
                   </label>
-                  <label className="flex items-center space-x-2">
+                  <label className="flex items-center space-x-2 cursor-pointer py-1">
                     <input
                       type="radio"
                       value="female"
@@ -1224,22 +1418,72 @@ export default function Students() {
               </div>
               <div>
                 <label
-                  className={`block text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
+                  className={`flex items-center justify-between text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
                 >
-                  Admission Number (optional)
+                  <span>Use default ID generator</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={newStudentForm.useDefaultId}
+                    onClick={() =>
+                      setNewStudentForm({
+                        ...newStudentForm,
+                        useDefaultId: !newStudentForm.useDefaultId,
+                      })
+                    }
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none ${
+                      newStudentForm.useDefaultId
+                        ? "bg-blue-600"
+                        : theme === "dark"
+                        ? "bg-gray-700"
+                        : "bg-gray-300"
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                        newStudentForm.useDefaultId ? "translate-x-6" : "translate-x-1"
+                      }`}
+                    />
+                  </button>
                 </label>
-                <input
-                  type="text"
-                  value={newStudentForm.admissionNumber}
-                  onChange={(e) =>
-                    setNewStudentForm({
-                      ...newStudentForm,
-                      admissionNumber: e.target.value,
-                    })
-                  }
-                  className={`w-full px-4 py-2 rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
-                  placeholder="e.g., ADM2024001"
-                />
+                {newStudentForm.useDefaultId ? (
+                  <div
+                    className={`mt-1 px-4 py-3 rounded-lg border text-sm flex flex-col sm:flex-row sm:items-center gap-2 ${
+                      theme === "dark"
+                        ? "bg-gray-800 border-gray-700 text-gray-200"
+                        : "bg-blue-50 border-blue-200 text-gray-900"
+                    }`}
+                  >
+                    <CheckCircleIcon className="h-5 w-5 text-blue-500 shrink-0" />
+                    <div className="min-w-0">
+                      <p className="font-medium">
+                        Admission ID: {nextAutoId ? (
+                          <span className="font-mono text-blue-500">{nextAutoId}</span>
+                        ) : (
+                          "auto-generated"
+                        )}
+                      </p>
+                      <p
+                        className={`text-xs ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
+                      >
+                        Uses the format configured in Settings → ID Generator (STUDENT role). The exact ID is claimed when you save.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={newStudentForm.admissionNumber}
+                    onChange={(e) =>
+                      setNewStudentForm({
+                        ...newStudentForm,
+                        admissionNumber: e.target.value,
+                      })
+                    }
+                    className={`w-full mt-1 px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
+                    placeholder="e.g., ADM2024001"
+                  />
+                )}
               </div>
               <div>
                 <label
@@ -1256,7 +1500,7 @@ export default function Students() {
                       armId: "",
                     })
                   }
-                  className={`w-full px-4 py-2 rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                  className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
                 >
                   <option value="">Select Class</option>
                   {classes.map((cls) => (
@@ -1281,7 +1525,7 @@ export default function Students() {
                         armId: e.target.value,
                       })
                     }
-                    className={`w-full px-4 py-2 rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                    className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
                   >
                     <option value="">Select Arm</option>
                     {classes
@@ -1298,7 +1542,7 @@ export default function Students() {
                 <button
                   onClick={handleCreateStudent}
                   disabled={isSubmitting || !newStudentForm.name.trim()}
-                  className="w-full px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                  className="w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   {isSubmitting ? "Creating..." : "Create Student"}
                 </button>
@@ -1606,8 +1850,120 @@ export default function Students() {
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="flex-1 min-h-0 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+              {/* Mobile: app-style card list (hidden on md+) */}
+              <div className="md:hidden flex-1 min-h-0 overflow-y-auto -mx-1 px-1 space-y-2">
+                {paginatedStudents.map((student) => {
+                  const isSelected = selectedStudentIds.has(student.id);
+                  const isSuspended = student.isActive === false;
+                  return (
+                    <div
+                      key={student.id}
+                      className={`rounded-2xl border p-3.5 transition-colors ${
+                        isSelected
+                          ? theme === "dark"
+                            ? "bg-red-900/20 border-red-500/40"
+                            : "bg-red-50/80 border-red-300"
+                          : theme === "dark"
+                            ? "bg-gray-900/60 border border-white/10"
+                            : "bg-white border border-gray-200 shadow-sm"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleStudentSelection(student.id)}
+                          className="h-5 w-5 shrink-0 rounded border-gray-300 text-red-600 focus:ring-red-500 cursor-pointer"
+                        />
+                        <div
+                          className={`h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-xs font-bold ${student.gender === "female" ? "bg-pink-100 text-pink-600 dark:bg-pink-900/40 dark:text-pink-300" : "bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-300"}`}
+                        >
+                          {student.name.slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0 flex-1" onClick={() => toggleStudentSelection(student.id)}>
+                          <div className="flex items-center gap-2">
+                            <p className={`font-semibold truncate text-[15px] ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                              {student.name}
+                            </p>
+                            <span
+                              className={`shrink-0 inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ring-1 ${
+                                isSuspended
+                                  ? "bg-red-50 text-red-700 ring-red-200 dark:bg-red-900/40 dark:text-red-300 dark:ring-red-800"
+                                  : "bg-green-50 text-green-700 ring-green-200 dark:bg-green-900/40 dark:text-green-300 dark:ring-green-800"
+                              }`}
+                            >
+                              <span className={`h-1.5 w-1.5 rounded-full ${isSuspended ? "bg-red-500" : "bg-green-500"}`} />
+                              {isSuspended ? "Suspended" : "Active"}
+                            </span>
+                          </div>
+                          <p className={`text-xs mt-0.5 font-mono ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                            {student.admissionNumber || "No admission no."}
+                          </p>
+                          <p className={`text-xs mt-0.5 truncate ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                            {student.class?.name || "No class"}
+                            {student.arm?.letter ? ` · ${student.arm.letter}` : ""}
+                            {student.parent?.name ? ` · Parent: ${student.parent.name}` : ""}
+                          </p>
+                        </div>
+                      </div>
+                      {/* Quick actions — tappable chips */}
+                      <div className="flex items-center gap-2 mt-3 pt-3 border-t border-gray-100 dark:border-gray-800">
+                        <button
+                          onClick={() => navigate(`/admin/student/${student.id}`)}
+                          className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-medium bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200 active:scale-95 dark:bg-indigo-900/30 dark:text-indigo-300 dark:ring-indigo-800 transition-transform"
+                        >
+                          <EyeIcon className="h-3.5 w-3.5" /> Profile
+                        </button>
+                        <button
+                          onClick={() => handleEditStudent(student)}
+                          className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-medium bg-blue-50 text-blue-700 ring-1 ring-blue-200 active:scale-95 dark:bg-blue-900/30 dark:text-blue-300 dark:ring-blue-800 transition-transform"
+                        >
+                          <PencilIcon className="h-3.5 w-3.5" /> Edit
+                        </button>
+                        <button
+                          onClick={() => handleSuspendStudent(student)}
+                          disabled={suspendingId === student.id}
+                          className={`flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-medium ring-1 active:scale-95 transition-transform disabled:opacity-50 ${
+                            isSuspended
+                              ? "bg-green-50 text-green-700 ring-green-200 dark:bg-green-900/30 dark:text-green-300 dark:ring-green-800"
+                              : "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800"
+                          }`}
+                        >
+                          {suspendingId === student.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : isSuspended ? (
+                            <PlayIcon className="h-3.5 w-3.5" />
+                          ) : (
+                            <StopIcon className="h-3.5 w-3.5" />
+                          )}
+                          {isSuspended ? "Activate" : "Suspend"}
+                        </button>
+                        <button
+                          onClick={() => handleDeleteStudent(student)}
+                          disabled={deletingId === student.id}
+                          className="flex-1 inline-flex items-center justify-center gap-1 py-2 rounded-xl text-xs font-medium bg-red-50 text-red-700 ring-1 ring-red-200 active:scale-95 dark:bg-red-900/30 dark:text-red-300 dark:ring-red-800 transition-transform disabled:opacity-50"
+                        >
+                          {deletingId === student.id ? (
+                            <div className="w-3.5 h-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
+                          ) : (
+                            <TrashIcon className="h-3.5 w-3.5" />
+                          )}
+                          Delete
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {paginatedStudents.length === 0 && (
+                  <div className="flex flex-col items-center gap-2 py-12">
+                    <UserGroupIcon className="h-10 w-10 text-gray-300 dark:text-gray-600" />
+                    <p className="text-gray-500 dark:text-gray-400 text-sm">No students found.</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Table (desktop) */}
+              <div className="hidden md:flex flex-1 min-h-0 overflow-auto rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
                 <table className="min-w-full text-sm">
                   <thead className="sticky top-0 z-10 bg-gray-50 dark:bg-gray-800/95 backdrop-blur border-b border-gray-200 dark:border-gray-700">
                     <tr>
@@ -1812,7 +2168,7 @@ export default function Students() {
                 </table>
               </div>
 
-              {/* Bulk actions bar */}
+              {/* Bulk actions bar — sticky app-style bottom bar on mobile */}
               {selectedStudentIds.size > 0 && (
                 <div
                   className={`shrink-0 flex flex-wrap items-center justify-between gap-3 px-4 py-3 rounded-xl border ${
@@ -1829,14 +2185,14 @@ export default function Students() {
                   <div className="flex items-center gap-2">
                     <button
                       onClick={clearSelection}
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 transition"
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-300 dark:hover:bg-gray-700 active:scale-95 transition-transform"
                     >
-                      Clear selection
+                      Clear
                     </button>
                     <button
                       onClick={handleBulkDeleteStudents}
                       disabled={bulkDeleting}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition disabled:opacity-50"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold bg-red-600 text-white hover:bg-red-700 active:scale-95 transition-transform disabled:opacity-50"
                     >
                       {bulkDeleting ? (
                         <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1849,7 +2205,7 @@ export default function Students() {
                 </div>
               )}
 
-              {/* Pagination */}
+              {/* Pagination — compact on mobile */}
               {filteredAllStudents.length > 0 && (
                 <div className="flex flex-wrap items-center justify-between gap-2 shrink-0">
                   <div className="flex items-center gap-2">
@@ -1859,7 +2215,7 @@ export default function Students() {
                       Page {currentPage} of {totalPages}
                     </span>
                     <label
-                      className={`text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
+                      className={`hidden sm:flex items-center text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
                     >
                       Per page:
                       <select
@@ -1882,16 +2238,16 @@ export default function Students() {
                     <button
                       onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
                       disabled={currentPage === 1}
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-gray-100 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700 dark:hover:bg-gray-700 transition"
+                      className="px-3.5 py-2 rounded-xl text-sm font-medium bg-gray-100 text-gray-700 ring-1 ring-gray-200 hover:bg-gray-200 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed dark:bg-gray-800 dark:text-gray-300 dark:ring-gray-700 dark:hover:bg-gray-700 transition"
                     >
-                      Previous
+                      Prev
                     </button>
                     <button
                       onClick={() =>
                         setCurrentPage((p) => Math.min(totalPages, p + 1))
                       }
                       disabled={currentPage === totalPages}
-                      className="px-3 py-1.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      className="px-3.5 py-2 rounded-xl text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed transition"
                     >
                       Next
                     </button>
@@ -1920,7 +2276,7 @@ function CenteredModal({
     size === "lg" ? "max-w-5xl" : isFullscreen ? "max-w-full" : "max-w-md";
   const maxHeight = isFullscreen ? "h-full max-h-full" : "max-h-[90vh]";
   const rounding = isFullscreen ? "rounded-none" : "rounded-2xl";
-  const padding = isFullscreen ? "p-4 sm:p-6 md:p-8" : "p-6";
+  const padding = isFullscreen ? "p-4 sm:p-6 md:p-8" : "p-4 sm:p-6";
 
   return (
     <>
@@ -1943,41 +2299,51 @@ function CenteredModal({
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ duration: 0.2 }}
           onClick={(e) => e.stopPropagation()}
-          className={`relative ${isFullscreen ? "" : "my-4"} w-full ${maxWidth} ${maxHeight} flex flex-col ${rounding} shadow-2xl overflow-hidden ${
+          className={`relative ${isFullscreen ? "" : "my-4"} w-full max-w-[calc(100vw-1.5rem)] sm:max-w-[none] ${maxWidth} ${maxHeight} flex flex-col ${rounding} shadow-2xl overflow-hidden ${
             theme === "dark" ? "bg-gray-900" : "bg-white"
           } ${className}`}
         >
-          {/* Header */}
-          <div
-            className={`flex items-center justify-between px-6 py-4 shrink-0 ${
-              theme === "dark"
-                ? "bg-gradient-to-r from-gray-900 via-gray-900 to-gray-800 border-b border-gray-700"
-                : "bg-gradient-to-r from-blue-50 via-white to-indigo-50 border-b border-gray-200"
-            }`}
-          >
-            <h3
-              style={theme === "dark" ? undefined : { marginRight: "auto" }}
-              className={`text-xl font-bold tracking-tight flex-1 text-left ${
-                theme === "dark"
-                  ? "bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent"
-                  : "bg-gradient-to-r from-blue-700 to-indigo-800 bg-clip-text text-transparent"
-              }`}
-            >
-              {title}
-            </h3>
-
-            <button
-              onClick={onClose}
-              title="Close"
-              className={`group inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold transition ring-1 ${
-                theme === "dark"
-                  ? "bg-gray-800 text-gray-300 ring-gray-700 hover:bg-red-900/40 hover:text-red-300 hover:ring-red-800"
-                  : "bg-white text-gray-600 ring-gray-200 hover:bg-red-50 hover:text-red-600 hover:ring-red-200 shadow-sm"
-              }`}
-            >
-              Close
-              <XMarkIcon className="h-4 w-4 transition-transform group-hover:rotate-90" />
-            </button>
+          {/* Header — expanded, no background */}
+          <div className="shrink-0">
+            <div className="flex items-center gap-3 sm:gap-6 px-4 sm:px-6 pt-4 sm:pt-5 pb-3">
+              {/* Icon chip */}
+              <div
+                className={`h-11 w-11 shrink-0 rounded-2xl flex items-center justify-center ${
+                  theme === "dark"
+                    ? "bg-blue-500/15 text-blue-300"
+                    : "bg-blue-100 text-blue-600"
+                }`}
+              >
+                <UserGroupIcon className="h-6 w-6" />
+              </div>
+              {/* Title */}
+              <div className="flex-1 min-w-0">
+                <h3
+                  className={`text-lg sm:text-xl font-bold tracking-tight truncate ${
+                    theme === "dark"
+                      ? "bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent"
+                      : "bg-gradient-to-r from-blue-700 to-indigo-800 bg-clip-text text-transparent"
+                  }`}
+                >
+                  {title}
+                </h3>
+              </div>
+              {/* Close — circular icon button */}
+              <button
+                onClick={onClose}
+                title="Close"
+                aria-label="Close"
+                className={`group h-10 w-10 shrink-0 rounded-full flex items-center justify-center ring-1 active:scale-90 transition-all ${
+                  theme === "dark"
+                    ? "bg-gray-800/80 text-gray-300 ring-gray-700 hover:bg-red-900/40 hover:text-red-300 hover:ring-red-800"
+                    : "bg-white text-gray-500 ring-gray-200 shadow-sm hover:bg-red-50 hover:text-red-600 hover:ring-red-200"
+                }`}
+              >
+                <XMarkIcon className="h-5 w-5 transition-transform group-active:rotate-90" />
+              </button>
+            </div>
+            {/* Divider */}
+            <div className={`h-px w-full ${theme === "dark" ? "bg-gray-700/60" : "bg-gray-200"}`} />
           </div>
 
           {/* Body */}

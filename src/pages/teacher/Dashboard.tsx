@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import ProfileSetupBanner from '../../components/teacher/ProfileSetupBanner';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { effectivePrivileges } from '../../utils/privileges';
@@ -18,6 +19,7 @@ import {
   ArrowRightIcon,
   CheckCircleIcon,
   ClockIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 interface AttendanceSummary {
@@ -116,17 +118,17 @@ export default function TeacherDashboard() {
 
   const totalAttendanceRecorded = attendanceSummary.filter((s) => s.recorded).length;
 
-  const card = `rounded-2xl p-5 shadow-lg border transition-all ${
+  const card = `rounded-2xl p-4 md:p-5 shadow-lg border transition-all ${
     theme === 'dark'
       ? 'bg-white/5 backdrop-blur-xl border-white/10'
       : 'bg-white/40 backdrop-blur-md border-white/20'
   }`;
-  const statCard = `rounded-2xl p-5 shadow-md border transition-all hover:shadow-lg ${
+  const statCard = `rounded-2xl p-4 md:p-5 shadow-md border transition-all hover:shadow-lg active:scale-[0.98] ${
     theme === 'dark'
       ? 'bg-white/5 backdrop-blur-xl border-white/10'
       : 'bg-white/60 backdrop-blur-md border-white/20'
   }`;
-  const chipBtn = `flex flex-col items-center justify-center gap-2 rounded-2xl p-4 border transition-all hover:shadow-md ${
+  const chipBtn = `flex flex-col items-center justify-center gap-2 rounded-2xl p-4 border transition-all hover:shadow-md active:scale-[0.97] ${
     theme === 'dark'
       ? 'bg-white/5 border-white/10 hover:bg-white/10 text-gray-200'
       : 'bg-white/60 border-white/20 hover:bg-white text-gray-700'
@@ -153,7 +155,9 @@ export default function TeacherDashboard() {
   // ---------- Empty state ----------
   if (totalClasses === 0) {
     return (
-      <div className={`${card} p-10 text-center`}>
+      <div className="space-y-6 p-3 sm:p-4 md:p-5 max-w-7xl mx-auto">
+        <ProfileSetupBanner />
+        <div className={`${card} p-10 text-center`}>
         <AcademicCapIcon className="h-16 w-16 mx-auto text-gray-400 mb-4" />
         <h2 className="text-xl font-bold mb-2">Nothing assigned yet</h2>
         <p className="text-sm text-gray-500 max-w-md mx-auto">
@@ -166,6 +170,7 @@ export default function TeacherDashboard() {
         >
           View My Profile <ArrowRightIcon className="h-4 w-4 ml-1" />
         </Link>
+        </div>
       </div>
     );
   }
@@ -198,38 +203,41 @@ export default function TeacherDashboard() {
   ].filter(Boolean) as { name: string; to: string; icon: any }[];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-3 sm:p-4 md:p-5 max-w-7xl mx-auto">
       {/* Greeting */}
       <div>
-        <h1 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+        <h1 className={`text-xl md:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
           Welcome back, {user?.name || 'Teacher'} 👋
         </h1>
-        <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+        <p className={`text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
           Here is an overview of your classes and today's activities.
         </p>
       </div>
 
+      {/* Prompt to finish profile setup (self-registered teachers) */}
+      <ProfileSetupBanner />
+
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 md:gap-4">
         <div className={statCard}>
           <AcademicCapIcon className="h-6 w-6 text-blue-500" />
-          <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Classes</p>
-          <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{totalClasses}</p>
+            <p className={`mt-2 md:mt-3 text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Classes</p>
+          <p className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{totalClasses}</p>
         </div>
         <div className={statCard}>
           <BookOpenIcon className="h-6 w-6 text-indigo-500" />
-          <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Subjects</p>
-          <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{allSubjects.length || totalSubjectEntries}</p>
+            <p className={`mt-2 md:mt-3 text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Subjects</p>
+          <p className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{allSubjects.length || totalSubjectEntries}</p>
         </div>
         <div className={statCard}>
           <UserGroupIcon className="h-6 w-6 text-emerald-500" />
-          <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Form Classes</p>
-          <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{formClasses.length}</p>
+            <p className={`mt-2 md:mt-3 text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Form Classes</p>
+          <p className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{formClasses.length}</p>
         </div>
         <div className={statCard}>
           <ClipboardDocumentCheckIcon className="h-6 w-6 text-amber-500" />
-          <p className={`mt-3 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Attendance Today</p>
-          <p className={`text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            <p className={`mt-2 md:mt-3 text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Attendance Today</p>
+          <p className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
             {totalAttendanceRecorded}/{formClasses.length}
           </p>
         </div>
@@ -257,13 +265,16 @@ export default function TeacherDashboard() {
                   <li key={t.id || i} className={`flex items-center justify-between p-3 rounded-xl border ${
                     theme === 'dark' ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white/50'
                   }`}>
-                    <div>
-                      <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{subjectName}</p>
-                      {armLabel && <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{armLabel}</p>}
+                    <div className="min-w-0">
+                      <p className={`font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{subjectName}</p>
+                      {armLabel && <p className={`text-xs truncate ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{armLabel}</p>}
                     </div>
-                    <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>
-                      {t.startTime || t.timeSlot || ''}{t.endTime ? ` – ${t.endTime}` : ''}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0 ml-2">
+                      <span className={`text-sm font-medium whitespace-nowrap ${theme === 'dark' ? 'text-blue-300' : 'text-blue-600'}`}>
+                        {t.startTime || t.timeSlot || ''}{t.endTime ? ` – ${t.endTime}` : ''}
+                      </span>
+                      <ChevronRightIcon className={`h-4 w-4 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
+                    </div>
                   </li>
                 );
               })}
@@ -300,26 +311,32 @@ export default function TeacherDashboard() {
           </div>
           <ul className="space-y-3">
             {assignments.map((a) => (
-              <li key={a.armId}>
                 <Link
+                  key={a.armId}
                   to={`/teacher/class/${a.classId}/arm/${a.armId}`}
-                  className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${
+                  className={`flex items-center justify-between p-3 rounded-xl border transition-colors active:scale-[0.98] ${
                     theme === 'dark' ? 'border-white/10 bg-white/5 hover:bg-white/10' : 'border-gray-200 bg-white/50 hover:bg-white'
                   }`}
                 >
-                  <div>
-                    <p className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      {a.className} {a.armName}
-                    </p>
-                    <p className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                      {a.subjectNames.length > 0 ? a.subjectNames.join(', ') : 'No subjects assigned'}
-                    </p>
+                  <div className="flex items-center min-w-0">
+                    <div className={`flex-shrink-0 w-9 h-9 rounded-xl mr-3 flex items-center justify-center text-white text-sm font-bold shadow-md bg-gradient-to-br ${
+                      a.isFormTeacher ? 'from-blue-500 to-indigo-600' : 'from-emerald-500 to-teal-600'
+                    }`}>
+                      {a.armName?.trim()?.slice(-1) || '•'}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`font-medium truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        {a.className} {a.armName}
+                      </p>
+                      <p className={`text-xs truncate ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                        {a.subjectNames.length > 0 ? a.subjectNames.join(', ') : 'No subjects assigned'}
+                      </p>
+                    </div>
                   </div>
                   {a.isFormTeacher && (
-                    <span className="text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500">Form Teacher</span>
+                    <span className="flex-shrink-0 ml-2 text-xs px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-500">Form Teacher</span>
                   )}
                 </Link>
-              </li>
             ))}
           </ul>
         </div>
@@ -344,8 +361,9 @@ export default function TeacherDashboard() {
                   {s.recorded ? (
                     <span className="text-sm font-medium text-green-600">{s.present}/{s.total} present</span>
                   ) : (
-                    <Link to={`/teacher/class/${formClasses.find((f) => f.armId === s.armId)?.classId}/arm/${s.armId}`}
-                      className="text-sm font-medium text-amber-600 hover:underline">
+                    <Link to={`/teacher/class/${formClasses.find((f) => f.armId === s.armId)?.classId}/arm/${s.armId}?tab=attendance`}
+                      className="text-sm font-medium text-amber-600 hover:underline"
+                      onClick={(e) => e.stopPropagation()}>
                       Take attendance →
                     </Link>
                   )}

@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import TeacherDashboard from './pages/teacher/Dashboard';
 import TeacherSubjects from './pages/teacher/Subjects';
+import TeacherRegister from './pages/auth/TeacherRegister';
+import TeacherProfileSetup from './pages/teacher/ProfileSetup';
 import Login from './pages/auth/Login';
 import ProtectedRoute from './components/ProtectedRoute';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -17,6 +19,13 @@ import AdminResults from './pages/admin/Results';
 import AdminReports from './pages/admin/Reports';
 import AdminSettings from './pages/admin/Settings';
 import AdminParent from './pages/admin/Parent';
+import ParentLayout from './layouts/ParentLayout';
+import ParentOverview from './pages/parent/Overview';
+import ParentChildren from './pages/parent/Children';
+import ParentChildDetail from './pages/parent/ChildDetail';
+import ParentFees from './pages/parent/Fees';
+import ParentMessages from './pages/parent/Messages';
+import ParentMore from './pages/parent/More';
 import AdminFees from './pages/admin/Fees';
 import AdminBroadsheet from './pages/admin/Broadsheet';
 import AdminCBT from './pages/admin/CBT';
@@ -54,7 +63,6 @@ import TeacherLayout from './layouts/TeacherLayout';
 import TestPortal from './pages/student/TestPortal';
 
 // Placeholder pages for other roles
-const ParentDashboard = () => <div>Parent Dashboard</div>;
 const StudentDashboard = () => <div>Student Dashboard</div>;
 
 // Role‑based redirect: send staff users with any administrative privilege
@@ -93,6 +101,8 @@ function App() {
       <Routes>
         {/* Public routes – no layout */}
         <Route path="/login" element={<Login />} />
+        <Route path="/register/teacher" element={<TeacherRegister />} />
+        <Route element={<ProtectedRoute />}><Route path="/teacher/profile-setup" element={<TeacherProfileSetup />} /></Route>
         <Route path="/student/test" element={<TestPortal />} />
 
         {/* Root redirect – protected */}
@@ -187,9 +197,16 @@ function App() {
           </Route>
         </Route>
 
-        {/* ====== PARENT ROUTES ====== */}
+        {/* ====== PARENT ROUTES (mobile-app style) ====== */}
         <Route element={<ProtectedRoute allowedRoles={['parent']} />}>
-          <Route path="/parent/*" element={<ParentDashboard />} />
+          <Route path="/parent" element={<ParentLayout />}>
+            <Route index element={<ParentOverview />} />
+            <Route path="children" element={<ParentChildren />} />
+            <Route path="children/:childId" element={<ParentChildDetail />} />
+            <Route path="fees" element={<ParentFees />} />
+            <Route path="messages" element={<ParentMessages />} />
+            <Route path="more" element={<ParentMore />} />
+          </Route>
         </Route>
 
         {/* ====== STUDENT ROUTES ====== */}

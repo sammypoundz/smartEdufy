@@ -58,6 +58,19 @@ const item = {
   show: { y: 0, opacity: 1 },
 };
 
+function useIsMobile() {
+  const [isMobile, setIsMobile] = useState(
+    typeof window !== 'undefined' ? window.matchMedia('(max-width: 767px)').matches : false,
+  );
+  useEffect(() => {
+    const mql = window.matchMedia('(max-width: 767px)');
+    const handler = (e: MediaQueryListEvent) => setIsMobile(e.matches);
+    mql.addEventListener('change', handler);
+    return () => mql.removeEventListener('change', handler);
+  }, []);
+  return isMobile;
+}
+
 export default function AdminClasses() {
   const { theme } = useTheme();
   const { token, user } = useAuth();
@@ -69,6 +82,7 @@ export default function AdminClasses() {
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
   const [teacherModalOpen, setTeacherModalOpen] = useState(false);
   const [currentArmIndex, setCurrentArmIndex] = useState<number | null>(null);
+  const isMobile = useIsMobile();
 
   // Check if user is admin
   const isAdmin = user?.role === 'ADMIN';
@@ -495,22 +509,32 @@ export default function AdminClasses() {
                   className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
                 />
                 <motion.div
-                  initial={{ x: '100%' }}
-                  animate={{ x: 0 }}
-                  exit={{ x: '100%' }}
-                  transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                  className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
+                  initial={isMobile ? { y: '100%' } : { x: '100%' }}
+                  animate={isMobile ? { y: 0 } : { x: 0 }}
+                  exit={isMobile ? { y: '100%' } : { x: '100%' }}
+                  transition={{ type: 'spring', damping: 30, stiffness: 260 }}
+                  className={`fixed z-50 shadow-2xl overflow-y-auto overscroll-contain ${
+                    isMobile ? 'inset-x-0 bottom-0 top-0 h-full' : 'right-0 top-0 h-full w-full max-w-md'
+                  } ${theme === 'dark' ? `bg-gray-900 ${isMobile ? '' : 'border-l border-white/10'}` : `bg-white ${isMobile ? '' : 'border-l border-gray-200'}`}`}
                 >
-                  <div className="p-6">
-                    <div className="flex items-center justify-between mb-6">
-                      <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                        {selectedClass.id ? 'Edit Class' : 'New Class'}
-                      </h3>
-                      <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
+                  <div className="p-4 md:p-6 min-h-full flex flex-col">
+                    <div className={`md:hidden w-10 h-1.5 rounded-full mx-auto mb-3 flex-shrink-0 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'}`} />
+                    <div className={`flex items-center justify-between mb-5 md:mb-6 ${
+                      isMobile ? 'sticky top-0 z-10 py-2 backdrop-blur-md ' + (theme === 'dark' ? 'bg-gray-900/90' : 'bg-white/90') : ''
+                    }`}>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                          <AcademicCapIcon className="w-5 h-5" />
+                        </div>
+                        <h3 className={`text-lg md:text-xl font-bold truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                          {selectedClass.id ? 'Edit Class' : 'New Class'}
+                        </h3>
+                      </div>
+                      <button onClick={closePanel} className={`flex-shrink-0 p-2 rounded-xl transition-colors active:bg-gray-200/50 ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
                         <XMarkIcon className="h-5 w-5" />
                       </button>
                     </div>
-                    <div className="space-y-6">
+                    <div className="space-y-5 md:space-y-6 flex-1">
                       <div>
                         <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
                         <input
@@ -541,11 +565,11 @@ export default function AdminClasses() {
                               <div className="grid grid-cols-2 gap-2">
                                 <div>
                                   <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Letter</label>
-                                  <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
+                                  <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
                                 </div>
                                 <div>
                                   <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Alias (optional)</label>
-                                  <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
+                                  <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
                                 </div>
                                 <div className="col-span-2">
                                   <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Teacher</label>
@@ -554,13 +578,13 @@ export default function AdminClasses() {
                                       type="text"
                                       value={arm.teacherId ? teachers.find(t => t.id === arm.teacherId)?.name || arm.teacherId : ''}
                                       readOnly
-                                      className={`flex-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
+                                      className={`flex-1 min-w-0 px-3 py-2.5 text-sm rounded-lg border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
                                       placeholder="No teacher selected"
                                     />
                                     <button
                                       type="button"
                                       onClick={() => openTeacherModal(index)}
-                                      className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
+                                      className="px-4 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg transition-colors whitespace-nowrap"
                                     >
                                       Select
                                     </button>
@@ -573,8 +597,8 @@ export default function AdminClasses() {
                         </div>
                       </div>
 
-                      <div className="pt-4">
-                        <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-2 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
+                      <div className={`sticky bottom-0 pt-3 pb-2 -mx-4 px-4 md:static md:mx-0 md:px-0 md:pt-4 backdrop-blur-md ${theme === 'dark' ? 'bg-gray-900/90' : 'bg-white/90'}`}>
+                        <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-3 md:py-2 rounded-xl font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
                           {isSaving ? (
                             <>
                               <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
@@ -779,55 +803,67 @@ export default function AdminClasses() {
       )}
 
       <div className="relative z-10 max-w-7xl mx-auto">
-        <div className="sm:flex sm:items-center sm:justify-between mb-8">
-          <div>
-            <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
-              {isAdmin ? 'Class Management' : 'My Classes'}
-            </h2>
-            <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-              {isAdmin
-                ? 'Manage classes and their arms. Each arm can have its own teacher and alias.'
-                : 'Classes you are assigned to teach'
+        <div
+          className={`rounded-2xl p-4 sm:p-6 mb-8 ${
+            theme === 'dark'
+              ? 'bg-white/5 backdrop-blur-xl border border-white/10'
+              : 'bg-white/80 backdrop-blur-xl shadow-lg border border-gray-200/60'
+          }`}
+        >
+          <div className="sm:flex sm:items-center sm:justify-between">
+            <div>
+              <h2 className={`text-xl sm:text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
+                {isAdmin ? 'Class Management' : 'My Classes'}
+              </h2>
+              <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                {isAdmin
+                  ? 'Manage classes and their arms. Each arm can have its own teacher and alias.'
+                  : 'Classes you are assigned to teach'
               }
-            </p>
+              </p>
+            </div>
+            {isAdmin && (
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => openPanel()}
+                className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-md hover:shadow-lg transition-shadow duration-200"
+              >
+                <PlusIcon className="h-5 w-5 mr-2" />
+                Add Class
+              </motion.button>
+            )}
           </div>
-          {isAdmin && (
-            <button
-              onClick={() => {
-                console.log('🟢 Add Class button clicked!');
-                openPanel();
-              }}
-              className="mt-4 sm:mt-0 inline-flex items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 px-4 py-2 text-sm font-medium text-white shadow-lg hover:from-blue-600 hover:to-indigo-700 transition-all duration-200"
-            >
-              <PlusIcon className="h-5 w-5 mr-2" />
-              Add Class
-            </button>
-          )}
         </div>
 
-        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+        <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
           {classes.map((cls) => {
             const totalStudents = getTotalStudents(cls);
             return (
-              <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-2xl p-6 shadow-xl transition-all duration-300 ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+              <motion.div key={cls.id} variants={item} className={`group relative overflow-hidden rounded-3xl md:rounded-2xl p-5 md:p-6 shadow-xl transition-all duration-300 active:scale-[0.99] ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/70 backdrop-blur-md border border-white/40'}`}>
                 <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 bg-gradient-to-br from-blue-500/10 to-purple-500/10" />
                 <div className="relative z-10">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
-                      <div className="flex items-center mt-1">
-                        <UserGroupIcon className={`h-4 w-4 mr-1 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
-                        <span className={`text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
-                          {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'} Total
-                        </span>
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center min-w-0">
+                      <div className={`flex-shrink-0 w-11 h-11 md:w-12 md:h-12 rounded-2xl mr-3 flex items-center justify-center text-white shadow-lg bg-gradient-to-br from-blue-500 to-indigo-600`}>
+                        <AcademicCapIcon className="w-6 h-6" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className={`text-base md:text-lg font-bold truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{cls.name}</h3>
+                        <div className="flex items-center mt-0.5">
+                          <UserGroupIcon className={`h-4 w-4 mr-1 flex-shrink-0 ${theme === 'dark' ? 'text-blue-400' : 'text-blue-600'}`} />
+                          <span className={`text-xs md:text-sm font-medium ${theme === 'dark' ? 'text-blue-300' : 'text-blue-700'}`}>
+                            {totalStudents} {totalStudents === 1 ? 'Student' : 'Students'} Total
+                          </span>
+                        </div>
                       </div>
                     </div>
                     {isAdmin && (
-                      <div className="flex space-x-1">
-                        <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
+                      <div className="flex flex-shrink-0 space-x-1 ml-2">
+                        <button onClick={(e) => { e.stopPropagation(); openPanel(cls); }} className={`p-2 rounded-xl transition-colors active:bg-blue-500/20 ${theme === 'dark' ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10' : 'text-blue-600 hover:text-blue-800 hover:bg-blue-100/50'}`}>
                           <PencilIcon className="h-4 w-4" />
                         </button>
-                        <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-1 rounded transition-colors ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
+                        <button onClick={(e) => deleteClass(cls.id, e)} disabled={isDeleting === cls.id} className={`p-2 rounded-xl transition-colors active:bg-red-500/20 ${theme === 'dark' ? 'text-red-400 hover:text-red-300 hover:bg-white/10' : 'text-red-600 hover:text-red-800 hover:bg-red-100/50'} disabled:opacity-50 disabled:cursor-not-allowed`}>
                           {isDeleting === cls.id ? (
                             <div className="w-4 h-4 border-2 border-red-400 border-t-transparent rounded-full animate-spin" />
                           ) : (
@@ -838,31 +874,29 @@ export default function AdminClasses() {
                     )}
                   </div>
 
-                  <div className="mt-4 space-y-3">
+                  <div className={`mt-4 space-y-2.5 ${cls.arms.length > 0 ? 'pt-3 border-t ' + (theme === 'dark' ? 'border-white/10' : 'border-gray-200/70') : ''}`}>
                     {cls.arms.map((arm) => (
                       <div
                         key={arm.id}
                         onClick={() => navigate(getArmNavigationPath(cls.id, arm.id))}
-                        className={`p-3 rounded-lg cursor-pointer transition-all hover:shadow-md ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/40 hover:bg-white/60'}`}
+                        className={`p-3 md:p-3.5 rounded-xl cursor-pointer transition-all active:scale-[0.98] hover:shadow-md flex items-center justify-between ${theme === 'dark' ? 'bg-white/10 hover:bg-white/20' : 'bg-white/60 hover:bg-white/90'}`}
                       >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center">
-                            <span className={`font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+                        <div className="min-w-0">
+                          <div className="flex items-center flex-wrap gap-1.5">
+                            <span className={`font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                               Arm {arm.letter}
                             </span>
                             {arm.alias && (
-                              <span className={`ml-2 text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-blue-500/20 text-blue-300' : 'bg-blue-100 text-blue-700'}`}>
                                 {arm.alias}
                               </span>
                             )}
                           </div>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${theme === 'dark' ? 'bg-gray-700 text-gray-300' : 'bg-gray-200 text-gray-700'}`}>
-                            {getStudentCount(arm)} students
-                          </span>
+                          <p className={`text-xs mt-1 truncate ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+                            {getTeacherName(arm)} · {getStudentCount(arm)} students
+                          </p>
                         </div>
-                        <p className={`text-xs mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                          Teacher: {getTeacherName(arm)}
-                        </p>
+                        <ChevronRightIcon className={`h-5 w-5 flex-shrink-0 ml-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
                       </div>
                     ))}
                   </div>
@@ -881,20 +915,30 @@ export default function AdminClasses() {
             <>
               <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={closePanel} className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40" />
               <motion.div
-                initial={{ x: '100%' }}
-                animate={{ x: 0 }}
-                exit={{ x: '100%' }}
-                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-                className={`fixed right-0 top-0 h-full w-full max-w-md z-50 shadow-2xl overflow-y-auto ${theme === 'dark' ? 'bg-gray-900 border-l border-white/10' : 'bg-white border-l border-gray-200'}`}
+                initial={isMobile ? { y: '100%' } : { x: '100%' }}
+                animate={isMobile ? { y: 0 } : { x: 0 }}
+                exit={isMobile ? { y: '100%' } : { x: '100%' }}
+                transition={{ type: 'spring', damping: 30, stiffness: 260 }}
+                className={`fixed z-50 shadow-2xl overflow-y-auto overscroll-contain ${
+                  isMobile ? 'inset-x-0 bottom-0 top-0 h-full' : 'right-0 top-0 h-full w-full max-w-md'
+                } ${theme === 'dark' ? `bg-gray-900 ${isMobile ? '' : 'border-l border-white/10'}` : `bg-white ${isMobile ? '' : 'border-l border-gray-200'}`}`}
               >
-                <div className="p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h3 className={`text-xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedClass.id ? 'Edit Class' : 'New Class'}</h3>
-                    <button onClick={closePanel} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
+                <div className="p-4 md:p-6 min-h-full flex flex-col">
+                  <div className={`md:hidden w-10 h-1.5 rounded-full mx-auto mb-3 flex-shrink-0 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'}`} />
+                  <div className={`flex items-center justify-between mb-5 md:mb-6 ${
+                    isMobile ? 'sticky top-0 z-10 py-2 backdrop-blur-md ' + (theme === 'dark' ? 'bg-gray-900/90' : 'bg-white/90') : ''
+                  }`}>
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="flex-shrink-0 w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white shadow-md">
+                        <AcademicCapIcon className="w-5 h-5" />
+                      </div>
+                      <h3 className={`text-lg md:text-xl font-bold truncate ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedClass.id ? 'Edit Class' : 'New Class'}</h3>
+                    </div>
+                    <button onClick={closePanel} className={`flex-shrink-0 p-2 rounded-xl transition-colors active:bg-gray-200/50 ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}>
                       <XMarkIcon className="h-5 w-5" />
                     </button>
                   </div>
-                  <div className="space-y-6">
+                  <div className="space-y-5 md:space-y-6 flex-1">
                     <div>
                       <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class Name</label>
                       <input type="text" value={selectedClass.name} onChange={(e) => setSelectedClass({ ...selectedClass, name: e.target.value })} className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500' : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'}`} placeholder="e.g. Primary 3" />
@@ -919,11 +963,11 @@ export default function AdminClasses() {
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Letter</label>
-                                <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
+                                <input type="text" value={arm.letter} onChange={(e) => updateArm(index, 'letter', e.target.value.toUpperCase())} className={`w-full mt-1 px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} maxLength={2} />
                               </div>
                               <div>
                                 <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Alias (optional)</label>
-                                <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
+                                <input type="text" value={arm.alias || ''} onChange={(e) => updateArm(index, 'alias', e.target.value)} className={`w-full mt-1 px-3 py-2.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="e.g. Science" />
                               </div>
                               <div className="col-span-2">
                                 <label className={`text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Teacher</label>
@@ -932,13 +976,13 @@ export default function AdminClasses() {
                                     type="text"
                                     value={arm.teacherId ? teachers.find(t => t.id === arm.teacherId)?.name || arm.teacherId : ''}
                                     readOnly
-                                    className={`flex-1 px-2 py-1 text-sm rounded border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
+                                    className={`flex-1 min-w-0 px-3 py-2.5 text-sm rounded-lg border ${theme === 'dark' ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-100 border-gray-300 text-gray-500'}`}
                                     placeholder="No teacher selected"
                                   />
                                   <button
                                     type="button"
                                     onClick={() => openTeacherModal(index)}
-                                    className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-md transition-colors whitespace-nowrap"
+                                    className="px-4 py-2.5 text-sm bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-lg transition-colors whitespace-nowrap"
                                   >
                                     Select
                                   </button>
@@ -951,8 +995,8 @@ export default function AdminClasses() {
                       </div>
                     </div>
 
-                    <div className="pt-4">
-                      <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-2 rounded-lg font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
+                    <div className={`sticky bottom-0 pt-3 pb-2 -mx-4 px-4 md:static md:mx-0 md:px-0 md:pt-4 backdrop-blur-md ${theme === 'dark' ? 'bg-gray-900/90' : 'bg-white/90'}`}>
+                      <button onClick={saveClass} disabled={!selectedClass.name.trim() || isSaving} className={`w-full flex justify-center items-center px-4 py-3 md:py-2 rounded-xl font-medium transition-all ${theme === 'dark' ? 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-700 disabled:text-gray-500' : 'bg-blue-600 hover:bg-blue-700 text-white disabled:bg-gray-300 disabled:text-gray-500'}`}>
                         {isSaving ? (
                           <>
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
@@ -979,23 +1023,24 @@ export default function AdminClasses() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[101] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+              className={`fixed inset-0 z-[101] flex ${isMobile ? 'items-end p-0' : 'items-center p-4'} bg-black/50 backdrop-blur-sm`}
               onClick={() => setTeacherModalOpen(false)}
             >
               <motion.div
-                initial={{ scale: 0.9, opacity: 0 }}
-                animate={{ scale: 1, opacity: 1 }}
-                exit={{ scale: 0.9, opacity: 0 }}
-                transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-                className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden border ${
+                initial={isMobile ? { y: '100%' } : { scale: 0.9, opacity: 0 }}
+                animate={isMobile ? { y: 0 } : { scale: 1, opacity: 1 }}
+                exit={isMobile ? { y: '100%' } : { scale: 0.9, opacity: 0 }}
+                transition={{ type: 'spring', damping: 30, stiffness: 300 }}
+                className={`w-full max-w-md ${isMobile ? 'rounded-t-3xl' : 'rounded-2xl shadow-2xl overflow-hidden border'} ${
                   theme === 'dark'
-                    ? 'bg-gray-800 border-gray-700'
-                    : 'bg-white border-gray-300'
+                    ? `bg-gray-800 ${isMobile ? '' : 'border-gray-700'}`
+                    : `bg-white ${isMobile ? '' : 'border-gray-300'}`
                 }`}
-                style={{ maxHeight: '80vh' }}
+                style={{ maxHeight: isMobile ? '90vh' : '80vh' }}
                 onClick={(e) => e.stopPropagation()}
               >
-                <div className={`p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                <div className={`p-4 md:p-6 flex-1 overflow-y-auto ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                  {isMobile && <div className={`w-10 h-1.5 rounded-full mx-auto mb-3 ${theme === 'dark' ? 'bg-gray-600' : 'bg-gray-300'}`} />}
                   <div className="flex justify-between items-center mb-4 sticky top-0 bg-inherit z-10 pb-2">
                     <h3 className={`text-lg font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
                       Select a Teacher

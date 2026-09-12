@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useState, useEffect, useRef } from 'react';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
@@ -91,6 +91,7 @@ export default function OpenArm() {
   const { token } = useAuth();
   const { classId, armId } = useParams<{ classId: string; armId: string }>();
   const navigate = useNavigate();
+  const searchParams = useSearchParams()[0];
 
   const [armData, setArmData] = useState<ArmData | null>(null);
   const [className, setClassName] = useState<string>('');
@@ -100,7 +101,8 @@ export default function OpenArm() {
   const [timetable, setTimetable] = useState<TimetablePeriod[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState('members');
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'members');
+  const tabNavRef = useRef<HTMLElement | null>(null);
 
   // Modal states
   const [showSubjectModal, setShowSubjectModal] = useState(false);
@@ -469,6 +471,19 @@ export default function OpenArm() {
       });
     }
   };
+
+  // Keep the active tab pill visible in the sliding tab strip (mobile)
+  useEffect(() => {
+    const nav = tabNavRef.current;
+    if (!nav) return;
+    const active = nav.querySelector<HTMLElement>('[data-active="true"]');
+    if (!active) return;
+    const navRect = nav.getBoundingClientRect();
+    const rect = active.getBoundingClientRect();
+    if (rect.left < navRect.left || rect.right > navRect.right) {
+      active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+    }
+  }, [activeTab, loading]);
 
   // Filter students based on search term
   useEffect(() => {
@@ -1302,9 +1317,9 @@ export default function OpenArm() {
         </motion.button>
 
         {/* Title */}
-        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-6 md:mb-8">
           <h1
-            className={`text-3xl font-bold ${
+            className={`text-xl md:text-3xl font-bold ${
               theme === 'dark'
                 ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent'
                 : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'
@@ -1312,11 +1327,11 @@ export default function OpenArm() {
           >
             {displayTitle}
           </h1>
-          <p className={`mt-2 text-lg ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Teacher: {armData.teacher?.name || 'Not assigned'}</p>
+          <p className={`mt-1 md:mt-2 text-sm md:text-lg ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Teacher: {armData.teacher?.name || 'Not assigned'}</p>
         </motion.div>
 
         {/* Stats Cards */}
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.1 }} className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
           <div className={`p-4 rounded-xl shadow-md ${theme === 'dark' ? 'bg-white/5 backdrop-blur-sm border border-white/10' : 'bg-white/80 backdrop-blur-sm border border-gray-200 shadow-md'}`}>
             <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Total Students</p>
             <p className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{totalStudents}</p>
@@ -1335,17 +1350,20 @@ export default function OpenArm() {
           </div>
         </motion.div>
 
-        {/* Tabs */}
-        <div className="mb-6 border-b border-gray-200 dark:border-gray-700">
-          <nav className="flex -mb-px space-x-8 overflow-x-auto">
+        {/* Tabs — swipeable pills on mobile, underline tabs on desktop */}
+        <div className="relative mb-6 md:border-b md:border-gray-200 dark:md:border-gray-700">
+          {/* Edge fade hints on mobile to signal scrollability */}
+          <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-6 z-10 bg-gradient-to-l from-white/80 dark:from-[#0B1120]/80 to-transparent" />
+          <nav ref={tabNavRef} className="tab-scroll flex md:-mb-px gap-2 md:space-x-0 md:gap-0 overflow-x-auto snap-x snap-mandatory pb-1 md:pb-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
             {['members', 'subjects', 'results', 'skills', 'attendance', 'timetable', 'form-teacher'].map((tab) => (
               <button
                 key={tab}
+                data-active={activeTab === tab ? 'true' : undefined}
                 onClick={() => setActiveTab(tab)}
-                className={`whitespace-nowrap py-2 px-1 border-b-2 font-medium text-sm transition-colors ${
+                className={`flex-shrink-0 snap-start whitespace-nowrap rounded-full px-4 py-2 text-xs md:px-1 md:py-2 md:rounded-none font-medium transition-colors ${
                   activeTab === tab
-                    ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                    : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300 hover:border-gray-300'
+                    ? 'bg-blue-600 text-white shadow-md md:bg-transparent md:shadow-none md:text-blue-600 dark:md:text-blue-400 md:border-b-2 md:border-blue-500'
+                    : 'bg-white/60 dark:bg-white/5 text-gray-600 dark:text-gray-400 md:bg-transparent md:dark:bg-transparent md:border-b-2 md:border-transparent md:text-gray-500 md:hover:text-gray-700 dark:md:text-gray-400 dark:md:hover:text-gray-300 md:hover:border-gray-300'
                 }`}
               >
                 {tab === 'members' ? 'Class Members' : tab.charAt(0).toUpperCase() + tab.slice(1).replace('-', ' ')}

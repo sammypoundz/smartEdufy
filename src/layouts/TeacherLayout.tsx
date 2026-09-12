@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Link, Outlet, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -8,6 +9,7 @@ import { api } from '../utils/api';
 import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
+import LogoutConfirmModal from '../components/LogoutConfirmModal';
 import toast from 'react-hot-toast';
 import {
   FolderIcon,
@@ -209,6 +211,9 @@ export default function TeacherLayout() {
   // ---------- Search states ----------
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<typeof allNavItems>([]);
+  const [searchModalOpen, setSearchModalOpen] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // ---------- Privileged navigation (based on roles + privileges) ----------
   const allowedCategories = (() => {
@@ -240,12 +245,8 @@ export default function TeacherLayout() {
     allowedCategories
       .find((c) => c.name === categoryName)
       ?.items.some((i) => isTimetableItem(i.href)) === true;
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const [, setShowSearchDropdown] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [searchExpanded, setSearchExpanded] = useState(false);
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const searchDropdownRef = useRef<HTMLDivElement>(null);
-  const searchContainerRef = useRef<HTMLDivElement>(null);
 
   // ---------- Helper to check active link ----------
   const isActiveLink = (href: string) => {
@@ -270,57 +271,45 @@ export default function TeacherLayout() {
     setSelectedIndex(-1);
   }, [searchQuery]);
 
-  // Close dropdown when clicking outside
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (
-        searchDropdownRef.current &&
-        !searchDropdownRef.current.contains(event.target as Node) &&
-        searchInputRef.current &&
-        !searchInputRef.current.contains(event.target as Node)
-      ) {
-        setShowSearchDropdown(false);
-        setSearchQuery('');
-        setSearchExpanded(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  const closeSearchModal = () => {
+    setSearchModalOpen(false);
+    setSearchQuery('');
+    setSelectedIndex(-1);
+  };
 
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showSearchDropdown) return;
+  const handleModalKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'ArrowDown') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev + 1) % searchResults.length);
+      setSelectedIndex(prev => (prev + 1) % Math.max(1, searchResults.length));
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
-      setSelectedIndex(prev => (prev - 1 + searchResults.length) % searchResults.length);
+      setSelectedIndex(prev => (prev - 1 + searchResults.length) % Math.max(1, searchResults.length));
     } else if (e.key === 'Enter' && selectedIndex >= 0) {
       e.preventDefault();
       const selected = searchResults[selectedIndex];
       if (selected) {
         navigate(selected.href);
-        setShowSearchDropdown(false);
-        setSearchQuery('');
-        setSearchExpanded(false);
+        closeSearchModal();
       }
     } else if (e.key === 'Escape') {
-      setShowSearchDropdown(false);
-      setSearchQuery('');
-      setSearchExpanded(false);
+      closeSearchModal();
     }
   };
 
   const handleResultClick = (href: string) => {
     navigate(href);
-    setShowSearchDropdown(false);
-    setSearchQuery('');
-    setSearchExpanded(false);
+    closeSearchModal();
   };
 
   // ---------- Handlers ----------
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
   const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false);
     logout();
     navigate('/login');
   };
@@ -350,27 +339,7 @@ export default function TeacherLayout() {
   const effectiveIsCollapsed =
     (isCollapsed || tempCollapsedBySchoolName) && !isHoverExpanded;
 
-  // ---------- Search focus handling ----------
-  const handleSearchFocus = () => {
-    setSearchExpanded(true);
-    if (searchQuery.trim() !== '') {
-      setShowSearchDropdown(true);
-    }
-  };
-
-  const handleSearchBlur = () => {
-    setTimeout(() => {
-      if (!searchDropdownRef.current?.contains(document.activeElement)) {
-        setSearchExpanded(false);
-        setShowSearchDropdown(false);
-      }
-    }, 150);
-  };
-
-  const handleIconClick = () => {
-    searchInputRef.current?.focus();
-  };
-
+  // ---------- Handlers ----------
   // ---------- Render ----------
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
@@ -787,30 +756,13 @@ export default function TeacherLayout() {
       <div className={`flex flex-col flex-1 transition-all duration-300 ${
         effectiveIsCollapsed ? 'md:pl-20' : 'md:pl-72'
       }`}>
-        <header className={`sticky top-0 z-50 flex h-16 items-center justify-between px-6 shadow-sm transition-all duration-300 ${
+        <header className={`sticky top-0 z-50 flex h-16 items-center justify-between px-4 md:px-6 shadow-sm transition-all duration-300 ${
           theme === 'dark'
             ? 'bg-white/5 backdrop-blur-xl border-b border-white/10'
             : 'bg-white/30 backdrop-blur-md border-b border-white/20'
         }`}>
           {/* Left side: sidebar toggle buttons + school/term info */}
           <div className="flex items-center flex-1 min-w-0">
-            {/* Mobile hamburger — pulsing dot when the timetable workflow
-                needs this user's attention, so they know to open the menu */}
-            <button
-              className="md:hidden relative p-2 rounded-lg text-gray-500 hover:text-gray-700"
-              onClick={() => setSidebarOpen(true)}
-            >
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-              </svg>
-              {timetableAttention && (
-                <span className="absolute top-1.5 right-1.5 flex h-2.5 w-2.5">
-                  <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75" />
-                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-red-600 ring-2 ring-white dark:ring-gray-900" />
-                </span>
-              )}
-            </button>
-
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebar}
@@ -854,93 +806,120 @@ export default function TeacherLayout() {
             </div>
           </div>
 
-          {/* ====== Search Bar ====== */}
-          <div className="flex items-center justify-end flex-1 max-w-xs mx-4 relative" ref={searchContainerRef}>
-            <div
-              className={`relative transition-all duration-300 ease-in-out ${
-                searchExpanded ? 'w-full' : 'w-10'
-              }`}
-            >
-              <div className="relative">
-                <MagnifyingGlassIcon
-                  className={`absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 cursor-pointer transition-colors ${
-                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                  } ${searchExpanded ? 'pointer-events-none' : 'pointer-events-auto'}`}
-                  onClick={handleIconClick}
-                />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={handleKeyDown}
-                  onFocus={handleSearchFocus}
-                  onBlur={handleSearchBlur}
-                  placeholder={searchExpanded ? "Search menus..." : ""}
-                  className={`w-full pl-10 pr-4 py-2 rounded-xl border transition-all duration-300 focus:outline-none focus:ring-2 ${
-                    searchExpanded
-                      ? 'opacity-100'
-                      : 'opacity-0 pointer-events-none'
-                  } ${
-                    theme === 'dark'
-                      ? 'bg-white/10 border-white/20 text-white placeholder-gray-400 focus:ring-blue-500'
-                      : 'bg-white/50 border-white/30 text-gray-900 placeholder-gray-500 focus:ring-blue-500'
-                  }`}
-                  style={{
-                    width: searchExpanded ? '100%' : '0px',
-                    paddingLeft: searchExpanded ? '2.5rem' : '0',
-                    paddingRight: searchExpanded ? '1rem' : '0',
-                  }}
-                />
-              </div>
-
-              {/* Search dropdown */}
-              {showSearchDropdown && searchExpanded && (
-                <div
-                  ref={searchDropdownRef}
-                  className={`absolute top-full left-0 right-0 mt-2 rounded-xl shadow-xl overflow-hidden z-50 ${
-                    theme === 'dark'
-                      ? 'bg-gray-900/95 backdrop-blur-xl border border-white/10'
-                      : 'bg-white/95 backdrop-blur-xl border border-white/30'
-                  }`}
-                >
-                  {searchResults.length === 0 ? (
-                    <div className={`px-4 py-3 text-sm ${
-                      theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                    }`}>
-                      No results found
-                    </div>
-                  ) : (
-                    <ul className="max-h-96 overflow-y-auto py-2">
-                      {searchResults.map((item, idx) => (
-                        <li
-                          key={item.href}
-                          onClick={() => handleResultClick(item.href)}
-                          onMouseEnter={() => setSelectedIndex(idx)}
-                          className={`px-4 py-2 flex items-center gap-3 cursor-pointer transition-colors ${
-                            selectedIndex === idx
-                              ? theme === 'dark'
-                                ? 'bg-white/10'
-                                : 'bg-black/5'
-                              : ''
-                          } ${
-                            theme === 'dark'
-                              ? 'hover:bg-white/10 text-gray-200'
-                              : 'hover:bg-black/5 text-gray-800'
-                          }`}
-                        >
-                          <item.icon className={`h-5 w-5 ${
-                            theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
-                          }`} />
-                          <span className="text-sm">{item.name}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                </div>
-              )}
+          {/* ====== Search Bar - icon opens a search modal (spans across like the parent dashboard) ====== */}
+          <div className="flex items-center justify-end flex-1 min-w-0 mr-2 relative" ref={searchContainerRef}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setSearchModalOpen(true)}
+                title="Search"
+                aria-label="Open search"
+                className={`p-2 -m-2 rounded-full transition-colors ${
+                  theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                }`}
+              >
+                <MagnifyingGlassIcon className="h-5 w-5" />
+              </button>
             </div>
           </div>
+
+          {/* ====== Search Modal (ported to body so the backdrop covers the full viewport) ====== */}
+          {searchModalOpen && createPortal(
+            <div
+              className="fixed inset-0 z-[60] flex items-start justify-center bg-black/50 backdrop-blur-sm p-4 pt-24"
+              onClick={closeSearchModal}
+            >
+              <div
+                onClick={(e) => e.stopPropagation()}
+                className={`w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden ${
+                  theme === 'dark'
+                    ? 'bg-gray-900/95 backdrop-blur-xl border border-white/10'
+                    : 'bg-white/95 backdrop-blur-xl border border-white/30'
+                }`}
+              >
+                {/* Modal search input */}
+                <div className={`flex items-center gap-3 px-4 py-3 border-b ${
+                  theme === 'dark' ? 'border-white/10' : 'border-gray-200'
+                }`}>
+                  <MagnifyingGlassIcon className={`h-5 w-5 ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`} />
+                  <input
+                    ref={searchInputRef}
+                    autoFocus
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={handleModalKeyDown}
+                    placeholder="Search menus, pages, actions..."
+                    className={`flex-1 bg-transparent text-base focus:outline-none ${
+                      theme === 'dark' ? 'text-white placeholder-gray-500' : 'text-gray-900 placeholder-gray-400'
+                    }`}
+                  />
+                  <button
+                    type="button"
+                    onClick={closeSearchModal}
+                    aria-label="Close search"
+                    className={`p-1.5 rounded-lg text-xs font-medium transition-colors ${
+                      theme === 'dark'
+                        ? 'text-gray-400 hover:text-white hover:bg-white/10'
+                        : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                    }`}
+                  >
+                    ESC
+                  </button>
+                </div>
+
+                {/* Results */}
+                {searchQuery.trim() !== '' && (
+                  <div className="max-h-80 overflow-y-auto">
+                    {searchResults.length === 0 ? (
+                      <div className={`px-4 py-6 text-sm text-center ${
+                        theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                      }`}>
+                        No results found
+                      </div>
+                    ) : (
+                      <ul className="py-2">
+                        {searchResults.map((item, idx) => (
+                          <li
+                            key={item.href}
+                            onClick={() => handleResultClick(item.href)}
+                            onMouseEnter={() => setSelectedIndex(idx)}
+                            className={`px-4 py-2.5 flex items-center gap-3 cursor-pointer transition-colors ${
+                              selectedIndex === idx
+                                ? theme === 'dark'
+                                  ? 'bg-white/10'
+                                  : 'bg-black/5'
+                                : ''
+                            } ${
+                              theme === 'dark'
+                                ? 'hover:bg-white/10 text-gray-200'
+                                : 'hover:bg-black/5 text-gray-800'
+                            }`}
+                          >
+                            <item.icon className={`h-5 w-5 ${
+                              theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                            }`} />
+                            <span className="text-sm">{item.name}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>,
+            document.body
+          )}
+
+          {/* Logout confirmation dialog */}
+          <LogoutConfirmModal
+            open={showLogoutConfirm}
+            theme={theme as 'light' | 'dark'}
+            onConfirm={confirmLogout}
+            onCancel={() => setShowLogoutConfirm(false)}
+          />
 
           {/* Right icons */}
           <div className="flex items-center space-x-4 flex-shrink-0">
@@ -972,23 +951,88 @@ export default function TeacherLayout() {
             >
               {theme === 'dark' ? <SunIcon className="h-5 w-5" /> : <MoonIcon className="h-5 w-5" />}
             </button>
-            <Link
-              to="/teacher/profile"
-              className={`p-1 rounded-full transition-colors ${
-                theme === 'dark'
-                  ? 'text-gray-400 hover:text-white hover:bg-white/10'
-                  : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
-              }`}
-            >
-              <UserCircleIcon className="h-8 w-8" />
-            </Link>
           </div>
         </header>
 
-        <main className="flex-1 p-6">
+        <main className="flex-1 app-main-safe px-4 sm:px-6 py-4 sm:py-6 pb-24 md:pb-0">
           <Outlet />
         </main>
       </div>
+
+      {/* ====== MOBILE FLOATING BOTTOM NAV (app-style, mobile only) ====== */}
+      <nav
+        className={`md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-40 flex items-center gap-1 px-2 py-1.5 rounded-full shadow-2xl border backdrop-blur-xl transition-opacity duration-300 ${
+          theme === 'dark'
+            ? 'bg-gray-900/85 border-white/10'
+            : 'bg-white/90 border-gray-200/70'
+        } ${sidebarOpen ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
+        aria-label="Quick navigation"
+      >
+        {/* Home — dashboard */}
+        <Link
+          to="/teacher"
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            isActiveLink('/teacher')
+              ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400'
+              : theme === 'dark'
+                ? 'text-gray-400 active:bg-white/10'
+                : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Dashboard"
+        >
+          <HomeIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Home</span>
+        </Link>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Menu — opens the folder drawer */}
+        <button
+          onClick={() => setSidebarOpen(true)}
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            theme === 'dark'
+              ? 'text-gray-400 active:bg-white/10'
+              : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Open menu"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+          </svg>
+          <span className="text-[10px] font-medium">Menu</span>
+        </button>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Profile */}
+        <Link
+          to="/teacher/profile"
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            isActiveLink('/teacher/profile')
+              ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400'
+              : theme === 'dark'
+                ? 'text-gray-400 active:bg-white/10'
+                : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="My profile"
+        >
+          <UserCircleIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Profile</span>
+        </Link>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            theme === 'dark'
+              ? 'text-gray-400 active:bg-white/10'
+              : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Log out"
+        >
+          <ArrowLeftOnRectangleIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Logout</span>
+        </button>
+      </nav>
     </div>
   );
 }

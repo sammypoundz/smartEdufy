@@ -8,6 +8,7 @@ import api from '../../services/api';
 import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
 import { exportToExcel, exportToPDF, type ExportColumn } from '../../utils/exportData';
 import ExportButtons from '../../components/ExportButtons';
+import PendingTeacherRegistrations from '../../components/admin/PendingTeacherRegistrations';
 import { useNavigate } from 'react-router-dom';
 import {
   PlusIcon,
@@ -334,6 +335,9 @@ export default function AdminTeachers() {
       )}
 
       <div className="relative z-10 max-w-7xl mx-auto">
+        {/* Teachers awaiting approval of their self-registration */}
+        <PendingTeacherRegistrations />
+
         {/* Header card */}
         <div
           className={`rounded-2xl p-6 mb-8 ${

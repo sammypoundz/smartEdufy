@@ -71,6 +71,210 @@
   color: #111827; /* gray-900 */
 }
 
+/* =====================================================================
+   ===== MOBILE CONTENT LAYER ==========================================
+   Makes every page's CONTENT behave like a mobile app on small screens
+   without changing the desktop experience or restructuring pages.
+   Applied globally so all ~40 pages benefit at once.
+   ===================================================================== */
+
+/* App-like touch behavior everywhere: no blue tap flash, no double-tap
+   zoom delay, momentum scrolling on iOS, and no accidental text selection
+   while navigating. */
+html {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-text-size-adjust: 100%;
+  overscroll-behavior-y: none;
+}
+body {
+  touch-action: manipulation;
+  /* Page never scrolls sideways — wide content scrolls inside its own
+     app-style container instead of breaking the layout. */
+  overflow-x: clip;
+}
+@media (pointer: coarse) {
+  button, a, [role='button'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
+
+/* iOS zooms into any input smaller than 16px. Force all form controls to
+   >=16px on touch devices so tapping a field doesn't jarringly zoom the page. */
+@media (pointer: coarse) {
+  input, select, textarea {
+    font-size: max(16px, 1em) !important;
+  }
+}
+
+/* Hide scrollbars but keep scrolling — content scrolls like an app,
+   no chunky desktop scrollbar rails on phones. */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* Keyframes used by app-style dialogs (e.g. LogoutConfirmModal) */
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes popIn {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Wide data tables: on phones each row becomes a stacked CARD instead of
+   a horizontally-scrolling table. The column header labels are copied onto
+   each cell as data-label by src/utils/tableStacking.ts and rendered before
+   the cell value, so nothing needs editing in the ~40 pages.
+   Add class "table-keep-scroll" to a <table> to opt out (e.g. grids like
+   the timetable/broadsheet where structure matters more than stacking). */
+@media (max-width: 767px) {
+  .overflow-x-auto:not(.tab-scroll) {
+    overflow-x: visible !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Horizontally-sliding tab strips keep their scroll on mobile — the
+     stacking rule above is only for table wrappers. */
+  .overflow-x-auto.tab-scroll {
+    overflow-x: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  table:not(.table-keep-scroll) {
+    display: block;
+    width: 100%;
+    border-collapse: collapse;
+  }
+  table:not(.table-keep-scroll) thead {
+    display: none;
+  }
+  table:not(.table-keep-scroll) tbody,
+  table:not(.table-keep-scroll) tfoot {
+    display: block;
+    width: 100%;
+  }
+  table:not(.table-keep-scroll) tr {
+    display: block;
+    width: 100%;
+    margin-bottom: 0.75rem;
+    padding: 0.25rem 0.25rem;
+    background: var(--stack-card-bg, white);
+    border: 1px solid var(--stack-card-border, rgb(229 231 235));
+    border-radius: 0.75rem;
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
+  }
+  table:not(.table-keep-scroll) tr:last-child {
+    margin-bottom: 0;
+  }
+  table:not(.table-keep-scroll) td,
+  table:not(.table-keep-scroll) th {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    width: 100%;
+    padding: 0.5rem 0.625rem;
+    text-align: right;
+    white-space: normal;
+    word-break: break-word;
+    border: none;
+    border-bottom: 1px solid var(--stack-card-border, rgb(229 231 235 / 0.6));
+  }
+  table:not(.table-keep-scroll) tr > *:last-child {
+    border-bottom: none;
+  }
+  table:not(.table-keep-scroll) td::before {
+    content: attr(data-label);
+    flex-shrink: 0;
+    max-width: 45%;
+    text-align: left;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: rgb(107 114 128); /* gray-500 */
+    word-break: normal;
+  }
+  /* Cells without a known label (or merged cells) render as plain blocks */
+  table:not(.table-keep-scroll) td:not([data-label]) {
+    display: block;
+  }
+  table:not(.table-keep-scroll) td:not([data-label])::before {
+    content: none;
+  }
+
+  /* Dense readable text: never let a long word/class name force
+     horizontal scroll inside cards or table cells */
+  h1, h2, h3, p, span, td, div {
+    overflow-wrap: break-word;
+  }
+  h1, h2, h3, p, span, div {
+    min-width: 0;
+  }
+  /* Cells that contain no text at all (icon-only action buttons etc.)
+     shouldn't show a lone right-aligned blob — keep them centered */
+  table:not(.table-keep-scroll) td[data-label=''] {
+    display: block;
+    text-align: left;
+  }
+  table:not(.table-keep-scroll) td[data-label='']::before {
+    content: none;
+  }
+}
+
+/* Dark theme card colors for the stacked table cards */
+.dark table:not(.table-keep-scroll) {
+  --stack-card-bg: rgb(17 24 39); /* gray-900 */
+  --stack-card-border: rgb(255 255 255 / 0.1);
+}
+.dark table:not(.table-keep-scroll) td::before {
+  color: rgb(156 163 175); /* gray-400 */
+}
+
+/* Compact, app-like density on phones only: shrink the desktop-era
+   paddings/typography Tailwind classes apply so every page fits without
+   editing 40 files. Desktop (md+) is completely untouched. */
+@media (max-width: 767px) {
+  .p-6 { padding: 1rem !important; }
+  .p-8 { padding: 1.25rem !important; }
+  .px-6 { padding-left: 1rem !important; padding-right: 1rem !important; }
+  .py-6 { padding-top: 1rem !important; padding-bottom: 1rem !important; }
+  .gap-6 { gap: 1rem !important; }
+  .space-y-6 > * + * { margin-top: 1rem !important; }
+  .text-3xl { font-size: 1.5rem !important; line-height: 2rem !important; }
+  .text-4xl { font-size: 1.875rem !important; line-height: 2.25rem !important; }
+}
+
+/* Respect iPhone notch / home-bar: keep content clear of the safe areas. */
+@supports (padding: max(0px)) {
+  @media (max-width: 767px) {
+    .app-main-safe {
+      /* Keep the layout's own side padding (p-4) — only extend past it for
+         notched-device insets. max(1rem, inset) guarantees a minimum 1rem. */
+      padding-left: max(1rem, env(safe-area-inset-left)) !important;
+      padding-right: max(1rem, env(safe-area-inset-right)) !important;
+      padding-bottom: max(5.5rem, calc(1rem + env(safe-area-inset-bottom))) !important;
+    }
+  }
+}
+
+/* Notched phones: keep the sticky top bar clear of the status-bar cutout
+   and the floating quick-nav clear of the home bar. */
+@media (max-width: 767px) {
+  header.sticky {
+    padding-top: max(0px, env(safe-area-inset-top));
+  }
+  nav[aria-label='Quick navigation'] {
+    bottom: calc(1rem + env(safe-area-inset-bottom)) !important;
+  }
+}
+
 /* ===== Print support for compiled timetable view ===== */
 @media print {
   body * {
@@ -94,4 +298,289 @@
   .print-hidden {
     display: none !important;
   }
+}
+
+/* =====================================================================
+   ===== APP-LIKE MOBILE LAYER (all pages, desktop untouched) ==========
+   ===================================================================== */
+
+/* ---- Grids collapse to single / two columns on phones ---- */
+@media (max-width: 767px) {
+  .grid-cols-3, .grid-cols-4, .grid-cols-5, .grid-cols-6 {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+  .md\:grid-cols-2 { grid-template-columns: repeat(1, minmax(0, 1fr)) !important; }
+  .md\:grid-cols-3, .md\:grid-cols-4, .md\:grid-cols-5 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+  .sm\:grid-cols-2, .sm\:grid-cols-3, .sm\:grid-cols-4 { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
+
+  /* Cards full width, no wasted edge padding */
+  .max-w-7xl, .max-w-6xl, .max-w-5xl, .max-w-4xl, .max-w-3xl, .max-w-2xl, .max-w-xl, .max-w-lg {
+    max-width: 100% !important;
+  }
+  .rounded-3xl { border-radius: 1rem !important; }
+
+  /* Bigger tap targets for all interactive controls */
+  button, a, [role='button'], select, input[type='checkbox'], input[type='radio'] {
+    min-height: 44px;
+  }
+  button, [role='button'] { min-width: 44px; }
+  .text-xs { font-size: 0.78rem !important; }
+
+  /* Inputs breathe: taller fields, rounded, inset look */
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select, textarea {
+    min-height: 44px;
+    border-radius: 0.75rem !important;
+  }
+  textarea { min-height: 96px; }
+
+  /* Sticky page headers inside pages stay pinned and compact */
+  .sticky.top-16, .sticky.top-20 { top: 3.5rem !important; }
+
+  /* Modals & sheets: full-screen app sheets */
+  .fixed.inset-0.z-\[60\], [class*='fixed inset-0'] > .max-w-lg,
+  [class*='fixed inset-0'] > .max-w-2xl, [class*='fixed inset-0'] > .max-w-xl,
+  [class*='fixed inset-0'] > .max-w-3xl, [class*='fixed inset-0'] > .max-w-4xl {
+    width: 100% !important;
+  }
+}
+
+/* ---- Modals become bottom sheets on phones (app-style) ----
+   Any fixed overlay panel gets docked to the bottom, full width,
+   with rounded top corners — like a native iOS/Android sheet. */
+@media (max-width: 767px) {
+  [class*='fixed z-'] > div,
+  [class*='fixed inset-0'] > div {
+    max-height: 92vh;
+  }
+}
+
+/* ---- Buttons: full width primary actions inside cards/forms ---- */
+@media (max-width: 767px) {
+  form button[type='submit'] {
+    width: 100%;
+  }
+}
+
+/* ---- Empty states / page titles scale down nicely ---- */
+@media (max-width: 767px) {
+  .text-2xl { font-size: 1.375rem !important; line-height: 1.85rem !important; }
+  .text-xl { font-size: 1.15rem !important; line-height: 1.6rem !important; }
+  .h-16 { height: 3.5rem !important; }
+  .space-y-4 > * + * { margin-top: 0.875rem !important; }
+  .gap-4 { gap: 0.875rem !important; }
+  .gap-8 { gap: 1rem !important; }
+  .py-8 { padding-top: 1.25rem !important; padding-bottom: 1.25rem !important; }
+  .py-10, .py-12 { padding-top: 1.5rem !important; padding-bottom: 1.5rem !important; }
+  .mb-8 { margin-bottom: 1.25rem !important; }
+}
+
+/* ---- Respect reduced data / motion ---- */
+@media (prefers-reduced-motion: reduce) {
+  .animate-sheet-up, .animate-fade-in, .animate-folder-content-in {
+    animation: none !important;
+  }
+}
+
+/* ============================================================
+   SweetAlert2 global theme — matches LogoutConfirmModal:
+   rounded-3xl card, centered icon chip, popIn/fadeIn animation,
+   Cancel (muted) + Confirm (red) button pair.
+   Classes are applied via src/utils/swalTheme.ts
+   ============================================================ */
+
+@keyframes app-swal-fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes app-swal-popIn {
+  0% { opacity: 0; transform: scale(0.85); }
+  100% { opacity: 1; transform: scale(1); }
+}
+
+@keyframes app-swal-popOut {
+  0% { opacity: 1; transform: scale(1); }
+  100% { opacity: 0; transform: scale(0.85); }
+}
+
+.app-swal-fade-in { animation: app-swal-fadeIn 0.15s ease-out; }
+.app-swal-fade-out { animation: app-swal-fadeIn 0.15s ease-in reverse; }
+
+/* Thick soft backdrop behind ALL prompt modals: dim + blur */
+.swal2-container .swal2-backdrop,
+.swal2-container.swal2-backdrop-show {
+  background: rgba(0, 0, 0, 0.7) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+/* --- Popup card (LogoutConfirmModal body) — always opaque --- */
+.swal2-popup.app-swal-popup {
+  padding: 0 !important;
+  border-radius: 1.5rem !important; /* rounded-3xl */
+  overflow: hidden;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25) !important;
+  width: 24rem !important;
+  max-width: calc(100vw - 2rem);
+  animation: app-swal-popIn 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: #fff !important;
+  background-color: #fff !important;
+  border: 1px solid #e5e7eb !important;
+  color: #111827;
+}
+.swal2-popup.app-swal-popup.app-swal-dark {
+  background: #111827 !important;
+  background-color: #111827 !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  color: #fff;
+}
+.swal2-popup.app-swal-hide { animation: app-swal-popOut 0.15s ease-in forwards; }
+
+/* --- Title / text --- */
+.swal2-title.app-swal-title {
+  font-size: 1.125rem !important; /* text-lg */
+  font-weight: 700;
+  color: #111827;
+  padding: 1.5rem 1.5rem 0.25rem !important;
+  margin: 0 !important;
+}
+.app-swal-dark .swal2-title.app-swal-title { color: #fff; }
+
+.swal2-html-container.app-swal-text {
+  font-size: 0.875rem !important;
+  line-height: 1.6;
+  color: #6b7280; /* gray-500 */
+  padding: 0 1.75rem 1.25rem !important;
+  margin: 0 !important;
+}
+.app-swal-dark .swal2-html-container.app-swal-text { color: #9ca3af; }
+
+/* --- Icon (centered chip, matches modal's 16×16 rounded-2xl icon) --- */
+.swal2-icon.app-swal-icon {
+  margin: 2rem auto 0 !important;
+  width: 4rem !important;
+  height: 4rem !important;
+  border-radius: 1rem; /* rounded-2xl */
+  border: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+.swal2-icon.app-swal-icon .swal2-icon-content { font-size: 2rem !important; }
+
+/* Warning (delete) — red chip */
+.swal2-icon-warning.app-swal-icon { background: #fee2e2; color: #dc2626; }
+.app-swal-dark .swal2-icon-warning.app-swal-icon {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+  box-shadow: 0 10px 15px -3px rgba(239, 68, 68, 0.1);
+}
+/* Question (upload) — blue chip */
+.swal2-icon-question.app-swal-icon { background: #dbeafe; color: #2563eb; }
+.app-swal-dark .swal2-icon-question.app-swal-icon {
+  background: rgba(59, 130, 246, 0.15);
+  color: #60a5fa;
+}
+/* Success / Info / Error chips */
+.swal2-icon-success.app-swal-icon { background: #dcfce7; color: #16a34a; }
+.app-swal-dark .swal2-icon-success.app-swal-icon {
+  background: rgba(34, 197, 94, 0.15);
+  color: #4ade80;
+}
+.swal2-icon-error.app-swal-icon { background: #fee2e2; color: #dc2626; }
+.app-swal-dark .swal2-icon-error.app-swal-icon {
+  background: rgba(239, 68, 68, 0.15);
+  color: #f87171;
+}
+.swal2-icon-info.app-swal-icon { background: #e0e7ff; color: #4f46e5; }
+.app-swal-dark .swal2-icon-info.app-swal-icon {
+  background: rgba(99, 102, 241, 0.15);
+  color: #a5b4fc;
+}
+
+/* --- Actions row (matches modal footer: border-top + gap-3) --- */
+.swal2-actions.app-swal-actions {
+  gap: 0.75rem !important;
+  padding: 0.5rem 1.5rem 1.5rem !important;
+  margin: 0 !important;
+  border-top: 1px solid #f3f4f6;
+  width: 100%;
+  justify-content: stretch !important;
+}
+.app-swal-dark .swal2-actions.app-swal-actions { border-top: 1px solid rgba(255, 255, 255, 0.1); }
+
+/* Buttons: equal width, app-like */
+.swal2-actions.app-swal-actions .swal2-confirm,
+.swal2-actions.app-swal-actions .swal2-cancel {
+  flex: 1 !important;
+  padding: 0.75rem 1rem !important;
+  border-radius: 0.75rem !important; /* rounded-xl */
+  font-size: 0.875rem !important;
+  font-weight: 600;
+  transition: all 0.15s ease;
+  border: none;
+  cursor: pointer;
+}
+
+/* Confirm (destructive default) — matches modal's red "Log out" button */
+.swal2-confirm.app-swal-confirm {
+  background: #dc2626 !important;
+  color: #fff !important;
+  box-shadow: 0 10px 15px -3px rgba(220, 38, 38, 0.25);
+}
+.swal2-confirm.app-swal-confirm:hover { background: #b91c1c !important; }
+.swal2-confirm.app-swal-confirm:active { transform: scale(0.98); }
+
+/* Cancel — matches modal's muted "Cancel" button */
+.swal2-cancel.app-swal-cancel {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+}
+.swal2-cancel.app-swal-cancel:hover { background: #e5e7eb !important; }
+.app-swal-dark .swal2-cancel.app-swal-cancel {
+  background: rgba(255, 255, 255, 0.05) !important;
+  color: #e5e7eb !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+.app-swal-dark .swal2-cancel.app-swal-cancel:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+}
+
+/* Deny button (if used) — same muted style */
+.swal2-deny.app-swal-cancel {
+  background: #f3f4f6 !important;
+  color: #374151 !important;
+}
+
+/* Success toasts (no input) — hide stray elements */
+.swal2-popup.app-swal-popup .swal2-input,
+.swal2-popup.app-swal-popup .swal2-select,
+.swal2-popup.app-swal-popup .swal2-file {
+  margin: 0 1.5rem 1rem !important;
+  border-radius: 0.75rem !important;
+  border: 1px solid #e5e7eb !important;
+}
+.app-swal-dark .swal2-popup.app-swal-popup .swal2-input,
+.app-swal-dark .swal2-popup.app-swal-popup .swal2-select,
+.app-swal-dark .swal2-popup.app-swal-popup .swal2-file {
+  background: #1f2937;
+  border-color: #374151 !important;
+  color: #fff;
+}
+
+/* Timer progress bar (if used) */
+.swal2-timer-progress-bar { background: #3b82f6 !important; }
+
+/* Close (×) button */
+.swal2-popup.app-swal-popup .swal2-close {
+  border-radius: 9999px;
+  color: #9ca3af;
+  transition: background 0.15s ease;
+}
+.swal2-popup.app-swal-popup .swal2-close:hover { background: #f3f4f6; }
+.app-swal-dark .swal2-popup.app-swal-popup .swal2-close { color: #6b7280; }
+.app-swal-dark .swal2-popup.app-swal-popup .swal2-close:hover {
+  background: rgba(255, 255, 255, 0.1);
 }

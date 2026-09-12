@@ -9,7 +9,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import { formatArm } from '../../utils/arm';
-import { hasPagePrivilege } from '../../utils/privileges';
+import { hasPagePrivilege, effectivePrivileges } from '../../utils/privileges';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 
@@ -101,8 +101,20 @@ export default function SubjectPage() {
    */
   const isAdmin = user?.role === 'ADMIN';
   const allowedPages = user?.allowedPages;
+  /*
+   * Effective privileges = explicit grants (allowedPages) + role defaults
+   * (e.g. a TEACHER's academic keys resolved from their role at registration).
+   * Mirrors the logic used by TeacherLayout / ProtectedRoute / Dashboard.
+   */
+  const effectivePrivs = effectivePrivileges({
+    roles: [...(user?.roles || []), user?.role].filter(Boolean) as string[],
+    privileges: user?.privileges,
+    allowedPages: user?.allowedPages,
+  });
   const hasPrivilege = (key: string) =>
-    isAdmin || hasPagePrivilege(allowedPages, key);
+    isAdmin ||
+    hasPagePrivilege(allowedPages, key) ||
+    effectivePrivs.includes(key);
 
   const { id } = useParams<{ id: string }>();
   const location = useLocation();
@@ -946,7 +958,7 @@ export default function SubjectPage() {
           className="mb-8"
         >
           <h1
-            className={`text-3xl sm:text-4xl font-bold ${
+            className={`text-2xl sm:text-3xl md:text-4xl font-bold break-words ${
               isDark
                 ? 'text-white'
                 : 'text-gray-900'
@@ -1017,7 +1029,7 @@ export default function SubjectPage() {
               : 'border-gray-300'
           }`}
         >
-          <nav className="flex -mb-px space-x-6 sm:space-x-8 overflow-x-auto">
+          <nav className="flex -mb-px space-x-4 sm:space-x-6 md:space-x-8 overflow-x-auto scrollbar-thin">
             {[
               {
                 id: 'overview' as const,
@@ -1080,7 +1092,7 @@ export default function SubjectPage() {
           transition={{
             duration: 0.2,
           }}
-          className={`p-5 sm:p-6 rounded-2xl shadow-xl transition-colors ${
+          className={`p-4 sm:p-5 md:p-6 rounded-2xl shadow-xl transition-colors overflow-hidden ${
             isDark
               ? 'bg-[#111827]/80 border border-gray-800 backdrop-blur-xl'
               : 'bg-white border border-gray-200 shadow-blue-100/50'
@@ -1140,7 +1152,7 @@ export default function SubjectPage() {
                   All academic tools in the system that apply to this subject
                 </p>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4">
                   {[
                     {
                       label: 'Curriculum / Topics',
@@ -1214,7 +1226,7 @@ export default function SubjectPage() {
                           }
                           fn.action();
                         }}
-                        className={`relative flex items-start gap-3 p-4 rounded-xl border text-left transition ${
+                        className={`relative flex flex-col sm:flex-row sm:items-start gap-3 p-4 rounded-xl border text-left transition min-w-0 w-full overflow-hidden ${
                           unlocked
                             ? 'hover:-translate-y-0.5'
                             : 'cursor-not-allowed opacity-60'
@@ -1249,16 +1261,16 @@ export default function SubjectPage() {
                             }`}
                           />
                         </div>
-                        <div className="pr-5">
+                        <div className="pr-5 min-w-0">
                           <p
-                            className={`font-semibold text-sm ${
+                            className={`font-semibold text-sm break-words ${
                               isDark ? 'text-white' : 'text-gray-900'
                             }`}
                           >
                             {fn.label}
                           </p>
                           <p
-                            className={`text-xs mt-0.5 ${
+                            className={`text-xs mt-0.5 break-words ${
                               isDark ? 'text-gray-400' : 'text-gray-600'
                             }`}
                           >

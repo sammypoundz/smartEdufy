@@ -18,12 +18,12 @@ export default function MyClasses() {
   });
   const errText = error ? 'Failed to load your class assignments.' : null;
 
-  const cardCls = `p-5 rounded-2xl shadow-lg border transition-all hover:shadow-xl ${
+  const cardCls = `flex flex-col p-4 md:p-5 rounded-2xl shadow-lg border transition-all hover:shadow-xl ${
     theme === 'dark'
       ? 'bg-white/5 backdrop-blur-xl border-white/10'
       : 'bg-white/40 backdrop-blur-md border-white/20'
   }`;
-  const btnCls = `inline-flex items-center px-3 py-1.5 text-sm rounded-lg border transition-colors ${
+  const btnCls = `inline-flex items-center justify-center px-3 py-2 md:py-1.5 text-sm rounded-lg border transition-colors ${
     theme === 'dark'
       ? 'border-white/20 text-gray-200 hover:bg-white/10'
       : 'border-gray-300 text-gray-700 hover:bg-gray-100'
@@ -62,13 +62,13 @@ export default function MyClasses() {
         </p>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-3">
         {assignments.map((a) => (
           <div key={a.armId} className={cardCls}>
-            <div>
+            <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <AcademicCapIcon className="h-5 w-5 text-blue-500" />
-                <h2 className="text-lg font-semibold">
+                <AcademicCapIcon className="h-5 w-5 text-blue-500 flex-shrink-0" />
+                <h2 className="text-base md:text-lg font-semibold break-words">
                   {a.className} {a.armName}
                 </h2>
               </div>
@@ -80,14 +80,14 @@ export default function MyClasses() {
             </div>
 
             {a.subjectNames.length > 0 && (
-              <div className="text-sm text-gray-500">
-                <ClipboardDocumentListIcon className="inline h-4 w-4 mr-1" />
-                Subjects: {a.subjectNames.join(', ')}
+              <div className="text-sm text-gray-500 mt-2">
+                <ClipboardDocumentListIcon className="inline h-4 w-4 mr-1 -mt-0.5" />
+                <span className="inline">Subjects: {a.subjectNames.join(', ')}</span>
               </div>
             )}
 
-            <div className="mt-auto flex flex-wrap gap-2">
-              <Link to={`/teacher/class/${a.classId}/arm/${a.armId}`} className={btnCls}>
+            <div className="mt-3 md:mt-auto pt-3 flex flex-wrap gap-2">
+              <Link to={`/teacher/class/${a.classId}/arm/${a.armId}`} className={`${btnCls} flex-1 md:flex-none`}>
                 <UsersIcon className="h-4 w-4 mr-1" /> Open Class
               </Link>
               <Link to={`/teacher/class/${a.armId}/results`} className={btnCls}>

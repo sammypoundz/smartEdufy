@@ -8,7 +8,10 @@ import { useTheme } from '../contexts/ThemeContext';
 import { api } from '../utils/api';
 import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
+import { usePendingLinkRequestCount } from '../hooks/useParentLink';
+import { usePendingTeacherRegistrationCount } from '../hooks/useTeacherRegistration';
 import ViewControls from '../components/ViewControls';
+import LogoutConfirmModal from '../components/LogoutConfirmModal';
 import {
   FolderIcon,
   FolderOpenIcon,
@@ -118,7 +121,7 @@ function getSchoolNameTextClass(name: string): string {
 }
 
 export default function AdminLayout() {
-  const { user, logout } = useAuth();
+  const { user, logout, token } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const unreadCount = getUnreadNotificationCount();
   const navigate = useNavigate();
@@ -166,12 +169,35 @@ export default function AdminLayout() {
   // (an arm is pending review/approval).
   const { attention: timetableAttention } = useTimetableWorkflowAttention('admin');
   const isTimetableItem = (href: string) => href.endsWith('/timetable');
+
+  // Orange badge on the "Parent" nav item when a parent has requested to
+  // link their child and it's awaiting admin review.
+  const { data: pendingLinkData } = usePendingLinkRequestCount(token);
+  const pendingLinkCount = pendingLinkData?.count ?? 0;
+  const isParentNavItem = (href: string) => href.endsWith('/parent');
+
+  // Orange badge on the "Teachers" nav item when a teacher has self-registered
+  // and is awaiting admin approval (auto-assign happens on approve).
+  const { data: pendingRegData } = usePendingTeacherRegistrationCount(token);
+  const pendingRegCount = pendingRegData?.count ?? 0;
+  const isTeachersNavItem = (href: string) => href.endsWith('/teachers');
+
   // A category folder shows the badge when ANY of its items needs attention.
-  const categoryNeedsAttention = (categoryName: string) =>
-    timetableAttention &&
-    allowedCategories
-      .find((c) => c.name === categoryName)
-      ?.items.some((i) => isTimetableItem(i.href)) === true;
+  const categoryNeedsAttention = (categoryName: string) => {
+    const cat = allowedCategories.find((c) => c.name === categoryName);
+    if (!cat) return false;
+    return (
+      (timetableAttention && cat.items.some((i) => isTimetableItem(i.href))) ||
+      (pendingLinkCount > 0 && cat.items.some((i) => isParentNavItem(i.href))) ||
+      (pendingRegCount > 0 && cat.items.some((i) => isTeachersNavItem(i.href)))
+    );
+  };
+
+  // Total attention items shown as a badge on the mobile bottom-nav Menu icon
+  // (pending teacher registrations + pending parent link requests + timetable
+  // workflow). Mirrors what the drawer folders indicate.
+  const menuAttentionCount =
+    pendingRegCount + pendingLinkCount + (timetableAttention ? 1 : 0);
 
   // ---------- Sidebar states ----------
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -322,7 +348,14 @@ export default function AdminLayout() {
   };
 
   // ---------- Handlers ----------
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
   const handleLogout = () => {
+    setShowLogoutConfirm(true);
+  };
+
+  const confirmLogout = () => {
+    setShowLogoutConfirm(false);
     logout();
     navigate('/login');
   };
@@ -458,6 +491,8 @@ export default function AdminLayout() {
                             : 'text-gray-500 group-hover:text-blue-600'
                       }`} />
                       {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
+                      {isParentNavItem(item.href) && <LinkRequestBadge count={pendingLinkCount} />}
+                      {isTeachersNavItem(item.href) && <TeacherRegBadge count={pendingRegCount} />}
                     </Link>
                   );
                 })
@@ -507,6 +542,8 @@ export default function AdminLayout() {
                               }`} />
                               {item.name}
                               {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
+                              {isParentNavItem(item.href) && <LinkRequestBadge count={pendingLinkCount} />}
+                      {isTeachersNavItem(item.href) && <TeacherRegBadge count={pendingRegCount} />}
                             </Link>
                           );
                         })}
@@ -720,6 +757,8 @@ export default function AdminLayout() {
                               }`}>
                                 <item.icon className="h-5 w-5" />
                                 {isTimetableItem(item.href) && <AttentionBadge show={timetableAttention} />}
+                                {isParentNavItem(item.href) && <LinkRequestBadge count={pendingLinkCount} />}
+                      {isTeachersNavItem(item.href) && <TeacherRegBadge count={pendingRegCount} />}
                               </span>
                               <span className={`text-[11px] font-medium leading-tight line-clamp-2 ${
                                 active
@@ -851,8 +890,8 @@ export default function AdminLayout() {
             </div>
           </div>
 
-          {/* ====== Search Bar – icon opens a search modal ====== */}
-          <div className="flex items-center justify-end flex-1 min-w-0 max-w-xs ml-10 md:ml-20 mr-2 relative" ref={searchContainerRef}>
+          {/* ====== Search Bar – icon opens a search modal (spans across like the parent dashboard) ====== */}
+          <div className="flex items-center justify-end flex-1 min-w-0 mr-2 relative" ref={searchContainerRef}>
             <div
               className={`relative transition-all duration-300 ease-in-out ${
                 searchExpanded ? 'w-full' : 'w-10'
@@ -964,6 +1003,14 @@ export default function AdminLayout() {
             document.body
           )}
 
+          {/* Logout confirmation dialog */}
+          <LogoutConfirmModal
+            open={showLogoutConfirm}
+            theme={theme as 'light' | 'dark'}
+            onConfirm={confirmLogout}
+            onCancel={() => setShowLogoutConfirm(false)}
+          />
+
           {/* Right icons */}
           <div className="flex items-center space-x-4 flex-shrink-0">
             <div className="flex items-center space-x-1">
@@ -997,7 +1044,7 @@ export default function AdminLayout() {
           </div>
         </header>
 
-        <main className="flex-1 pb-20 md:pb-0">
+        <main className="flex-1 app-main-safe pb-20 md:pb-0">
           <Outlet />
         </main>
       </div>
@@ -1011,57 +1058,57 @@ export default function AdminLayout() {
         } ${sidebarVisible ? 'opacity-0 pointer-events-none' : 'opacity-100'}`}
         aria-label="Quick navigation"
       >
-        {/* Menu — opens the folder-grid drawer */}
-        <button
-          onClick={openSidebar}
-          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
-            theme === 'dark'
-              ? 'text-gray-400 active:bg-white/10'
-              : 'text-gray-500 active:bg-gray-100'
-          }`}
-          aria-label="Open menu"
-        >
-          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
-          </svg>
-          <span className="text-[10px] font-medium">Menu</span>
-        </button>
-        {/* Divider */}
-        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
-        {/* Notifications with unread badge */}
+        {/* Home — dashboard */}
         <Link
-          to="/admin/notifications"
-          className={`relative flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
-            isActiveLink('/admin/notifications')
+          to="/admin"
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            isActiveLink('/admin')
               ? 'bg-blue-600/15 text-blue-600 dark:text-blue-400'
               : theme === 'dark'
                 ? 'text-gray-400 active:bg-white/10'
                 : 'text-gray-500 active:bg-gray-100'
           }`}
-          aria-label="Notifications"
+          aria-label="Dashboard"
         >
-          <BellIcon className="h-6 w-6" />
-          {unreadCount > 0 && (
-            <span className="absolute top-1 right-3 flex items-center justify-center h-4 min-w-4 px-1 rounded-full bg-red-600 text-[9px] font-bold text-white">
-              {unreadCount > 9 ? '9+' : unreadCount}
-            </span>
-          )}
-          <span className="text-[10px] font-medium">Alerts</span>
+          <HomeIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Home</span>
         </Link>
         {/* Divider */}
         <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
-        {/* Logout */}
+        {/* Menu — opens the folder-grid drawer (badge indicator = anything
+            inside the menu needs attention: pending teacher registrations,
+            parent link requests, timetable workflow) */}
         <button
-          onClick={handleLogout}
-          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+          onClick={openSidebar}
+          className={`relative flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
             theme === 'dark'
               ? 'text-gray-400 active:bg-white/10'
               : 'text-gray-500 active:bg-gray-100'
           }`}
-          aria-label="Log out"
+          aria-label={
+            menuAttentionCount > 0
+              ? `Open menu — ${menuAttentionCount} item(s) need attention`
+              : 'Open menu'
+          }
         >
-          <ArrowLeftOnRectangleIcon className="h-6 w-6" />
-          <span className="text-[10px] font-medium">Logout</span>
+          <span className="relative">
+            <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+            {menuAttentionCount > 0 ? (
+              <span
+                className={`absolute -top-0.5 -right-1 flex items-center justify-center h-4 min-w-4 px-1 rounded-full text-white text-[9px] font-bold leading-none ${
+                  timetableAttention || pendingRegCount > 0 || pendingLinkCount > 0
+                    ? 'bg-red-500'
+                    : 'bg-amber-500'
+                }`}
+                title={`${menuAttentionCount} item(s) awaiting your attention`}
+              >
+                {menuAttentionCount > 9 ? '9+' : menuAttentionCount}
+              </span>
+            ) : null}
+          </span>
+          <span className="text-[10px] font-medium">Menu</span>
         </button>
         {/* Divider */}
         <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
@@ -1080,7 +1127,93 @@ export default function AdminLayout() {
           <UserCircleIcon className="h-6 w-6" />
           <span className="text-[10px] font-medium">Profile</span>
         </Link>
+        {/* Divider */}
+        <span className={`h-8 w-px ${theme === 'dark' ? 'bg-white/10' : 'bg-gray-200'}`} />
+        {/* Logout */}
+        <button
+          onClick={handleLogout}
+          className={`flex flex-col items-center gap-0.5 px-5 py-2 rounded-full transition-colors ${
+            theme === 'dark'
+              ? 'text-gray-400 active:bg-white/10'
+              : 'text-gray-500 active:bg-gray-100'
+          }`}
+          aria-label="Log out"
+        >
+          <ArrowLeftOnRectangleIcon className="h-6 w-6" />
+          <span className="text-[10px] font-medium">Logout</span>
+        </button>
       </nav>
     </div>
+  );
+}
+/**
+ * Orange pill badge shown next to the "Parent" nav item (and compact on the
+ * People folder) when a parent has requested to link their child and the
+ * request is awaiting admin review. Mirrors AttentionBadge styling.
+ */
+/**
+ * Blue pill badge shown next to the "Teachers" nav item (and compact on the
+ * People folder) when a teacher has self-registered and is awaiting admin
+ * approval. Mirrors LinkRequestBadge styling.
+ */
+function TeacherRegBadge({ count, compact = false }: { count: number; compact?: boolean }) {
+  if (!count || count <= 0) return null;
+  const label = count > 9 ? '9+' : String(count);
+  if (compact) {
+    return (
+      <span className="relative inline-flex flex-shrink-0 items-center justify-center ml-1 px-1.5 h-4 rounded-full bg-sky-500 text-white text-[9px] font-bold animate-pulse">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className="relative inline-flex flex-shrink-0 items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-sky-500 text-white text-[10px] font-bold uppercase tracking-wide shadow-md animate-pulse">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        className="h-3 w-3"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M18 7.5v3m0 0v3m0-3h3m-3 0h-3m-2.25-4.125a3.375 3.375 0 1 1-6.75 0 3.375 3.375 0 0 1 6.75 0ZM3 19.235v-.11a.65.65 0 0 1 .65-.65H12a.65.65 0 0 1 .65.65v.105a.41.41 0 0 0 .079.233A4 4 0 0 1 3 19.235Z"
+        />
+      </svg>
+      {count === 1 ? 'New registration' : `${label} New registrations`}
+    </span>
+  );
+}
+
+function LinkRequestBadge({ count, compact = false }: { count: number; compact?: boolean }) {
+  if (!count || count <= 0) return null;
+  const label = count > 9 ? '9+' : String(count);
+  if (compact) {
+    return (
+      <span className="relative inline-flex flex-shrink-0 items-center justify-center ml-1 px-1.5 h-4 rounded-full bg-orange-500 text-white text-[9px] font-bold animate-pulse">
+        {label}
+      </span>
+    );
+  }
+  return (
+    <span className="relative inline-flex flex-shrink-0 items-center gap-1 ml-2 px-2 py-0.5 rounded-full bg-orange-500 text-white text-[10px] font-bold uppercase tracking-wide shadow-md animate-pulse">
+      <svg
+        xmlns="http://www.w3.org/2000/svg"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth={2.5}
+        className="h-3 w-3"
+      >
+        <path
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126ZM12 15.75h.007v.008H12v-.008Z"
+        />
+      </svg>
+      {count === 1 ? 'Link request' : `${label} Link requests`}
+    </span>
   );
 }
