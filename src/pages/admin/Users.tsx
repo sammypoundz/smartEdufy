@@ -42,7 +42,9 @@ interface RoleDef {
 const NON_PRIVILEGED_ROLES = ['STUDENT', 'PARENT'];
 const isPrivilegeable = (role: string) => !NON_PRIVILEGED_ROLES.includes(role);
 
-const ROLE_OPTIONS: string[] = [
+// Fallback used only before /roles loads — the live RoleDef list from the
+// Roles & Privileges page (including custom roles) is what gets rendered.
+const FALLBACK_ROLE_OPTIONS: string[] = [
   'ADMIN', 'PRINCIPAL', 'VICE_PRINCIPAL', 'TEACHER', 'BURSAR', 'ACCOUNTANT', 'LIBRARIAN', 'PARENT', 'STUDENT',
 ];
 
@@ -127,6 +129,12 @@ export default function AdminUsers() {
         ),
       ),
     );
+
+  // All available roles = live RoleDefs (incl. custom ones) + system fallbacks,
+  // merged and de-duplicated so nothing disappears if a query is in flight.
+  const roleOptions = Array.from(
+    new Set([...(rolesQuery.data ?? []).map(r => r.name), ...FALLBACK_ROLE_OPTIONS]),
+  );
 
   const users = usersQuery.data ?? [];
   const loading = usersQuery.isLoading;
@@ -511,7 +519,7 @@ export default function AdminUsers() {
               <option value="" className={theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>
                 All Roles
               </option>
-              {ROLE_OPTIONS.map(role => (
+              {roleOptions.map(role => (
                 <option key={role} value={role} className={theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'}>
                   {role}
                 </option>
@@ -1021,7 +1029,7 @@ export default function AdminUsers() {
                       Roles * <span className="text-xs font-normal">(a user can hold multiple roles — privileges are combined)</span>
                     </label>
                     <div className={`grid grid-cols-1 gap-2 rounded-lg p-3 ${theme === 'dark' ? 'bg-gray-800/50' : 'bg-gray-50'}`}>
-                      {ROLE_OPTIONS.map(role => (
+                      {roleOptions.map(role => (
                         <label key={role} className="flex items-center gap-2 text-sm cursor-pointer">
                           <input
                             type="checkbox"
