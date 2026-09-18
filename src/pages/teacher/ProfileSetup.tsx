@@ -438,28 +438,30 @@ export default function ProfileSetup() {
                       return (
                         <li
                           key={s}
-                          className="flex items-start gap-2 text-xs"
+                          className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-2 text-xs"
                         >
-                          <span
-                            className={`font-semibold ${dark ? "text-white" : "text-gray-900"}`}
-                          >
-                            {s}
-                          </span>
-                          <span
-                            className={
-                              labels.length
-                                ? dark
-                                  ? "text-gray-400"
-                                  : "text-gray-500"
-                                : "text-amber-500"
-                            }
-                          >
-                            → {labels.length ? labels.join(", ") : "tap to choose classes"}
-                          </span>
+                          <div className="flex items-start gap-2 min-w-0 sm:flex-1">
+                            <span
+                              className={`font-semibold shrink-0 ${dark ? "text-white" : "text-gray-900"}`}
+                            >
+                              {s}
+                            </span>
+                            <span
+                              className={`min-w-0 break-words ${
+                                labels.length
+                                  ? dark
+                                    ? "text-gray-400"
+                                    : "text-gray-500"
+                                  : "text-amber-500"
+                              }`}
+                            >
+                              → {labels.length ? labels.join(", ") : "tap to choose classes"}
+                            </span>
+                          </div>
                           <button
                             type="button"
                             onClick={() => setArmPickerSubject(s)}
-                            className={`ml-auto inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium ${
+                            className={`self-start inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[11px] font-medium shrink-0 sm:ml-auto ${
                               dark
                                 ? "bg-white/10 text-gray-300 hover:bg-white/20"
                                 : "bg-blue-50 text-blue-600 hover:bg-blue-100"
