@@ -102,6 +102,18 @@ export default function Students() {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
   const [showAllModal, setShowAllModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editForm, setEditForm] = useState({
+    name: "",
+    gender: "male",
+    religion: "",
+    admissionNumber: "",
+    className: "",
+    armName: "",
+    parentName: "",
+  });
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const [editingStudentSnapshot, setEditingStudentSnapshot] = useState<Student | null>(null);
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [newStudentForm, setNewStudentForm] = useState({
     name: "",
@@ -542,6 +554,76 @@ export default function Students() {
   // All Students Modal handlers
   const handleEditStudent = (student: Student) => {
     navigate(`/admin/student/${student.id}`);
+  };
+
+  // Open the Edit modal (from the table header) pre-filled with student info
+  const openEditModal = (student?: Student) => {
+    const target = student || filteredStudents[0];
+    if (!target) return;
+    setEditingStudentSnapshot(target);
+    setEditForm({
+      name: target.name || "",
+      gender: (target.gender || "male").toLowerCase(),
+      religion: (target as any).religion || "",
+      admissionNumber: target.admissionNumber || "",
+      className: target.class?.name || "",
+      armName: target.arm?.letter ? `Arm ${target.arm.letter}` : "",
+      parentName: target.parent?.name || "",
+    });
+    setShowEditModal(true);
+  };
+
+  // Select a different student from the list inside the Edit modal
+  const selectEditStudent = (student: Student) => {
+    setEditingStudentSnapshot(student);
+    setEditForm({
+      name: student.name || "",
+      gender: (student.gender || "male").toLowerCase(),
+      religion: (student as any).religion || "",
+      admissionNumber: student.admissionNumber || "",
+      className: student.class?.name || "",
+      armName: student.arm?.letter ? `Arm ${student.arm.letter}` : "",
+      parentName: student.parent?.name || "",
+    });
+  };
+
+  // Save the edited student (religion + gender) to the backend
+  const handleSaveEdit = async () => {
+    if (!editingStudentSnapshot) return;
+    setIsSavingEdit(true);
+    try {
+      const res = await api.patch(
+        `/students/${editingStudentSnapshot.id}`,
+        {
+          name: editForm.name,
+          gender: editForm.gender,
+          religion: editForm.religion,
+        },
+        token,
+      );
+      if (!res.ok) {
+        const txt = await res.text();
+        let msg: any = txt || `HTTP ${res.status}`;
+        try {
+          const errData = JSON.parse(txt);
+          msg =
+            (Array.isArray(errData?.error)
+              ? errData.error[0]?.message
+              : errData?.error) || txt;
+        } catch {
+          // not JSON
+        }
+        throw new Error(typeof msg === "string" ? msg : "Failed to save student");
+      }
+      toast.success("Student updated");
+      await invalidateStudents();
+      setShowEditModal(false);
+      setEditingStudentSnapshot(null);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const handleSuspendStudent = async (student: Student) => {
@@ -1101,13 +1183,23 @@ export default function Students() {
               </select>
             )}
           </div>
-          <button
-            onClick={openAllModal}
-            className="inline-flex items-center justify-center px-4 py-2.5 rounded-full bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 active:scale-[0.97] transition shadow-lg shadow-purple-600/20"
-          >
-            <UsersIcon className="h-4 w-4 mr-2" />
-            View All Students
-          </button>
+          <div className="flex gap-2">
+            <button
+              onClick={() => openEditModal()}
+              disabled={summaryStudents.length === 0}
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-full bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 active:scale-[0.97] transition shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              <PencilIcon className="h-4 w-4 mr-2" />
+              Edit
+            </button>
+            <button
+              onClick={openAllModal}
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-full bg-purple-600 text-white text-sm font-medium hover:bg-purple-700 active:scale-[0.97] transition shadow-lg shadow-purple-600/20"
+            >
+              <UsersIcon className="h-4 w-4 mr-2" />
+              View All Students
+            </button>
+          </div>
         </div>
 
         {/* Main Student Table – Summary view */}
@@ -1815,6 +1907,161 @@ export default function Students() {
         )}
       </AnimatePresence>
 
+      {/* Edit Student Modal - FULLSCREEN (student list + edit form side by side) */}
+      <AnimatePresence>
+        {showEditModal && editingStudentSnapshot && (
+          <CenteredModal
+            onClose={() => setShowEditModal(false)}
+            title="Edit Students"
+            theme={theme}
+            size="fullscreen"
+            className="modal-content"
+          >
+            <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-4 h-full min-h-0">
+              {/* LEFT: full student list */}
+              <div
+                className={`rounded-xl border flex flex-col min-h-0 md:h-full ${theme === "dark" ? "bg-gray-800/40 border-gray-700" : "bg-gray-50 border-gray-200"}`}
+              >
+                <div
+                  className={`shrink-0 px-4 py-3 border-b text-sm font-semibold ${theme === "dark" ? "border-gray-700 text-gray-200" : "border-gray-200 text-gray-700"}`}
+                >
+                  Students ({filteredStudents.length})
+                </div>
+                <div className="flex-1 overflow-y-auto min-h-0 max-h-[40vh] md:max-h-none p-2 space-y-1">
+                  {filteredStudents.map((s) => {
+                    const isActive = s.id === editingStudentSnapshot.id;
+                    return (
+                      <button
+                        key={s.id}
+                        onClick={() => selectEditStudent(s)}
+                        className={`w-full text-left px-3 py-2.5 rounded-lg transition flex items-center gap-2.5 ${
+                          isActive
+                            ? theme === "dark"
+                              ? "bg-blue-500/20 ring-1 ring-blue-500/50"
+                              : "bg-blue-50 ring-1 ring-blue-300"
+                            : theme === "dark"
+                              ? "hover:bg-white/5"
+                              : "hover:bg-gray-100"
+                        }`}
+                      >
+                        <div
+                          className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                            (s.gender || "").toLowerCase() === "female"
+                              ? "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300"
+                              : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300"
+                          }`}
+                        >
+                          {(s.name || "?").slice(0, 2).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p
+                            className={`text-sm font-medium truncate ${theme === "dark" ? "text-gray-100" : "text-gray-900"}`}
+                          >
+                            {s.name}
+                          </p>
+                          <p
+                            className={`text-[11px] font-mono truncate ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
+                          >
+                            {s.admissionNumber || "No admission no."}
+                          </p>
+                        </div>
+                      </button>
+                    );
+                  })}
+                  {filteredStudents.length === 0 && (
+                    <p
+                      className={`text-sm text-center py-6 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
+                    >
+                      No students found.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* RIGHT: edit form for the selected student */}
+              <div className="min-h-0 overflow-y-auto md:pr-2">
+                <div className="max-w-xl space-y-5">
+                  {/* Read-only student info */}
+                  <div
+                    className={`rounded-xl border p-4 space-y-2 ${theme === "dark" ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"}`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`h-12 w-12 rounded-full flex items-center justify-center text-base font-bold ${
+                          editForm.gender === "female"
+                            ? "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300"
+                            : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300"
+                        }`}
+                      >
+                        {editForm.name.slice(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <p className={`font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
+                          {editForm.name}
+                        </p>
+                        <p className={`text-xs font-mono ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                          {editForm.admissionNumber || "No admission no."}
+                        </p>
+                      </div>
+                    </div>
+                    <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
+                      <p><span className="font-medium">Class:</span> {editForm.className || "-"}</p>
+                      <p><span className="font-medium">Arm:</span> {editForm.armName || "-"}</p>
+                      <p className="sm:col-span-2"><span className="font-medium">Parent:</span> {editForm.parentName || "-"}</p>
+                    </div>
+                  </div>
+
+                  {/* Editable: Religion */}
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
+                    >
+                      Religion
+                    </label>
+                    <input
+                      type="text"
+                      value={editForm.religion}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, religion: e.target.value })
+                      }
+                      className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
+                      placeholder="e.g., Christianity, Islam, Traditional"
+                    />
+                  </div>
+
+                  {/* Editable: Gender */}
+                  <div>
+                    <label
+                      className={`block text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
+                    >
+                      Gender
+                    </label>
+                    <select
+                      value={editForm.gender}
+                      onChange={(e) =>
+                        setEditForm({ ...editForm, gender: e.target.value })
+                      }
+                      className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                    >
+                      <option value="male">Male</option>
+                      <option value="female">Female</option>
+                    </select>
+                  </div>
+
+                  {/* Save button */}
+                  <button
+                    onClick={handleSaveEdit}
+                    disabled={isSavingEdit}
+                    className="w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-50"
+                  >
+                    {isSavingEdit ? "Saving..." : "Save"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </CenteredModal>
+        )}
+      </AnimatePresence>
       {/* View All Students Modal - FULLSCREEN */}
       <AnimatePresence>
         {showAllModal && (
