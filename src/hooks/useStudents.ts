@@ -11,6 +11,7 @@ export interface Student {
   id: string;
   name: string;
   gender: string;
+  religion?: string | null;
   admissionNumber?: string;
   createdAt?: string;
   isActive?: boolean;

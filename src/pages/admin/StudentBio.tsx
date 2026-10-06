@@ -25,6 +25,7 @@ interface Student {
   id: string;
   name: string;
   gender: string;
+  religion?: string | null;
   dateOfBirth?: string;
   address?: string;
   admissionNumber?: string;
@@ -143,6 +144,7 @@ export default function StudentBio() {
   const [personalForm, setPersonalForm] = useState({
     name: '',
     gender: '',
+    religion: '',
     dateOfBirth: '',
     address: '',
     admissionNumber: '',
@@ -439,6 +441,7 @@ export default function StudentBio() {
       const res = await api.patch(`/students/${student.id}`, {
         name: personalForm.name,
         gender: personalForm.gender,
+        religion: personalForm.religion || undefined,
         dateOfBirth: personalForm.dateOfBirth || undefined,
         address: personalForm.address || undefined,
         admissionNumber: personalForm.admissionNumber || undefined,
@@ -459,6 +462,7 @@ export default function StudentBio() {
       setPersonalForm({
         name: student.name || '',
         gender: student.gender || '',
+        religion: student.religion || '',
         dateOfBirth: student.dateOfBirth || '',
         address: student.address || '',
         admissionNumber: student.admissionNumber || '',
@@ -625,6 +629,7 @@ export default function StudentBio() {
                 <InfoItem label="Date of Birth" value={student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString() : 'Not set'} theme={theme} />
                 <InfoItem label="Admission Number" value={student.admissionNumber || 'Not set'} theme={theme} />
                 <InfoItem label="Address" value={student.address || 'Not set'} theme={theme} />
+                <InfoItem label="Religion" value={student.religion || 'Not specified'} theme={theme} />
               </div>
             </SectionCard>
           </FadeInSection>
@@ -958,6 +963,7 @@ export default function StudentBio() {
             <div className="space-y-4">
               <InputField label="Full Name" value={personalForm.name} onChange={(v: string) => setPersonalForm({...personalForm, name: v})} theme={theme} required />
               <SelectField label="Gender" value={personalForm.gender} options={['male', 'female']} onChange={(v: string) => setPersonalForm({...personalForm, gender: v})} theme={theme} />
+              <SelectField label="Religion" value={personalForm.religion} options={['', 'Christianity', 'Islam', 'Traditional', 'Other']} onChange={(v: string) => setPersonalForm({...personalForm, religion: v})} theme={theme} />
               <InputField label="Date of Birth" type="date" value={personalForm.dateOfBirth} onChange={(v: string) => setPersonalForm({...personalForm, dateOfBirth: v})} theme={theme} />
               <InputField label="Address" value={personalForm.address} onChange={(v: string) => setPersonalForm({...personalForm, address: v})} theme={theme} />
               <InputField label="Admission Number" value={personalForm.admissionNumber} onChange={(v: string) => setPersonalForm({...personalForm, admissionNumber: v})} theme={theme} />
@@ -1249,7 +1255,7 @@ const SelectField = ({ label, value, options, onChange, theme }: any) => (
       className={`w-full px-4 py-2 rounded-lg border ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}
     >
       {options.map((opt: string) => (
-        <option key={opt} value={opt}>{opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
+        <option key={opt} value={opt}>{opt === '' ? 'Not specified' : opt.charAt(0).toUpperCase() + opt.slice(1)}</option>
       ))}
     </select>
   </div>

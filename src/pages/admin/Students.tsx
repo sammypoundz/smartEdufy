@@ -103,17 +103,22 @@ export default function Students() {
   const [showPerformanceModal, setShowPerformanceModal] = useState(false);
   const [showAllModal, setShowAllModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editForm, setEditForm] = useState({
-    name: "",
-    gender: "male",
-    religion: "",
-    admissionNumber: "",
-    className: "",
-    armName: "",
-    parentName: "",
-  });
+  /*
+   * Bulk edit: per-student editable values (gender + religion). Keyed by
+   * student id so every row in the edit table holds its own draft state.
+   */
+  const [editDrafts, setEditDrafts] = useState<
+    Record<string, { gender: string; religion: string }>
+  >({});
+  /*
+   * Explicitly track which rows the user actually touched in this session.
+   * Diffing drafts against refetched data proved unreliable (edits could be
+   * lost when a refetch landed or coincided with a DB value), so we record
+   * every select change here and only save these rows.
+   */
+  const [dirtyEditIds, setDirtyEditIds] = useState<Set<string>>(new Set());
   const [isSavingEdit, setIsSavingEdit] = useState(false);
-  const [editingStudentSnapshot, setEditingStudentSnapshot] = useState<Student | null>(null);
+  const [editSearchTerm, setEditSearchTerm] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [newStudentForm, setNewStudentForm] = useState({
     name: "",
@@ -556,71 +561,135 @@ export default function Students() {
     navigate(`/admin/student/${student.id}`);
   };
 
-  // Open the Edit modal (from the table header) pre-filled with student info
-  const openEditModal = (student?: Student) => {
-    const target = student || filteredStudents[0];
-    if (!target) return;
-    setEditingStudentSnapshot(target);
-    setEditForm({
-      name: target.name || "",
-      gender: (target.gender || "male").toLowerCase(),
-      religion: (target as any).religion || "",
-      admissionNumber: target.admissionNumber || "",
-      className: target.class?.name || "",
-      armName: target.arm?.letter ? `Arm ${target.arm.letter}` : "",
-      parentName: target.parent?.name || "",
+  // Seed drafts from whatever student data is currently loaded
+  const buildDrafts = (list: Student[]) => {
+    const drafts: Record<string, { gender: string; religion: string }> = {};
+    list.forEach((s) => {
+      drafts[s.id] = {
+        gender: (s.gender || "male").toLowerCase(),
+        religion: s.religion || "",
+      };
     });
+    return drafts;
+  };
+
+  // Open the bulk Edit modal: seeds a draft row (gender + religion) per student
+  // from the freshest data and forces a refetch so DB-saved values show up.
+  const openEditModal = () => {
+    setEditDrafts(buildDrafts(filteredStudents));
+    setDirtyEditIds(new Set());
+    setEditSearchTerm("");
     setShowEditModal(true);
+    invalidateStudents(); // refetch from DB so last-saved religion/gender populate
   };
 
-  // Select a different student from the list inside the Edit modal
-  const selectEditStudent = (student: Student) => {
-    setEditingStudentSnapshot(student);
-    setEditForm({
-      name: student.name || "",
-      gender: (student.gender || "male").toLowerCase(),
-      religion: (student as any).religion || "",
-      admissionNumber: student.admissionNumber || "",
-      className: student.class?.name || "",
-      armName: student.arm?.letter ? `Arm ${student.arm.letter}` : "",
-      parentName: student.parent?.name || "",
+  // When fresh data arrives while the modal is open, re-seed drafts from it
+  // for rows the user has NOT edited in this session (dirty rows keep their
+  // in-progress selections no matter what the refetch returns).
+  useEffect(() => {
+    if (!showEditModal) return;
+    setEditDrafts((prev) => {
+      const drafts = buildDrafts(filteredStudents);
+      const merged: typeof drafts = {};
+      Object.keys(drafts).forEach((id) => {
+        merged[id] = dirtyEditIds.has(id) && prev[id] ? prev[id] : drafts[id];
+      });
+      return merged;
     });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [students, showEditModal]);
+
+  const updateEditDraft = (
+    id: string,
+    patch: Partial<{ gender: string; religion: string }>,
+  ) => {
+    // Mark the row dirty FIRST so a concurrent refetch can never clobber it
+    setDirtyEditIds((prev) => {
+      const next = new Set(prev);
+      next.add(id);
+      return next;
+    });
+    setEditDrafts((prev) => ({
+      ...prev,
+      [id]: { ...prev[id], ...patch },
+    }));
   };
 
-  // Save the edited student (religion + gender) to the backend
+  // Students shown in the edit table (respects the modal search box)
+  const editTableStudents = useMemo(() => {
+    const q = editSearchTerm.trim().toLowerCase();
+    if (!q) return filteredStudents;
+    return filteredStudents.filter(
+      (s) =>
+        s.name.toLowerCase().includes(q) ||
+        (s.admissionNumber || "").toLowerCase().includes(q),
+    );
+  }, [filteredStudents, editSearchTerm]);
+
+  // A row counts as changed when the user touched its selects in this session
+  const changedEditIds = useMemo(() => {
+    return filteredStudents
+      .filter((s) => dirtyEditIds.has(s.id) && !!editDrafts[s.id])
+      .map((s) => s.id);
+  }, [filteredStudents, dirtyEditIds, editDrafts]);
+
+  // Bulk save: PATCHes every student whose gender/religion draft changed
   const handleSaveEdit = async () => {
-    if (!editingStudentSnapshot) return;
+    if (changedEditIds.length === 0) {
+      toast.error("No changes to save");
+      return;
+    }
     setIsSavingEdit(true);
+    let successCount = 0;
+    const failures: string[] = [];
     try {
-      const res = await api.patch(
-        `/students/${editingStudentSnapshot.id}`,
-        {
-          name: editForm.name,
-          gender: editForm.gender,
-          religion: editForm.religion,
-        },
-        token,
-      );
-      if (!res.ok) {
-        const txt = await res.text();
-        let msg: any = txt || `HTTP ${res.status}`;
+      for (const id of changedEditIds) {
+        const draft = editDrafts[id];
         try {
-          const errData = JSON.parse(txt);
-          msg =
-            (Array.isArray(errData?.error)
-              ? errData.error[0]?.message
-              : errData?.error) || txt;
-        } catch {
-          // not JSON
+          const res = await api.patch(
+            `/students/${id}`,
+            {
+              gender: draft.gender,
+              religion: draft.religion,
+            },
+            token,
+          );
+          if (!res.ok) {
+            const txt = await res.text();
+            let msg: any = txt || `HTTP ${res.status}`;
+            try {
+              const errData = JSON.parse(txt);
+              msg =
+                (Array.isArray(errData?.error)
+                  ? errData.error[0]?.message
+                  : errData?.error) || txt;
+            } catch {
+              // not JSON
+            }
+            throw new Error(
+              typeof msg === "string" ? msg : "Failed to save student",
+            );
+          }
+          successCount++;
+        } catch (err: any) {
+          const student = filteredStudents.find((s) => s.id === id);
+          failures.push(`${student?.name || id}: ${err.message}`);
         }
-        throw new Error(typeof msg === "string" ? msg : "Failed to save student");
       }
-      toast.success("Student updated");
+      if (failures.length > 0) {
+        toast.error(
+          `Saved ${successCount} of ${changedEditIds.length}. First error: ${failures[0]}`,
+        );
+      } else {
+        toast.success(
+          `Saved ${successCount} student${successCount === 1 ? "" : "s"}`,
+        );
+      }
       await invalidateStudents();
-      setShowEditModal(false);
-      setEditingStudentSnapshot(null);
-    } catch (err: any) {
-      toast.error(err.message);
+      if (failures.length === 0) {
+        setDirtyEditIds(new Set());
+        setShowEditModal(false);
+      }
     } finally {
       setIsSavingEdit(false);
     }
@@ -1907,9 +1976,9 @@ export default function Students() {
         )}
       </AnimatePresence>
 
-      {/* Edit Student Modal - FULLSCREEN (student list + edit form side by side) */}
+      {/* Edit Students Modal - FULLSCREEN (all students in a table, gender & religion dropdowns, bulk save) */}
       <AnimatePresence>
-        {showEditModal && editingStudentSnapshot && (
+        {showEditModal && (
           <CenteredModal
             onClose={() => setShowEditModal(false)}
             title="Edit Students"
@@ -1917,146 +1986,139 @@ export default function Students() {
             size="fullscreen"
             className="modal-content"
           >
-            <div className="grid grid-cols-1 md:grid-cols-[300px_1fr] gap-4 h-full min-h-0">
-              {/* LEFT: full student list */}
-              <div
-                className={`rounded-xl border flex flex-col min-h-0 md:h-full ${theme === "dark" ? "bg-gray-800/40 border-gray-700" : "bg-gray-50 border-gray-200"}`}
-              >
+            <div className="flex flex-col h-full min-h-0 space-y-4 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8">
+              {/* Toolbar: search + change count — stays fixed above the scrolling table */}
+              <div className={`flex flex-col sm:flex-row sm:items-center gap-3 shrink-0 -mx-4 sm:-mx-6 md:-mx-8 px-4 sm:px-6 md:px-8 py-3 ${theme === "dark" ? "bg-gray-900" : "bg-white"}`}>
+                <div className="relative flex-1">
+                  <MagnifyingGlassIcon className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Search by name or admission number..."
+                    value={editSearchTerm}
+                    onChange={(e) => setEditSearchTerm(e.target.value)}
+                    className={`w-full pl-10 pr-4 py-2.5 rounded-xl border shadow-sm transition focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-200 text-gray-900 placeholder-gray-400"}`}
+                  />
+                </div>
                 <div
-                  className={`shrink-0 px-4 py-3 border-b text-sm font-semibold ${theme === "dark" ? "border-gray-700 text-gray-200" : "border-gray-200 text-gray-700"}`}
+                  className={`shrink-0 inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium ${theme === "dark" ? "bg-gray-800 text-gray-200" : "bg-blue-50 text-blue-700"}`}
                 >
-                  Students ({filteredStudents.length})
+                  <PencilIcon className="h-5 w-5" />
+                  {changedEditIds.length} change{changedEditIds.length === 1 ? "" : "s"}
                 </div>
-                <div className="flex-1 overflow-y-auto min-h-0 max-h-[40vh] md:max-h-none p-2 space-y-1">
-                  {filteredStudents.map((s) => {
-                    const isActive = s.id === editingStudentSnapshot.id;
-                    return (
-                      <button
-                        key={s.id}
-                        onClick={() => selectEditStudent(s)}
-                        className={`w-full text-left px-3 py-2.5 rounded-lg transition flex items-center gap-2.5 ${
-                          isActive
-                            ? theme === "dark"
-                              ? "bg-blue-500/20 ring-1 ring-blue-500/50"
-                              : "bg-blue-50 ring-1 ring-blue-300"
-                            : theme === "dark"
-                              ? "hover:bg-white/5"
-                              : "hover:bg-gray-100"
-                        }`}
-                      >
-                        <div
-                          className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold ${
-                            (s.gender || "").toLowerCase() === "female"
-                              ? "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300"
-                              : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300"
-                          }`}
-                        >
-                          {(s.name || "?").slice(0, 2).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p
-                            className={`text-sm font-medium truncate ${theme === "dark" ? "text-gray-100" : "text-gray-900"}`}
-                          >
-                            {s.name}
-                          </p>
-                          <p
-                            className={`text-[11px] font-mono truncate ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
-                          >
-                            {s.admissionNumber || "No admission no."}
-                          </p>
-                        </div>
-                      </button>
-                    );
-                  })}
-                  {filteredStudents.length === 0 && (
-                    <p
-                      className={`text-sm text-center py-6 ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}
-                    >
-                      No students found.
-                    </p>
-                  )}
-                </div>
+                <button
+                  onClick={() => setShowEditModal(false)}
+                  className={`shrink-0 px-4 py-2.5 rounded-lg text-sm font-medium transition ${theme === "dark" ? "bg-gray-700 text-gray-200 hover:bg-gray-600" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveEdit}
+                  disabled={isSavingEdit || changedEditIds.length === 0}
+                  className="shrink-0 px-6 py-2.5 rounded-lg text-sm font-medium bg-blue-600 text-white hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSavingEdit
+                    ? "Saving..."
+                    : `Save All${changedEditIds.length > 0 ? ` (${changedEditIds.length})` : ""}`}
+                </button>
               </div>
 
-              {/* RIGHT: edit form for the selected student */}
-              <div className="min-h-0 overflow-y-auto md:pr-2">
-                <div className="max-w-xl space-y-5">
-                  {/* Read-only student info */}
-                  <div
-                    className={`rounded-xl border p-4 space-y-2 ${theme === "dark" ? "bg-gray-800/50 border-gray-700" : "bg-gray-50 border-gray-200"}`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div
-                        className={`h-12 w-12 rounded-full flex items-center justify-center text-base font-bold ${
-                          editForm.gender === "female"
-                            ? "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300"
-                            : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300"
-                        }`}
-                      >
-                        {editForm.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className={`font-semibold ${theme === "dark" ? "text-white" : "text-gray-900"}`}>
-                          {editForm.name}
-                        </p>
-                        <p className={`text-xs font-mono ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
-                          {editForm.admissionNumber || "No admission no."}
-                        </p>
-                      </div>
-                    </div>
-                    <div className={`grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
-                      <p><span className="font-medium">Class:</span> {editForm.className || "-"}</p>
-                      <p><span className="font-medium">Arm:</span> {editForm.armName || "-"}</p>
-                      <p className="sm:col-span-2"><span className="font-medium">Parent:</span> {editForm.parentName || "-"}</p>
-                    </div>
-                  </div>
-
-                  {/* Editable: Religion */}
-                  <div>
-                    <label
-                      className={`block text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
-                    >
-                      Religion
-                    </label>
-                    <input
-                      type="text"
-                      value={editForm.religion}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, religion: e.target.value })
-                      }
-                      className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white placeholder-gray-400" : "bg-white border-gray-300 text-gray-900 placeholder-gray-500"}`}
-                      placeholder="e.g., Christianity, Islam, Traditional"
-                    />
-                  </div>
-
-                  {/* Editable: Gender */}
-                  <div>
-                    <label
-                      className={`block text-sm font-medium mb-1 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
-                    >
-                      Gender
-                    </label>
-                    <select
-                      value={editForm.gender}
-                      onChange={(e) =>
-                        setEditForm({ ...editForm, gender: e.target.value })
-                      }
-                      className={`w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm rounded-lg border ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
-                    >
-                      <option value="male">Male</option>
-                      <option value="female">Female</option>
-                    </select>
-                  </div>
-
-                  {/* Save button */}
-                  <button
-                    onClick={handleSaveEdit}
-                    disabled={isSavingEdit}
-                    className="w-full px-4 py-2.5 sm:py-2 text-base sm:text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 active:scale-[0.98] transition disabled:opacity-50"
-                  >
-                    {isSavingEdit ? "Saving..." : "Save"}
-                  </button>
-                </div>
+              {/* All students table with per-row dropdowns — spans full modal width */}
+              <div className="-mx-4 sm:-mx-6 md:-mx-8 flex-1 min-h-0 flex flex-col">
+              <div className={`flex-1 min-h-0 overflow-auto rounded-none border-x ${theme === "dark" ? "border-gray-700" : "border-gray-200"}`}>
+                <table className={`w-full divide-y ${theme === "dark" ? "divide-gray-700" : "divide-gray-200"}`}>
+                  <thead className={`sticky top-0 z-10 ${theme === "dark" ? "bg-gray-900" : "bg-gray-50"}`}>
+                    <tr>
+                      {["Student", "Class", "Gender", "Religion"].map((h) => (
+                        <th
+                          key={h}
+                          className={`px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider ${theme === "dark" ? "text-gray-300" : "text-gray-700"}`}
+                        >
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${theme === "dark" ? "divide-gray-800" : "divide-gray-100"}`}>
+                    {editTableStudents.map((student) => {
+                      const draft = editDrafts[student.id];
+                      if (!draft) return null;
+                      const changed = changedEditIds.includes(student.id);
+                      return (
+                        <tr
+                          key={student.id}
+                          className={`${
+                            changed
+                              ? theme === "dark"
+                                ? "bg-blue-500/10"
+                                : "bg-blue-50/60"
+                              : ""
+                          }`}
+                        >
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <div className="flex items-center gap-3">
+                              <div
+                                className={`h-8 w-8 shrink-0 rounded-full flex items-center justify-center text-[11px] font-bold ${
+                                  draft.gender === "female"
+                                    ? "bg-pink-100 text-pink-600 dark:bg-pink-500/20 dark:text-pink-300"
+                                    : "bg-blue-100 text-blue-600 dark:bg-blue-500/20 dark:text-blue-300"
+                                }`}
+                              >
+                                {(student.name || "?").slice(0, 2).toUpperCase()}
+                              </div>
+                              <div className="min-w-0">
+                                <p className={`text-sm font-medium truncate max-w-xs ${theme === "dark" ? "text-gray-100" : "text-gray-900"}`}>
+                                  {student.name}
+                                </p>
+                                <p className={`text-[11px] font-mono truncate ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                                  {student.admissionNumber || "No admission no."}
+                                </p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className={`px-4 py-3 text-sm ${theme === "dark" ? "text-gray-300" : "text-gray-600"}`}>
+                            <div className="whitespace-nowrap">{student.class?.name || "-"}
+                            {student.arm?.letter ? ` · ${student.arm.letter}` : ""}</div>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <select
+                              value={draft.gender}
+                              onChange={(e) =>
+                                updateEditDraft(student.id, { gender: e.target.value })
+                              }
+                              className={`px-3 py-1.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                            >
+                              <option value="male">Male</option>
+                              <option value="female">Female</option>
+                            </select>
+                          </td>
+                          <td className="px-4 py-3 whitespace-nowrap">
+                            <select
+                              value={draft.religion}
+                              onChange={(e) =>
+                                updateEditDraft(student.id, { religion: e.target.value })
+                              }
+                              className={`px-3 py-1.5 text-sm rounded-lg border focus:outline-none focus:ring-2 focus:ring-blue-500/50 ${theme === "dark" ? "bg-gray-800 border-gray-700 text-white" : "bg-white border-gray-300 text-gray-900"}`}
+                            >
+                              <option value="">Not specified</option>
+                              <option value="Christianity">Christianity</option>
+                              <option value="Islam">Islam</option>
+                              <option value="Traditional">Traditional</option>
+                              <option value="Other">Other</option>
+                            </select>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                    {editTableStudents.length === 0 && (
+                      <tr>
+                        <td colSpan={4} className={`px-4 py-8 text-center text-sm ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
+                          No students found.
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
               </div>
             </div>
           </CenteredModal>
@@ -2149,6 +2211,8 @@ export default function Students() {
                           <p className={`text-xs mt-0.5 truncate ${theme === "dark" ? "text-gray-400" : "text-gray-500"}`}>
                             {student.class?.name || "No class"}
                             {student.arm?.letter ? ` · ${student.arm.letter}` : ""}
+                            {student.gender ? ` · ${student.gender.trim()}` : ""}
+                            {student.religion ? ` · ${student.religion}` : ""}
                             {student.parent?.name ? ` · Parent: ${student.parent.name}` : ""}
                           </p>
                         </div>
@@ -2227,6 +2291,8 @@ export default function Students() {
                         "Name",
                         "Admission No.",
                         "Class/Arm",
+                        "Gender",
+                        "Religion",
                         "Parent",
                         "Status",
                         "Actions",
@@ -2300,6 +2366,19 @@ export default function Students() {
                             {student.arm
                               ? `(${getArmDisplayName(student.arm)})`
                               : ""}
+                          </td>
+                          <td
+                            className={`px-4 py-3 capitalize ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
+                          >
+                            {student.gender
+                              ? student.gender.trim().charAt(0).toUpperCase() +
+                                student.gender.trim().slice(1)
+                              : "-"}
+                          </td>
+                          <td
+                            className={`px-4 py-3 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
+                          >
+                            {student.religion || "-"}
                           </td>
                           <td
                             className={`px-4 py-3 ${theme === "dark" ? "text-gray-300" : "text-gray-900"}`}
