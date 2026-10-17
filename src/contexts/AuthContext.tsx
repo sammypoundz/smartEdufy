@@ -167,6 +167,10 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     // Clear axios headers
     delete api.defaults.headers.common['Authorization'];
     delete api.defaults.headers.common['x-tenant-id'];
+
+    // Wipe user-specific offline data (cache + pending ops). The caller is
+    // responsible for warning about unsynced changes BEFORE calling logout.
+    import('../offline/db').then(({ wipeAll }) => wipeAll());
   };
 
   // Refresh user data

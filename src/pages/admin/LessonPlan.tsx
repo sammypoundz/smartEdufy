@@ -8,6 +8,8 @@ import { api } from '../../utils/api';
 import { unwrapRes } from '../../hooks/queryHelpers';
 import { uploadWithProgress } from '../../utils/upload';
 import UploadProgress from '../../components/UploadProgress';
+import { loadCachedBundle } from '../../offline/syncEngine';
+import { saveLessonNote } from '../../offline/offlineWrites';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
@@ -147,6 +149,23 @@ export default function AdminLessonPlan() {
   const subjects = subjectsQuery.data ?? [];
   const loading = lessonPlansQuery.isLoading;
   const queryClient = useQueryClient();
+
+  // Offline support: when the list request fails (no internet) fall back to
+  // the per-user cached bundle so previously downloaded lesson notes show.
+  useEffect(() => {
+    if (!lessonPlansQuery.error) return;
+    (async () => {
+      const cached = await loadCachedBundle();
+      if (cached?.data?.lessonPlans?.length) {
+        queryClient.setQueryData(
+          ['lesson-plans', token, selectedClassId, selectedArmId, selectedSubjectId],
+          cached.data.lessonPlans,
+        );
+        toast.success('Offline — showing downloaded lesson notes');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lessonPlansQuery.error]);
   const invalidateLessonPlans = () =>
     queryClient.invalidateQueries({ queryKey: ['lesson-plans'] });
 
@@ -205,6 +224,36 @@ export default function AdminLessonPlan() {
       toast.error('Please fill all required fields');
       return;
     }
+
+    // Text-only notes (no file) work offline: they go through the offline
+    // sync queue as LESSON_PLAN_CREATE, whether online or not. File uploads
+    // keep using the existing multipart flow (online only).
+    if (!formData.file) {
+      setSubmitting(true);
+      try {
+        const r = await saveLessonNote({
+          title: formData.title,
+          description: formData.description,
+          classId: formData.classId,
+          armId: formData.armId,
+          subjectId: formData.subjectId,
+        });
+        toast.success(
+          r.mode === 'queued'
+            ? 'Lesson note saved on device — it will sync automatically'
+            : 'Lesson note saved',
+        );
+        setShowModal(false);
+        resetForm();
+        invalidateLessonPlans();
+      } catch (err: any) {
+        toast.error(err.message);
+      } finally {
+        setSubmitting(false);
+      }
+      return;
+    }
+
     if (!editingPlan && !formData.file) {
       toast.error('Please select a file to upload');
       return;

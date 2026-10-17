@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { saveAttendanceOffline } from '../../offline/offlineWrites';
 import toast from 'react-hot-toast';
 import {
   ArrowLeftIcon,
@@ -364,12 +365,14 @@ export default function OpenArm() {
     if (!armId) return;
     setSavingAttendance(true);
     try {
-      const res = await api.post(`/attendance/arm/${armId}`, {
-        date: attendanceDate,
-        records: attendanceRecords,
-      }, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Attendance saved successfully');
+      // Offline-aware: saves to the server when reachable, queues in the
+      // IndexedDB outbox otherwise.
+      const result = await saveAttendanceOffline(armId, attendanceDate, attendanceRecords);
+      if (result.mode === 'queued') {
+        toast.success('No internet — attendance saved on device and will sync automatically');
+      } else {
+        toast.success('Attendance saved successfully');
+      }
       setShowTakeAttendanceModal(false);
       fetchAttendanceRecords(attendanceFilterStart, attendanceFilterEnd);
     } catch (err: any) {

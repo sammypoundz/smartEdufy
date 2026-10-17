@@ -1,8 +1,60 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { VitePWA } from 'vite-plugin-pwa'
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      includeAssets: ['favicon.svg'],
+      manifest: {
+        name: 'SmartEdufy',
+        short_name: 'SmartEdufy',
+        description: 'SmartEdufy school management system',
+        theme_color: '#2563eb',
+        background_color: '#f8fafc',
+        display: 'standalone',
+        start_url: '/',
+        icons: [
+          {
+            src: 'favicon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any',
+          },
+        ],
+      },
+      workbox: {
+        // The app's main JS bundle is large (pre-existing chunking); allow it
+        // in the precache so the shell truly loads offline.
+        maximumFileSizeToCacheInBytes: 5 * 1024 * 1024,
+        // App shell: precache build assets so the app boots and navigates
+        // offline. Data lives separately in IndexedDB (per-user, per-school).
+        globPatterns: ['**/*.{js,css,html,svg,woff2}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/uploads\//],
+        runtimeCaching: [
+          {
+            // Previously viewed uploads open offline (cache-first).
+            urlPattern: ({ url }) => url.pathname.startsWith('/uploads/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'edufy-uploads',
+              expiration: { maxEntries: 200, maxAgeSeconds: 60 * 60 * 24 * 14 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+          {
+            // Never cache API responses in the SW — auth'd data flows through
+            // the per-user IndexedDB bundle + op queue instead.
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
+          },
+        ],
+      },
+    }),
+  ],
   optimizeDeps: {
     include: ['@heroicons/react', 'axios']
   },

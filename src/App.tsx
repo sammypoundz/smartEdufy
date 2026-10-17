@@ -18,6 +18,7 @@ import AdminAcademic from './pages/admin/Academic';
 import AdminResults from './pages/admin/Results';
 import AdminReports from './pages/admin/Reports';
 import AdminSettings from './pages/admin/Settings';
+import AdminSubscriptionPage from './pages/admin/SubscriptionPage';
 import AdminParent from './pages/admin/Parent';
 import ParentLayout from './layouts/ParentLayout';
 import ParentOverview from './pages/parent/Overview';
@@ -55,9 +56,15 @@ import AuditLogPage from './pages/admin/AuditLog';
 import ActivityPage from './pages/admin/Activity';
 import TeacherQuestions from './pages/teacher/Questions';
 import QuestionReviewPage from './pages/admin/QuestionReview';
+import EdufyAI from './edufy/EdufyAI';
+import OfflineManager from './pages/admin/OfflineManager';
 
 // Teacher layout
 import TeacherLayout from './layouts/TeacherLayout';
+
+// Accountant portal (bank-style)
+import AccountantLayout from './layouts/AccountantLayout';
+import AccountantDashboard from './pages/accountant/Dashboard';
 
 // Student test portal (public)
 import TestPortal from './pages/student/TestPortal';
@@ -76,6 +83,10 @@ const RoleBasedRedirect = () => {
   // shows only the pages their privileges unlock.
   const isParent = roles.includes('PARENT');
   const isStudent = roles.includes('STUDENT');
+  // Accountants land on their dedicated accounts (bank) portal — other staff
+  // roles they may hold still grant access via privileges on each page.
+  if (roles.includes('ACCOUNTANT') && !roles.includes('ADMIN') && !roles.includes('PRINCIPAL'))
+    return <Navigate to="/accountant" replace />;
   if (isParent && roles.length === 1) return <Navigate to="/parent" replace />;
   if (isStudent && roles.length === 1) return <Navigate to="/student" replace />;
   return <Navigate to="/teacher" replace />;
@@ -86,6 +97,8 @@ function App() {
     <BrowserRouter>
       {/* Global offline banner — shown whenever the app has no internet */}
       <OfflineIndicator />
+      {/* Edufy AI floating assistant — available on all pages */}
+      <EdufyAI />
       {/* Toaster is now outside the Routes so it's always available */}
       <Toaster
         position="top-right"
@@ -131,6 +144,7 @@ function App() {
             <Route path="results" element={<AdminResults />} />
             <Route path="reports" element={<AdminReports />} />
             <Route path="settings" element={<AdminSettings />} />
+            <Route path="subscription" element={<AdminSubscriptionPage />} />
             <Route path="student/:id" element={<StudentBio />} />
             <Route path="subject/:id" element={<SubjectPage />} />
             <Route path="skill/:id" element={<SkillPage />} />
@@ -155,6 +169,7 @@ function App() {
             <Route path="payroll" element={<AdminPayroll />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
+            <Route path="offline" element={<OfflineManager />} />
             <Route path="profile" element={<Profile />} />
             <Route path="audit-logs" element={<AuditLogPage />} />
             <Route path="activity" element={<ActivityPage />} />
@@ -191,6 +206,32 @@ function App() {
 
             {/* System routes */}
             <Route path="questions" element={<TeacherQuestions />} />
+            <Route path="help" element={<AdminHelp />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="offline" element={<OfflineManager />} />
+            <Route path="profile" element={<Profile />} />
+            <Route path="subscription" element={<AdminSubscriptionPage />} />
+          </Route>
+        </Route>
+
+        {/* ====== ACCOUNTANT ROUTES (bank-style portal) — pages gated by
+             the accountant's privileges (default: fees, expenses, reports,
+             payroll); admins can grant/restrict these per user ====== */}
+        <Route element={<ProtectedRoute />}>
+          <Route
+            path="/accountant"
+            element={
+              <AcademicSessionProvider>
+                <AccountantLayout />
+              </AcademicSessionProvider>
+            }
+          >
+            <Route index element={<AccountantDashboard />} />
+            <Route path="dashboard" element={<AccountantDashboard />} />
+            <Route path="fees" element={<AdminFees />} />
+            <Route path="expenses" element={<AdminExpenses />} />
+            <Route path="payroll" element={<AdminPayroll />} />
+            <Route path="reports" element={<AdminReports />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />

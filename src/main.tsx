@@ -9,9 +9,15 @@ import { initTableStacking } from './utils/tableStacking';
 // Global SweetAlert2 theme — makes all confirm prompts (delete, etc.)
 // look like the app's LogoutConfirmModal. Side-effectful import.
 import './utils/swalTheme';
+// Offline mode: Dexie cache, sync engine + virtual driver.
+import { OfflineProvider } from './offline/OfflineContext';
+import { registerSW } from 'virtual:pwa-register';
 
 // Turns every data table into stacked cards on phones (see index.css).
 initTableStacking();
+
+// Register the PWA service worker (app-shell precache for offline loads).
+registerSW({ immediate: true });
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -29,8 +35,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider>
         <AuthProvider>
-          <App />
-          {/* Toast notifications are rendered inside App component */}
+          <OfflineProvider>
+            <App />
+            {/* Toast notifications are rendered inside App component */}
+          </OfflineProvider>
         </AuthProvider>
       </ThemeProvider>
     </QueryClientProvider>

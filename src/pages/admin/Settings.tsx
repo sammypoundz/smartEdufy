@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -46,6 +47,7 @@ interface BankDetails {
 interface GeneralSettings {
   schoolName: string;
   language: string;
+  logoUrl?: string | null;
 }
 
 interface AcademicSettings {
@@ -121,21 +123,34 @@ const renderIdPreview = (format: string, counter: number, role: string) =>
 
 export default function AdminSettings() {
   const { theme } = useTheme();
-  const [activeCategory, setActiveCategory] = useState('general');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeCategory, setActiveCategory] = useState(searchParams.get('tab') || 'general');
   // Mobile app-style navigation: 'menu' shows the category launcher grid,
   // 'detail' shows the selected category's content with a back button.
   const [mobileView, setMobileView] = useState<'menu' | 'detail'>('menu');
   const selectCategory = (id: string) => {
     setActiveCategory(id);
     setMobileView('detail');
+    setSearchParams({ tab: id }, { replace: true });
   };
   // Scroll back to top when entering a category on mobile
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }, [mobileView, activeCategory]);
 
+  // Keep the active category in sync with the URL (?tab=) so other parts of
+  // the app — e.g. the Edufy AI "Upgrade Plan" button — can deep-link here.
+  useEffect(() => {
+    const tab = searchParams.get('tab');
+    if (tab && tab !== activeCategory && categories.some((c) => c.id === tab)) {
+      setActiveCategory(tab);
+      setMobileView('detail');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
+
   // State for each section
-  const [general, setGeneral] = useState<GeneralSettings>({ schoolName: '', language: 'en' });
+  const [general, setGeneral] = useState<GeneralSettings>({ schoolName: '', language: 'en', logoUrl: null });
   const [academic, setAcademic] = useState<AcademicSettings>({ currentTerm: '', currentTermId: null, academicYearId: null });
   const [bankDetails, setBankDetails] = useState<BankDetails>({ bankName: '', accountName: '', accountNumber: '', sortCode: '' });
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettings>({ emailNotifications: true, smsNotifications: false });
@@ -190,7 +205,7 @@ export default function AdminSettings() {
         res.ok ? ((await res.json()) as T) : fallback;
 
       return {
-        general: await load<GeneralSettings>(generalRes, { schoolName: '', language: 'en' }),
+        general: await load<GeneralSettings>(generalRes, { schoolName: '', language: 'en', logoUrl: null }),
         academic: await load<AcademicSettings>(academicRes, { currentTerm: '', currentTermId: null, academicYearId: null }),
         bankDetails: await load<BankDetails>(bankRes, { bankName: '', accountName: '', accountNumber: '', sortCode: '' }),
         notificationSettings: await load<NotificationSettings>(notificationRes, { emailNotifications: true, smsNotifications: false }),
@@ -256,6 +271,26 @@ export default function AdminSettings() {
       toast.success('General settings saved');
     } catch (err: any) {
       toast.error(err.message || 'Failed to save');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const uploadLogo = async (file: File) => {
+    setSaving(true);
+    try {
+      const fd = new FormData();
+      fd.append('logo', file);
+      const res = await api.put('/settings/logo', fd);
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error((data as any)?.error || 'Failed to upload logo');
+      }
+      const data = await res.json();
+      setGeneral((g) => ({ ...g, logoUrl: data.logoUrl }));
+      toast.success('School logo uploaded');
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to upload logo');
     } finally {
       setSaving(false);
     }
@@ -567,6 +602,37 @@ export default function AdminSettings() {
                 onChange={(e) => setGeneral({ ...general, schoolName: e.target.value })}
                 className={`w-full rounded-2xl border-0 ${inputBgClass} ${inputTextClass} px-5 py-3.5 shadow-sm ring-1 ring-gray-200 dark:ring-gray-700 focus:ring-2 focus:ring-blue-500 transition-all`}
               />
+            </div>
+            <div>
+              <label className={`block text-sm font-medium ${labelTextClass} mb-2`}>🖼️ School Logo</label>
+              <div className={`flex items-center gap-4 rounded-2xl border p-4 ${theme === 'dark' ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-gray-50/60'}`}>
+                <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl ring-1 ring-gray-200 dark:ring-gray-700 flex items-center justify-center bg-white dark:bg-gray-900">
+                  {general.logoUrl ? (
+                    <img src={general.logoUrl} alt="School logo" className="h-full w-full object-contain" />
+                  ) : (
+                    <span className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>No logo</span>
+                  )}
+                </div>
+                <div className="flex-1">
+                  <label className="inline-flex cursor-pointer items-center gap-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md hover:shadow-lg transition-all">
+                    {saving ? 'Uploading...' : 'Upload Logo'}
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml"
+                      className="hidden"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) uploadLogo(file);
+                        e.target.value = '';
+                      }}
+                      disabled={saving}
+                    />
+                  </label>
+                  <p className={`mt-1.5 text-xs ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+                    PNG, JPG, WEBP or SVG. Max 5MB.
+                  </p>
+                </div>
+              </div>
             </div>
             <div>
               <label className={`block text-sm font-medium ${labelTextClass} mb-2`}>🌐 Language</label>
@@ -1005,7 +1071,7 @@ export default function AdminSettings() {
                 return (
                   <button
                     key={cat.id}
-                    onClick={() => setActiveCategory(cat.id)}
+                    onClick={() => selectCategory(cat.id)}
                     className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
                       isActive
                         ? `bg-gradient-to-r ${cat.gradient} text-white shadow-md`

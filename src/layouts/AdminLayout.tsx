@@ -12,6 +12,8 @@ import { usePendingLinkRequestCount } from '../hooks/useParentLink';
 import { usePendingTeacherRegistrationCount } from '../hooks/useTeacherRegistration';
 import ViewControls from '../components/ViewControls';
 import LogoutConfirmModal from '../components/LogoutConfirmModal';
+import SyncStatusBadge from '../components/SyncStatusBadge';
+import Swal from 'sweetalert2';
 import {
   FolderIcon,
   FolderOpenIcon,
@@ -45,6 +47,7 @@ import {
   UserIcon,
   MagnifyingGlassIcon,
   ClipboardDocumentCheckIcon,
+  CloudIcon,
 } from '@heroicons/react/24/outline';
 
 // ---------- Categories ----------
@@ -100,6 +103,7 @@ const categories = [
     name: 'System',
     items: [
       { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
+      { name: 'Offline Mode', href: '/admin/offline', icon: CloudIcon, privilege: 'settings' },
       { name: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardDocumentCheckIcon, privilege: 'audit-logs' },
       { name: 'Help', href: '/admin/help', icon: QuestionMarkCircleIcon },
     ],
@@ -354,8 +358,27 @@ export default function AdminLayout() {
     setShowLogoutConfirm(true);
   };
 
-  const confirmLogout = () => {
+  const confirmLogout = async () => {
     setShowLogoutConfirm(false);
+    // Warn about unsynchronised offline changes before wiping the cache.
+    const { getPendingOps, discardAllOps, ownerKey } = await import('../offline/db');
+    const user = JSON.parse(localStorage.getItem('user') || 'null');
+    if (user?.id && user?.schoolId) {
+      const pending = await getPendingOps(ownerKey(user.id, user.schoolId));
+      if (pending.length > 0) {
+        const res = await Swal.fire({
+          title: 'Unsynced changes',
+          text: `You have ${pending.length} offline change(s) not yet synced to the server. Logging out will permanently discard them. Log in with the same account and an internet connection to sync first — or discard and log out now.`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#d33',
+          confirmButtonText: 'Discard & log out',
+          cancelButtonText: 'Stay logged in',
+        });
+        if (!res.isConfirmed) return;
+        await discardAllOps(ownerKey(user.id, user.schoolId));
+      }
+    }
     logout();
     navigate('/login');
   };
@@ -1016,6 +1039,8 @@ export default function AdminLayout() {
             <div className="flex items-center space-x-1">
               <ViewControls />
             </div>
+            {/* Offline / sync status indicator */}
+            <SyncStatusBadge />
             <Link
               to="/admin/notifications"
               className={`relative p-2 rounded-lg transition-colors ${

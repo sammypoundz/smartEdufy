@@ -1,6 +1,29 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTheme } from "../contexts/ThemeContext";
 import { SignalSlashIcon, WifiIcon } from "@heroicons/react/24/outline";
+import { useOffline } from "../offline/OfflineContext";
+
+/**
+ * OfflineContext is optional here (the banner also renders on public pages
+ * outside the provider); fall back to zeros when unavailable.
+ */
+export function useOfflineSafe() {
+  try {
+    return useOffline();
+  } catch {
+    return {
+      status: 'online' as const,
+      isOnline: true,
+      hasBundle: false,
+      downloadedAt: null,
+      pendingOps: [],
+      pendingCount: 0,
+      failedCount: 0,
+      lastSyncAt: null,
+      lastSyncResult: null,
+    };
+  }
+}
 
 /** Shape of the connectivity state exposed by useConnectivity. */
 export interface ConnectivityStatus {
@@ -131,6 +154,7 @@ export function useConnectivity(): ConnectivityStatus {
 export default function OfflineIndicator() {
   const { theme } = useTheme();
   const { isOnline, checking, recheck } = useConnectivity();
+  const { pendingCount, failedCount } = useOfflineSafe();
 
   // True once we have been offline in this session — only then do we show
   // the "back online" alert, never on first load with a healthy connection.
@@ -184,16 +208,20 @@ export default function OfflineIndicator() {
         {isReconnected ? (
           <>
             <span className="hidden sm:inline">
-              Back online — connection restored.
+              Back online{pendingCount > 0 ? ` — syncing ${pendingCount} pending change(s)…` : ' — connection restored.'}
             </span>
-            <span className="sm:hidden">Back online</span>
+            <span className="sm:hidden">
+              Back online{pendingCount > 0 ? ` (${pendingCount} pending)` : ''}
+            </span>
           </>
         ) : (
           <>
             <span className="hidden sm:inline">
-              No internet connection — some features may be unavailable.
+              No internet connection — supported work is saved on this device{pendingCount > 0 ? ` (${pendingCount} pending${failedCount > 0 ? `, ${failedCount} failed` : ''})` : ''}.
             </span>
-            <span className="sm:hidden">No internet connection</span>
+            <span className="sm:hidden">
+              Offline{pendingCount > 0 ? ` — ${pendingCount} pending` : ''}
+            </span>
           </>
         )}
       </span>

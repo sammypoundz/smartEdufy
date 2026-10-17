@@ -10,6 +10,8 @@ import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import LogoutConfirmModal from '../components/LogoutConfirmModal';
+import SyncStatusBadge from '../components/SyncStatusBadge';
+import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 import {
   FolderIcon,
@@ -308,8 +310,27 @@ export default function TeacherLayout() {
     setShowLogoutConfirm(true);
   };
 
-  const confirmLogout = () => {
+  const confirmLogout = async () => {
     setShowLogoutConfirm(false);
+    // Warn about unsynchronised offline changes before the cache is wiped.
+    const { getPendingOps, discardAllOps, ownerKey } = await import('../offline/db');
+    const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+    if (storedUser?.id && storedUser?.schoolId) {
+      const pending = await getPendingOps(ownerKey(storedUser.id, storedUser.schoolId));
+      if (pending.length > 0) {
+        const res = await Swal.fire({
+          title: 'Unsynced changes',
+          text: `You have ${pending.length} offline change(s) not yet synced to the server. Logging out will permanently discard them. Log in with the same account and an internet connection to sync first — or discard and log out now.`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#d33',
+          confirmButtonText: 'Discard & log out',
+          cancelButtonText: 'Stay logged in',
+        });
+        if (!res.isConfirmed) return;
+        await discardAllOps(ownerKey(storedUser.id, storedUser.schoolId));
+      }
+    }
     logout();
     navigate('/login');
   };
@@ -926,6 +947,8 @@ export default function TeacherLayout() {
             <div className="flex items-center space-x-1">
               <ViewControls />
             </div>
+            {/* Offline / sync status indicator */}
+            <SyncStatusBadge />
             <Link
               to="/teacher/notifications"
               className={`relative p-2 rounded-lg transition-colors ${

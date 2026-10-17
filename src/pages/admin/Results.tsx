@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { saveResultsOffline } from '../../offline/offlineWrites';
 import { fetchGradingData, resolveClassScales, computeGradeWithScales } from '../../utils/grading';
 import type { GradingScale, GradingScaleGroup } from '../../utils/grading';
 import { formatArm } from '../../utils/arm';
@@ -371,9 +372,14 @@ export default function AdminResults() {
     }));
     setSaving(true);
     try {
-      const res = await api.post('/results/bulk', { results: payload }, token);
-      if (!res.ok) throw new Error(await res.text());
-      toast.success('Results saved successfully');
+      // Offline-aware: posts to /results/bulk when the server is reachable,
+      // queues the batch in the IndexedDB outbox otherwise.
+      const result = await saveResultsOffline(payload);
+      if (result.mode === 'queued') {
+        toast.success('No internet — scores saved on device and will sync automatically');
+      } else {
+        toast.success('Results saved successfully');
+      }
       fetchHistory(); // refresh history
     } catch (err: any) {
       toast.error(err.message || 'Failed to save results');
