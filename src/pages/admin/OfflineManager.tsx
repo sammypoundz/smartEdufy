@@ -132,7 +132,8 @@ export default function OfflineManager() {
   const failed = pendingOps.filter((o) => o.status === "failed");
 
   return (
-    <div className="space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8">
+      <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Offline Mode</h1>
         <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -337,6 +338,7 @@ export default function OfflineManager() {
           internet connection — they use cloud processing and cannot run
           offline.
         </p>
+      </div>
       </div>
     </div>
   );

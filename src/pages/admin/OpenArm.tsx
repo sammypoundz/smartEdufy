@@ -5,6 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
 import { saveAttendanceOffline } from '../../offline/offlineWrites';
+import { getCachedBundleData, isNetworkError } from '../../offline/fallback';
 import toast from 'react-hot-toast';
 import {
   ArrowLeftIcon,
@@ -195,6 +196,22 @@ export default function OpenArm() {
       }));
       setSubjects(flatSubjects);
     } catch (err: any) {
+      if (isNetworkError(err)) {
+        const bundle = await getCachedBundleData();
+        const arm = bundle?.arms.find((a) => a.id === armId);
+        if (bundle && arm) {
+          setArmData({
+            id: arm.id,
+            letter: arm.letter,
+            alias: arm.alias,
+            class: { id: arm.classId, name: arm.className },
+            students: (bundle.students || []).filter((s) => s.armId === armId),
+          } as any);
+          setStudents((bundle.students || []).filter((s) => s.armId === armId));
+          setSubjects(arm.subjects.map((s) => ({ armSubjectId: `${arm.id}:${s.id}`, id: s.id, name: s.name })));
+          return;
+        }
+      }
       console.error(err);
       throw new Error('Failed to load arm details');
     }

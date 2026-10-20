@@ -5,6 +5,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { effectivePrivileges } from '../../utils/privileges';
 import { useTheme } from '../../contexts/ThemeContext';
 import { api } from '../../utils/api';
+import { getCachedBundleData, isNetworkError } from '../../offline/fallback';
 import { getMyAssignments, type ArmAssignment } from '../../services/armApi';
 import { getErrorMessage, unwrapRes } from '../../hooks/queryHelpers';
 import {
@@ -66,7 +67,28 @@ export default function TeacherDashboard() {
       try {
         const tt = await unwrapRes<any[]>(api.get(`/timetable/teacher/${teacherId}`));
         timetable = Array.isArray(tt) ? tt : [];
-      } catch {
+      } catch (err) {
+        // Offline: derive today's timetable from the cached bundle.
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            const todayName = DAYS[(new Date().getDay() + 6) % 7] || '';
+            const dayIndex = DAYS.indexOf(todayName) + 1;
+            timetable = (bundle.timetable || [])
+              .filter((t) => t.dayOfWeek === dayIndex || t.dayOfWeek === todayName)
+              .map((t) => {
+                const arm = (bundle.arms || []).find((a) => a.id === t.armId);
+                return {
+                  id: t.id,
+                  timeSlot: t.timeSlot,
+                  subject: t.subject ?? (bundle.subjects || []).find((s) => s.id === t.subjectId),
+                  arm: arm
+                    ? { id: arm.id, letter: arm.letter, alias: arm.alias, class: { name: arm.className } }
+                    : undefined,
+                };
+              });
+          }
+        }
         /* timetable is non-critical */
       }
 

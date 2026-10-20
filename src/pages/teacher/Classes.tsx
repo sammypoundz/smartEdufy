@@ -2,6 +2,7 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { getCachedBundleData, isNetworkError } from '../../offline/fallback';
 import { unwrapRes } from '../../hooks/queryHelpers';
 import { formatArm } from '../../utils/arm';
 import { AcademicCapIcon } from '@heroicons/react/24/outline';
@@ -11,9 +12,24 @@ export default function TeacherClasses() {
   const { data: classes = [], isLoading: loading } = useQuery({
     queryKey: ['teacher-class-arms', token],
     queryFn: async () => {
-      const res = await api.get('/teachers/me', token);
-      const data = await unwrapRes<any>(res);
-      return (data.classArms || []) as any[];
+      try {
+        const res = await api.get('/teachers/me', token);
+        const data = await unwrapRes<any>(res);
+        return (data.classArms || []) as any[];
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            return (bundle.arms || []).map((a) => ({
+              id: a.id,
+              class: { id: a.classId, name: a.className },
+              letter: a.letter,
+              alias: a.alias,
+            }));
+          }
+        }
+        throw err;
+      }
     },
   });
 

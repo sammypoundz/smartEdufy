@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { useAuth } from "../contexts/AuthContext";
 import {
@@ -31,14 +31,115 @@ import {
 } from "./SampleDataScreens";
 
 // ============================ Floating Button ============================
+const EDUFY_POS_KEY = "edufy-button-pos";
+const BTN = 56; // button is h-14 w-14
+const MARGIN = 8;
+
+/** Button position in px from the top-left of the viewport. */
+interface EdufyPos {
+  x: number;
+  y: number;
+}
+
+const defaultPos = (): EdufyPos => ({
+  // Matches the previous right-6 bottom-6 anchor.
+  x: window.innerWidth - BTN - 24,
+  y: window.innerHeight - BTN - 24,
+});
+
+function loadSavedPos(): EdufyPos {
+  try {
+    const raw = localStorage.getItem(EDUFY_POS_KEY);
+    if (!raw) return defaultPos();
+    const p = JSON.parse(raw) as EdufyPos;
+    if (typeof p.x !== "number" || typeof p.y !== "number") return defaultPos();
+    return p;
+  } catch {
+    return defaultPos();
+  }
+}
+
 function FloatingEdufyButton() {
   const { open, togglePanel } = useEdufy();
+  const [pos, setPos] = useState<EdufyPos>(loadSavedPos);
+  const [dragging, setDragging] = useState(false);
+  const dragState = useRef<{
+    startX: number;
+    startY: number;
+    startPos: EdufyPos;
+    moved: boolean;
+  } | null>(null);
+
+  // Constrain to the viewport and persist whenever the position changes.
+  const updatePos = useCallback((x: number, y: number) => {
+    const clamped = {
+      x: Math.min(Math.max(x, MARGIN), Math.max(window.innerWidth - BTN - MARGIN, MARGIN)),
+      y: Math.min(Math.max(y, MARGIN), Math.max(window.innerHeight - BTN - MARGIN, MARGIN)),
+    };
+    setPos(clamped);
+    localStorage.setItem(EDUFY_POS_KEY, JSON.stringify(clamped));
+  }, []);
+
+  // Keep a saved position inside the viewport if the window shrank.
+  useEffect(() => {
+    const onResize = () => updatePos(pos.x, pos.y);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, [pos, updatePos]);
+
+  const onPointerDown = (e: React.PointerEvent) => {
+    if (e.button !== 0) return;
+    dragState.current = {
+      startX: e.clientX,
+      startY: e.clientY,
+      startPos: pos,
+      moved: false,
+    };
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const onPointerMove = (e: React.PointerEvent) => {
+    const ds = dragState.current;
+    if (!ds) return;
+    const dx = e.clientX - ds.startX;
+    const dy = e.clientY - ds.startY;
+    if (!ds.moved && Math.abs(dx) + Math.abs(dy) < 6) return; // still a tap
+    ds.moved = true;
+    setDragging(true);
+    updatePos(ds.startPos.x + dx, ds.startPos.y + dy);
+  };
+
+  const onPointerUp = (e: React.PointerEvent) => {
+    const ds = dragState.current;
+    dragState.current = null;
+    setDragging(false);
+    try {
+      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
+    } catch {
+      /* pointer already released */
+    }
+    if (ds && !ds.moved) togglePanel(); // plain tap — open/close as usual
+  };
+
   return (
     <button
-      onClick={togglePanel}
+      onClick={dragging ? undefined : togglePanel}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      style={{
+        left: pos.x,
+        top: pos.y,
+        right: "auto",
+        bottom: "auto",
+        touchAction: "none", // let pointer events handle touch drags
+        cursor: dragging ? "grabbing" : "grab",
+        transition: dragging ? "none" : undefined,
+      }}
       aria-label={open ? "Close Edufy AI assistant" : "Open Edufy AI assistant"}
       aria-expanded={open}
-      className="group fixed bottom-24 right-5 z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-600/40 outline-none transition-all duration-300 hover:scale-105 focus-visible:ring-4 focus-visible:ring-blue-300 md:bottom-6 md:right-6"
+      title="Drag to reposition · tap to open"
+      className="group fixed z-[60] flex h-14 w-14 select-none items-center justify-center rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-600/40 outline-none transition-colors duration-300 hover:scale-105 focus-visible:ring-4 focus-visible:ring-blue-300"
     >
       {/* glow pulse */}
       <span

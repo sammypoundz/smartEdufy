@@ -1,4 +1,5 @@
 import api from './api';
+import { offlineAwareFetch, type OfflineBundleData } from '../offline/fallback';
 
 export interface ArmAssignment {
   armId: string;
@@ -11,6 +12,20 @@ export interface ArmAssignment {
 }
 
 export const getMyAssignments = async (): Promise<ArmAssignment[]> => {
-  const res = await api.get('/arms/my-assignments');
-  return res.data;
+  return offlineAwareFetch<ArmAssignment[]>(
+    async () => {
+      const res = await api.get('/arms/my-assignments');
+      return res.data;
+    },
+    (bundle: OfflineBundleData) =>
+      (bundle.arms ?? []).map((a) => ({
+        armId: a.id,
+        armName: a.letter,
+        armIdName: a.alias ? `${a.className} ${a.alias}` : `${a.className} ${a.letter}`,
+        classId: a.classId,
+        className: a.className,
+        isFormTeacher: a.isFormTeacher,
+        subjectNames: (a.subjects ?? []).map((s) => s.name),
+      })),
+  );
 };

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { api } from '../../utils/api';
+import { getCachedBundleData, isNetworkError, type OfflineBundleData } from '../../offline/fallback';
 import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import {
@@ -60,6 +61,33 @@ const DEFAULT_TIME_SLOTS = [
 ];
 
 const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'];
+
+/* Convert a bundle timetable dayOfWeek (1–5) to a day name. */
+const dayName = (d: number | string) =>
+  typeof d === 'number' ? daysOfWeek[d - 1] || String(d) : d;
+
+/* Offline fallbacks from the cached bundle. */
+function bundleClasses(bundle: OfflineBundleData): Class[] {
+  const byClass = new Map<string, Class>();
+  for (const a of bundle.arms ?? []) {
+    const c = byClass.get(a.classId) ?? { id: a.classId, name: a.className, arms: [] };
+    c.arms.push({ id: a.id, letter: a.letter, classId: a.classId });
+    byClass.set(a.classId, c);
+  }
+  return Array.from(byClass.values());
+}
+function bundleTimetable(bundle: OfflineBundleData, armId: string): TimetableEntry[] {
+  return (bundle.timetable ?? [])
+    .filter((t) => t.armId === armId)
+    .map((t) => ({
+      id: t.id,
+      armId: t.armId,
+      dayOfWeek: dayName(t.dayOfWeek),
+      timeSlot: t.timeSlot,
+      subjectId: t.subjectId,
+      subject: t.subject,
+    }));
+}
 
 // Any slot whose name marks it as a non-instructional break period.
 // Case-insensitive so "Break", "Lunch", "Short Break", "RECESS", etc. all count.
@@ -168,7 +196,14 @@ export default function TimetablePage() {
         } else {
           toast.error('Failed to load classes');
         }
-      } catch {
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            setClasses(bundleClasses(bundle));
+            return;
+          }
+        }
         toast.error('Could not load classes');
       }
     };
@@ -180,7 +215,14 @@ export default function TimetablePage() {
           const data = await res.json() as Subject[];
           setSubjects(data);
         }
-      } catch {
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle?.subjects?.length) {
+            setSubjects(bundle.subjects);
+            return;
+          }
+        }
         toast.error('Could not load subjects');
       }
     };
@@ -219,7 +261,18 @@ export default function TimetablePage() {
         } else {
           setTimetableEntries([]);
         }
-      } catch {
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            const entries = bundleTimetable(bundle, selectedArmId);
+            setTimetableEntries(entries);
+            const slots = Array.from(new Set(entries.map((e) => e.timeSlot)))
+              .sort((a, b) => DEFAULT_TIME_SLOTS.indexOf(a) - DEFAULT_TIME_SLOTS.indexOf(b));
+            setTimeSlots(slots.length ? slots : DEFAULT_TIME_SLOTS);
+            return;
+          }
+        }
         toast.error('Failed to load timetable');
         setTimetableEntries([]);
       } finally {

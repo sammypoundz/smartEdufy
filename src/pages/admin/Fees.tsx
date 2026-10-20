@@ -514,41 +514,84 @@ export default function AdminFees() {
   // Summary
   // ============================================================
 
-  const totalFeesAllStudents = useMemo(() => {
-    return filteredFeeStructures.reduce(
-      (sum, fee) => {
-        const studentCount =
-          studentCountByClass[
-            fee.className
-          ] || 0;
+  /** Fee-structure ids grouped by class (for matching payments). */
+  const feeIdsByClass = useMemo(() => {
+    const map = new Map<string, string[]>();
+    for (const fee of filteredFeeStructures) {
+      map.set(fee.className, [...(map.get(fee.className) || []), fee.id]);
+    }
+    return map;
+  }, [filteredFeeStructures]);
 
-        return (
-          sum +
-          fee.totalAmount *
-            studentCount
-        );
-      },
+  /** Per-class fee stats: expected, collected, outstanding. */
+  const classFeeSummary = useMemo(() => {
+    const map: Record<
+      string,
+      {
+        students: number;
+        breakdownSum: number;
+        expected: number;
+        collected: number;
+        outstanding: number;
+      }
+    > = {};
+
+    for (const fee of filteredFeeStructures) {
+      const entry =
+        map[fee.className] ||
+        (map[fee.className] = {
+          students: studentCountByClass[fee.className] || 0,
+          breakdownSum: 0,
+          expected: 0,
+          collected: 0,
+          outstanding: 0,
+        });
+
+      const breakdownSum = fee.breakdown.reduce(
+        (s, item) => s + item.amount,
+        0
+      );
+      entry.breakdownSum += breakdownSum;
+      entry.expected += breakdownSum * entry.students;
+    }
+
+    for (const payment of filteredPayments) {
+      for (const [className, feeIds] of feeIdsByClass) {
+        if (feeIds.includes(payment.feeStructureId)) {
+          map[className].collected += payment.amountPaid;
+          break;
+        }
+      }
+    }
+
+    for (const entry of Object.values(map)) {
+      entry.outstanding = Math.max(0, entry.expected - entry.collected);
+    }
+
+    return map;
+  }, [filteredFeeStructures, filteredPayments, studentCountByClass, feeIdsByClass]);
+
+  /** Totals: sum of the per-class figures above. */
+  const totalFeesAllStudents = useMemo(() => {
+    return Object.values(classFeeSummary).reduce(
+      (sum, c) => sum + c.expected,
       0
     );
-  }, [
-    filteredFeeStructures,
-    studentCountByClass,
-  ]);
+  }, [classFeeSummary]);
 
   const totalCollected = useMemo(() => {
-    return filteredPayments.reduce(
-      (sum, payment) =>
-        sum + payment.amountPaid,
+    return Object.values(classFeeSummary).reduce(
+      (sum, c) => sum + c.collected,
       0
     );
-  }, [filteredPayments]);
+  }, [classFeeSummary]);
 
-  const totalOutstanding =
-    Math.max(
-      0,
-      totalFeesAllStudents -
-        totalCollected
+  const totalOutstanding = useMemo(() => {
+    return Object.values(classFeeSummary).reduce(
+      (sum, c) => sum + c.outstanding,
+      0
     );
+  }, [classFeeSummary]);
 
   const classes = [
     ...new Set(
@@ -1538,6 +1581,10 @@ export default function AdminFees() {
                         </th>
 
                         <th className="px-3 py-4 text-left text-sm font-semibold">
+                          Students
+                        </th>
+
+                        <th className="px-3 py-4 text-left text-sm font-semibold">
                           Term
                         </th>
 
@@ -1547,6 +1594,18 @@ export default function AdminFees() {
 
                         <th className="px-3 py-4 text-left text-sm font-semibold">
                           Total (₦)
+                        </th>
+
+                        <th className="px-3 py-4 text-left text-sm font-semibold">
+                          Expected (₦)
+                        </th>
+
+                        <th className="px-3 py-4 text-left text-sm font-semibold">
+                          Collected (₦)
+                        </th>
+
+                        <th className="px-3 py-4 text-left text-sm font-semibold">
+                          Outstanding (₦)
                         </th>
 
                         <th className="px-3 py-4 text-left text-sm font-semibold">
@@ -1570,7 +1629,7 @@ export default function AdminFees() {
                       0 ? (
                         <tr>
                           <td
-                            colSpan={6}
+                            colSpan={10}
                             className={`py-12 text-center ${mutedText}`}
                           >
                             No fee structures
@@ -1589,6 +1648,20 @@ export default function AdminFees() {
                                 className={`whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium ${headingText}`}
                               >
                                 {fee.className}
+                              </td>
+
+                              <td
+                                className={`whitespace-nowrap px-3 py-4 text-sm ${bodyText}`}
+                              >
+                                {
+                                  classFeeSummary[fee.className]
+                                    ?.students ?? 0
+                                }{' '}
+                                <span
+                                  className={`text-xs ${mutedText}`}
+                                >
+                                  students
+                                </span>
                               </td>
 
                               <td
@@ -1626,7 +1699,47 @@ export default function AdminFees() {
                                 className={`whitespace-nowrap px-3 py-4 text-sm font-semibold ${headingText}`}
                               >
                                 ₦
-                                {fee.totalAmount.toLocaleString()}
+                                {fee.breakdown
+                                  .reduce(
+                                    (s, item) =>
+                                      s + item.amount,
+                                    0
+                                  )
+                                  .toLocaleString()}
+                              </td>
+
+                              <td
+                                className={`whitespace-nowrap px-3 py-4 text-sm font-semibold ${headingText}`}
+                              >
+                                ₦
+                                {(
+                                  classFeeSummary[fee.className]
+                                    ?.expected ?? 0
+                                ).toLocaleString()}
+                              </td>
+
+                              <td
+                                className={`whitespace-nowrap px-3 py-4 text-sm font-semibold ${headingText}`}
+                              >
+                                ₦
+                                {(
+                                  classFeeSummary[fee.className]
+                                    ?.collected ?? 0
+                                ).toLocaleString()}
+                              </td>
+
+                              <td
+                                className={`whitespace-nowrap px-3 py-4 text-sm font-semibold ${
+                                  (classFeeSummary[fee.className]?.outstanding ?? 0) > 0
+                                    ? 'text-red-500 dark:text-red-400'
+                                    : 'text-green-500 dark:text-green-400'
+                                }`}
+                              >
+                                ₦
+                                {(
+                                  classFeeSummary[fee.className]
+                                    ?.outstanding ?? 0
+                                ).toLocaleString()}
                               </td>
 
                               <td

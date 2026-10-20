@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../utils/api';
+import { getCachedBundleData, isNetworkError } from '../../offline/fallback';
 import { unwrapRes, getErrorMessage } from '../../hooks/queryHelpers';
 import {
   BookOpenIcon,
@@ -19,23 +20,42 @@ export default function TeacherSubjects() {
   const { data: subjects = [], isLoading: loading, error } = useQuery({
     queryKey: ['teacher-subjects', token],
     queryFn: async () => {
-      const res = await api.get('/teachers/me', token);
-      const data = await unwrapRes<any>(res);
-      // The API returns assignments as subjectArms[] (subject + arm per row).
-      // Deduplicate by subject id (a teacher may teach the same subject in multiple arms).
-      const assignments: any[] = data.subjectArms || [];
-      const unique = new Map<string, any>();
-      for (const sa of assignments) {
-        if (sa.subject && !unique.has(sa.subject.id)) {
-          unique.set(sa.subject.id, {
-            ...sa.subject,
-            arms: assignments
-              .filter((a: any) => a.subject?.id === sa.subject.id && a.arm)
-              .map((a: any) => a.arm),
-          });
+      try {
+        const res = await api.get('/teachers/me', token);
+        const data = await unwrapRes<any>(res);
+        // The API returns assignments as subjectArms[] (subject + arm per row).
+        // Deduplicate by subject id (a teacher may teach the same subject in multiple arms).
+        const assignments: any[] = data.subjectArms || [];
+        const unique = new Map<string, any>();
+        for (const sa of assignments) {
+          if (sa.subject && !unique.has(sa.subject.id)) {
+            unique.set(sa.subject.id, {
+              ...sa.subject,
+              arms: assignments
+                .filter((a: any) => a.subject?.id === sa.subject.id && a.arm)
+                .map((a: any) => a.arm),
+            });
+          }
         }
+        return Array.from(unique.values());
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            // Derive subject → arms from the bundle's arms[].subjects.
+            const bySubject = new Map<string, any>();
+            for (const a of bundle.arms || []) {
+              for (const s of a.subjects || []) {
+                const e = bySubject.get(s.id) ?? { ...s, arms: [] };
+                e.arms.push({ id: a.id, letter: a.letter, alias: a.alias, class: { name: a.className } });
+                bySubject.set(s.id, e);
+              }
+            }
+            return Array.from(bySubject.values());
+          }
+        }
+        throw err;
       }
-      return Array.from(unique.values());
     },
   });
   const errText = error

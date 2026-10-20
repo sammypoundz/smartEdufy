@@ -6,6 +6,7 @@ import {
 } from "@tanstack/react-query";
 import toast from "react-hot-toast";
 import { api } from "../utils/api";
+import { offlineAwareFetch, type OfflineBundleData } from "../offline/fallback";
 
 export interface Student {
   id: string;
@@ -33,11 +34,57 @@ async function fetchJson<T>(resOrPromise: Response | Promise<Response>): Promise
   return res.json() as Promise<T>;
 }
 
+/* Map cached offline-bundle students to the hook's Student shape. */
+function mapBundleStudents(bundle: OfflineBundleData): Student[] {
+  const classesById = new Map<string, { id: string; name: string }>();
+  for (const arm of bundle.arms ?? []) {
+    classesById.set(arm.classId, { id: arm.classId, name: arm.className });
+  }
+  const armsById = new Map<string, { id: string; letter: string; alias?: string }>();
+  for (const arm of bundle.arms ?? []) {
+    armsById.set(arm.id, { id: arm.id, letter: arm.letter, alias: arm.alias });
+  }
+  return (bundle.students ?? []).map((s) => ({
+    id: s.id,
+    name: s.name,
+    gender: s.gender,
+    admissionNumber: s.admissionNumber,
+    isActive: true,
+    class: s.classId ? classesById.get(s.classId) : undefined,
+    arm: s.armId ? armsById.get(s.armId) : undefined,
+  }));
+}
+
+/* Map cached offline-bundle arms to the hook's ClassOption shape. */
+function mapBundleClasses(bundle: OfflineBundleData): ClassOption[] {
+  const byClass = new Map<string, ClassOption>();
+  for (const arm of bundle.arms ?? []) {
+    const existing = byClass.get(arm.classId);
+    if (existing) {
+      existing.arms = [
+        ...(existing.arms ?? []),
+        { id: arm.id, letter: arm.letter, alias: arm.alias },
+      ];
+    } else {
+      byClass.set(arm.classId, {
+        id: arm.classId,
+        name: arm.className,
+        arms: [{ id: arm.id, letter: arm.letter, alias: arm.alias }],
+      });
+    }
+  }
+  return Array.from(byClass.values());
+}
+
 /** Cached students list — dedupes concurrent calls, caches for 1 min */
 export function useStudents(token: string | null) {
   return useQuery<Student[]>({
     queryKey: ["students"],
-    queryFn: () => fetchJson<Student[]>(api.get("/students", token)),
+    queryFn: () =>
+      offlineAwareFetch<Student[]>(
+        () => fetchJson<Student[]>(api.get("/students", token)),
+        (bundle) => mapBundleStudents(bundle),
+      ),
     enabled: !!token,
     placeholderData: keepPreviousData, // keep old list visible while refetching
   });
@@ -47,7 +94,11 @@ export function useStudents(token: string | null) {
 export function useClasses(token: string | null) {
   return useQuery<ClassOption[]>({
     queryKey: ["classes"],
-    queryFn: () => fetchJson<ClassOption[]>(api.get("/classes", token)),
+    queryFn: () =>
+      offlineAwareFetch<ClassOption[]>(
+        () => fetchJson<ClassOption[]>(api.get("/classes", token)),
+        (bundle) => mapBundleClasses(bundle),
+      ),
     enabled: !!token,
     staleTime: 10 * 60 * 1000, // classes rarely change
   });

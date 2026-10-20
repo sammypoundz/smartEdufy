@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { api } from "../../utils/api";
+import { getCachedBundleData, isNetworkError } from "../../offline/fallback";
 import toast from "react-hot-toast";
 import {
   ArrowPathIcon,
@@ -21,6 +22,10 @@ import {
 } from "@heroicons/react/24/outline";
 
 const DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday"];
+
+/* Convert a bundle timetable dayOfWeek (1–5) to a day name. */
+const dayName = (d: number | string) =>
+  typeof d === "number" ? DAYS[d - 1] || String(d) : d;
 const TIME_SLOTS = [
   "8:00–8:45",
   "8:45–9:30",
@@ -143,7 +148,36 @@ export default function TimetableWorkflowPage() {
   const fetchTeacher = useCallback(async () => {
     setTeacherLoading(true);
     try {
-      const res = await api.get("/timetable-workflow/mine", token);
+      let res: Response | null = null;
+      try {
+        res = await api.get("/timetable-workflow/mine", token);
+      } catch (err) {
+        if (isNetworkError(err)) {
+          const bundle = await getCachedBundleData();
+          if (bundle) {
+            setAssignments(
+              (bundle.arms ?? []).map((a, i) => ({
+                id: a.id,
+                armId: a.id,
+                armLabel: `${a.className} ${a.letter}`.trim(),
+                periodsPerWeek: 0,
+                slots: (bundle.timetable ?? [])
+                  .filter((t) => t.armId === a.id)
+                  .map((t) => ({ dayOfWeek: dayName(t.dayOfWeek), timeSlot: t.timeSlot, subjectId: t.subjectId })),
+              })) as any,
+            );
+            setReviews([]);
+            setDrafts(
+              Object.fromEntries(
+                (bundle.arms ?? []).map((a) => [a.id, (bundle.timetable ?? []).filter((t) => t.armId === a.id).map((t) => ({ dayOfWeek: dayName(t.dayOfWeek), timeSlot: t.timeSlot, subjectId: t.subjectId }))]),
+              ),
+            );
+            return;
+          }
+        }
+        toast.error("Failed to load your assignments");
+        return;
+      }
       if (!res.ok) return toast.error("Failed to load your assignments");
       const data = await res.json();
       setAssignments(data.assignments || []);
