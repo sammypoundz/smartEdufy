@@ -75,7 +75,7 @@ export default function TeacherDashboard() {
             const todayName = DAYS[(new Date().getDay() + 6) % 7] || '';
             const dayIndex = DAYS.indexOf(todayName) + 1;
             timetable = (bundle.timetable || [])
-              .filter((t) => t.dayOfWeek === dayIndex || t.dayOfWeek === todayName)
+              .filter((t) => String(t.dayOfWeek) === String(dayIndex))
               .map((t) => {
                 const arm = (bundle.arms || []).find((a) => a.id === t.armId);
                 return {

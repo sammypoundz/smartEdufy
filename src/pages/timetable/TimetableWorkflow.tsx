@@ -156,7 +156,7 @@ export default function TimetableWorkflowPage() {
           const bundle = await getCachedBundleData();
           if (bundle) {
             setAssignments(
-              (bundle.arms ?? []).map((a, i) => ({
+              (bundle.arms ?? []).map((a) => ({
                 id: a.id,
                 armId: a.id,
                 armLabel: `${a.className} ${a.letter}`.trim(),
