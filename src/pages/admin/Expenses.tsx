@@ -6,6 +6,7 @@ import { getErrorMessage, unwrap } from '../../hooks/queryHelpers';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import NumberInput from '../../components/NumberInput';
 import {
   PlusIcon,
   PencilIcon,
@@ -756,7 +757,7 @@ export default function AdminExpensesAndBudgets() {
                   </div>
                   <div>
                     <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Budget Amount (₦) *</label>
-                    <input type="number" name="amount" value={budgetForm.amount} onChange={(e) => setBudgetForm({ ...budgetForm, amount: e.target.value })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="0" min="0" step="100" />
+                    <input type="text" inputMode="decimal" name="amount" value={budgetForm.amount ? Number(String(budgetForm.amount).replace(/,/g, '')).toLocaleString() : ''} onChange={(e) => setBudgetForm({ ...budgetForm, amount: e.target.value.replace(/,/g, '') })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="0" min="0" step="100" />
                   </div>
                   <div>
                     <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Month/Year *</label>
@@ -786,7 +787,7 @@ export default function AdminExpensesAndBudgets() {
                 </div>
                 <div className="p-6 space-y-4">
                   <div><label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Description *</label><input type="text" name="description" value={expenseForm.description} onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400' : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500'}`} placeholder="e.g., Office Supplies" /></div>
-                  <div><label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Amount (₦) *</label><input type="number" name="amount" value={expenseForm.amount} onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} min="0" step="0.01" /></div>
+                  <div><label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Amount (₦) *</label><NumberInput name="amount" value={expenseForm.amount} onChange={(raw) => setExpenseForm({ ...expenseForm, amount: raw })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} placeholder="0" /></div>
                   <div><label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Category *</label><select name="category" value={expenseForm.category} onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`}>{CATEGORIES.map(cat => <option key={cat}>{cat}</option>)}</select></div>
                   <div><label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Date *</label><input type="date" name="date" value={expenseForm.date} onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })} className={`w-full px-3 py-2 rounded-lg border focus:outline-none focus:ring-2 ${theme === 'dark' ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-gray-300 text-gray-900'}`} /></div>
                 </div>

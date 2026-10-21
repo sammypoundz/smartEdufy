@@ -7,6 +7,7 @@ import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import NumberInput from '../../components/NumberInput';
 
 import {
   PencilIcon,
@@ -2461,17 +2462,14 @@ export default function AdminFees() {
                               className={`flex-1 px-3 py-2.5 rounded-lg border focus:outline-none focus:ring-2 ${inputClass}`}
                             />
 
-                            <input
-                              type="number"
+                            <NumberInput
                               min="0"
-                              value={item.amount !== null && item.amount !== undefined ? item.amount : ''}
-                              onChange={(
-                                e
-                              ) =>
+                              value={item.amount}
+                              onChange={(raw) =>
                                 updateBreakdown(
                                   idx,
                                   'amount',
-                                  e.target.value === '' ? null : Number(e.target.value)
+                                  raw === '' ? null : Number(raw)
                                 )
                               }
                               placeholder="Amount"
@@ -3496,8 +3494,7 @@ export default function AdminFees() {
                                     </label>
 
                                     <div className="flex items-center gap-2">
-                                      <input
-                                        type="number"
+                                      <NumberInput
                                         min="0"
                                         max={
                                           owed
@@ -3515,17 +3512,11 @@ export default function AdminFees() {
                                             ?.amount ??
                                           owed
                                         }
-                                        onChange={(
-                                          e
-                                        ) =>
+                                        onChange={(raw) =>
                                           updateItemAmount(
                                             feeId,
                                             itemName,
-                                            Number(
-                                              e
-                                                .target
-                                                .value
-                                            )
+                                            raw === '' ? 0 : Number(raw)
                                           )
                                         }
                                         className={`w-40 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${inputClass}`}

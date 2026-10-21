@@ -118,15 +118,27 @@ function FloatingEdufyButton() {
     } catch {
       /* pointer already released */
     }
-    if (ds && !ds.moved) togglePanel(); // plain tap — open/close as usual
+    // Tap (no drag): toggle here. Do NOT also use onClick — the browser fires
+    // click after pointerup, which would toggle twice (open then instantly
+    // close), while a drag would toggle exactly once via that stray click.
+    if (ds && !ds.moved) togglePanel();
+    e.preventDefault(); // swallow the synthetic click that follows pointerup
+  };
+
+  // Keyboard accessibility (Enter/Space) since onClick is intentionally unused.
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      togglePanel();
+    }
   };
 
   return (
     <button
-      onClick={dragging ? undefined : togglePanel}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
+      onKeyDown={onKeyDown}
       style={{
         left: pos.x,
         top: pos.y,

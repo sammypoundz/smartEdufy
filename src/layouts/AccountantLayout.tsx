@@ -3,7 +3,7 @@ import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { effectivePrivileges } from "../utils/privileges";
+import { effectivePrivileges, ALL_PRIVILEGES } from "../utils/privileges";
 import LogoutConfirmModal from "../components/LogoutConfirmModal";
 import { api } from "../utils/api";
 import {
@@ -18,14 +18,24 @@ import {
   Bars3Icon,
   XMarkIcon,
   BuildingLibraryIcon,
+  AcademicCapIcon,
+  UsersIcon,
+  CubeIcon,
+  ChatBubbleLeftRightIcon,
+  ClipboardDocumentListIcon,
+  CalendarDaysIcon,
+  BookOpenIcon,
+  ClockIcon,
+  AdjustmentsHorizontalIcon,
   ChevronRightIcon,
 } from "@heroicons/react/24/outline";
 
 // ---------- Accountant menus ----------
 // Each item is tied to a page privilege key. The default accountant
 // privileges (see SYSTEM_ROLE_PRIVILEGES in utils/privileges.ts) are:
-//   fees, expenses, reports, payroll
-// An admin can grant more privileges (or restrict these) via
+//   fees, expenses, payroll   (Reports is intentionally NOT granted to
+//   accountants — financial reports are restricted to admin/bursar roles)
+// An admin can still grant extra privileges (e.g. reports) via
 // User Management / Roles & Privileges, and the menu adapts automatically.
 const menus: {
   name: string;
@@ -55,13 +65,6 @@ const menus: {
     privilege: "payroll",
     desc: "Staff salaries & payment runs",
   },
-  {
-    name: "Reports",
-    href: "/accountant/reports",
-    icon: ChartBarIcon,
-    privilege: "reports",
-    desc: "Financial statements & summaries",
-  },
 ];
 
 // Always-available pages
@@ -73,6 +76,46 @@ const alwaysVisible = [
     privilege: undefined,
   },
 ];
+
+// Icons for extra privileges an admin may grant beyond the finance defaults.
+const EXTRA_PRIVILEGE_ICONS: Record<string, typeof HomeIcon> = {
+  students: AcademicCapIcon,
+  staff: UsersIcon,
+  inventory: CubeIcon,
+  reports: ChartBarIcon,
+  messaging: ChatBubbleLeftRightIcon,
+  "audit-logs": ClipboardDocumentListIcon,
+  academic: CalendarDaysIcon,
+  classes: AcademicCapIcon,
+  subjects: BookOpenIcon,
+  timetable: ClockIcon,
+};
+
+// Privileges that don't map to an accountant-portal or admin page link.
+const NON_LINKABLE_PRIVILEGES = new Set([
+  "fees", "expenses", "payroll", // already in the Finance section
+  "reports",
+  "settings", // admin-only
+  "users", "roles", "question-review", // no standalone renderable page here
+]);
+
+/** Extra (non-finance) privileges the accountant holds → admin sidebar links. */
+function extraMenus(privileges: string[]) {
+  const seen = new Set(menus.map((m) => m.privilege));
+  return ALL_PRIVILEGES.filter(
+    (p) =>
+      privileges.includes(p.key) &&
+      !seen.has(p.key) &&
+      !NON_LINKABLE_PRIVILEGES.has(p.key) &&
+      (p.adminHref || p.href),
+  ).map((p) => ({
+    name: p.label,
+    href: p.adminHref || p.href!,
+    icon: EXTRA_PRIVILEGE_ICONS[p.key] || AdjustmentsHorizontalIcon,
+    privilege: p.key,
+    desc: p.group,
+  }));
+}
 
 export default function AccountantLayout() {
   const { user, logout, token } = useAuth();
@@ -92,6 +135,7 @@ export default function AccountantLayout() {
   });
 
   const allowedMenus = menus.filter((m) => privileges.includes(m.privilege));
+  const extraMenusList = extraMenus(privileges);
 
   // ---------- School name (top bar) ----------
   const { data: topBar } = useQuery({
@@ -202,6 +246,38 @@ export default function AccountantLayout() {
             </Link>
           ))}
 
+          {extraMenusList.length > 0 && (
+            <>
+              <p
+                className={`px-3 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wider ${dark ? "text-gray-500" : "text-gray-400"}`}
+              >
+                More
+              </p>
+              {extraMenusList.map((m) => (
+                <Link
+                  key={m.name}
+                  to={m.href}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-colors ${
+                    isActive(m.href)
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                      : dark
+                        ? "text-gray-300 hover:bg-white/5"
+                        : "text-gray-600 hover:bg-blue-50 hover:text-blue-700"
+                  }`}
+                >
+                  <m.icon
+                    className={`h-5 w-5 flex-shrink-0 ${isActive(m.href) ? "text-white" : "text-blue-500"}`}
+                  />
+                  <span className="flex-1">{m.name}</span>
+                  <ChevronRightIcon
+                    className={`h-4 w-4 transition-transform group-hover:translate-x-0.5 ${isActive(m.href) ? "text-white/70" : dark ? "text-gray-600" : "text-gray-300"}`}
+                  />
+                </Link>
+              ))}
+            </>
+          )}
+
           <p
             className={`px-3 pt-4 pb-2 text-[11px] font-semibold uppercase tracking-wider ${dark ? "text-gray-500" : "text-gray-400"}`}
           >
@@ -278,8 +354,8 @@ export default function AccountantLayout() {
               <p
                 className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}
               >
-                {allowedMenus.length} module
-                {allowedMenus.length === 1 ? "" : "s"} unlocked for your role
+                {allowedMenus.length + extraMenusList.length} module
+                {allowedMenus.length + extraMenusList.length === 1 ? "" : "s"} unlocked for your role
               </p>
             </div>
           </div>

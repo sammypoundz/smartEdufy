@@ -231,7 +231,8 @@ function App() {
             <Route path="fees" element={<AdminFees />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="payroll" element={<AdminPayroll />} />
-            <Route path="reports" element={<AdminReports />} />
+            {/* NOTE: no /accountant/reports route — Reports is not part of the
+                accountant role. Admin-granted 'reports' opens /admin/reports. */}
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
             <Route path="profile" element={<Profile />} />

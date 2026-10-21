@@ -224,6 +224,9 @@ export default function AdminSettings() {
     enabled: false, // fetched lazily when the term picker opens
   });
 
+  /** Backend-computed next ID per role (effective counter = max(stored, issued IDs)). */
+  const [idPreviews, setIdPreviews] = useState<Record<string, string>>({});
+
   // Sync query data into local editable state
   useEffect(() => {
     const d = settingsQuery.data;
@@ -244,6 +247,28 @@ export default function AdminSettings() {
         return [role, { format: saved?.format ?? DEFAULT_ID_FORMATS[role] }];
       })
     ));
+  }, [settingsQuery.data]);
+
+  // Fetch the authoritative next-ID preview per role from the backend so the
+  // Settings page agrees with the Users page and the live counter (which
+  // self-heals past already-issued IDs via computeUsedFloorCounter).
+  useEffect(() => {
+    if (!settingsQuery.data) return;
+    let cancelled = false;
+    (async () => {
+      const entries = await Promise.all(ID_ROLES.map(async role => {
+        try {
+          const res = await api.get(`/settings/id-generator/preview?role=${role}`);
+          if (res.ok) {
+            const data = await res.json() as { nextId?: string };
+            return [role, data.nextId || ''] as const;
+          }
+        } catch { /* preview is best-effort */ }
+        return [role, ''] as const;
+      }));
+      if (!cancelled) setIdPreviews(Object.fromEntries(entries));
+    })();
+    return () => { cancelled = true; };
   }, [settingsQuery.data]);
 
   useEffect(() => {
@@ -667,7 +692,13 @@ export default function AdminSettings() {
             {ID_ROLES.map(role => {
               const saved = idConfigs.find(c => c.role === role);
               const draft = idDrafts[role]?.format ?? DEFAULT_ID_FORMATS[role];
-              const preview = renderIdPreview(draft, (saved?.counter ?? 0) + 1, role);
+              // Backend preview is authoritative (accounts for issued IDs &
+              // yearly reset). Fall back to a local render while loading, and
+              // to a local render of the edited draft once the admin changes it.
+              const isDirty = idDrafts[role] && idDrafts[role].format !== saved?.format;
+              const preview = isDirty
+                ? renderIdPreview(draft, (saved?.counter ?? 0) + 1, role)
+                : (idPreviews[role] || renderIdPreview(draft, (saved?.counter ?? 0) + 1, role));
               return (
                 <div key={role} className={`rounded-2xl border p-4 ${theme === 'dark' ? 'border-gray-700 bg-gray-800/30' : 'border-gray-200 bg-gray-50/60'}`}>
                   <div className="flex flex-col md:flex-row md:items-end gap-3">

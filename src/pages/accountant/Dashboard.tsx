@@ -9,7 +9,6 @@ import {
   BanknotesIcon,
   ReceiptPercentIcon,
   CurrencyDollarIcon,
-  ChartBarIcon,
   ArrowTrendingUpIcon,
   ArrowTrendingDownIcon,
   ArrowRightIcon,
@@ -48,6 +47,12 @@ interface Expense {
   amount: number;
   category: string;
   date: string;
+}
+interface Budget {
+  id: string;
+  category: string;
+  amount: number;
+  monthYear: string;
 }
 interface PayrollEntry {
   id: string;
@@ -93,16 +98,17 @@ export default function AccountantDashboard() {
         }
       };
 
-      const [feeStructures, students, payments, expenses, payroll] =
+      const [feeStructures, students, payments, expenses, payroll, budgets] =
         await Promise.all([
           safe<FeeStructure[]>("/fees/structures", []),
           safe<Student[]>("/students", []),
           safe<Payment[]>("/fees/payments?limit=500", []),
           safe<Expense[]>("/expenses", []),
           safe<PayrollEntry[]>("/payroll", []),
+          safe<Budget[]>("/budgets", []),
         ]);
 
-      return { feeStructures, students, payments, expenses, payroll };
+      return { feeStructures, students, payments, expenses, payroll, budgets };
     },
   });
 
@@ -111,25 +117,15 @@ export default function AccountantDashboard() {
   const payments = data?.payments ?? [];
   const expenses = data?.expenses ?? [];
   const payroll = data?.payroll ?? [];
+  const budgets = data?.budgets ?? [];
 
   // ---------- Derived metrics ----------
-  const studentCountByClass = useMemo(() => {
-    const map: Record<string, number> = {};
-    for (const s of students) {
-      const cls = s.class?.name || "";
-      if (cls) map[cls] = (map[cls] || 0) + 1;
-    }
-    return map;
-  }, [students]);
-
   const totalExpected = useMemo(
     () =>
-      feeStructures.reduce(
-        (sum, f) =>
-          sum + (f.totalAmount || 0) * (studentCountByClass[f.className] || 0),
-        0,
-      ),
-    [feeStructures, studentCountByClass],
+      // totalAmount is already the class-wide total (per-student fee x student
+      // count), computed when the structure was created — don't multiply again.
+      feeStructures.reduce((sum, f) => sum + (f.totalAmount || 0), 0),
+    [feeStructures],
   );
 
   const totalCollected = useMemo(
@@ -142,10 +138,12 @@ export default function AccountantDashboard() {
     () => expenses.reduce((sum, e) => sum + (e.amount || 0), 0),
     [expenses],
   );
-  const netPosition = totalCollected - totalExpenses;
 
   const now = new Date();
   const thisMonthStr = now.toLocaleString("en-US", { month: "long" });
+  // Payroll months are stored as "YYYY-MM" (see admin Payroll page), not as
+  // the month name — compare in the same format or this month's entries never match.
+  const thisMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
   const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
 
   const collectedThisMonth = useMemo(
@@ -165,8 +163,8 @@ export default function AccountantDashboard() {
   );
 
   const payrollThisMonth = useMemo(
-    () => payroll.filter((p) => p.month === thisMonthStr),
-    [payroll, thisMonthStr],
+    () => payroll.filter((p) => p.month === thisMonthKey),
+    [payroll, thisMonthKey],
   );
   const payrollTotalThisMonth = payrollThisMonth.reduce(
     (sum, p) => sum + (p.amount || 0),
@@ -191,6 +189,33 @@ export default function AccountantDashboard() {
     [payments],
   );
   const recentExpenses = useMemo(() => expenses.slice(0, 5), [expenses]);
+
+  // ---------- Budgets (current month, budget vs actual) ----------
+  const budgetRows = useMemo(() => {
+    const spentByCategory = new Map<string, number>();
+    for (const e of expenses) {
+      const d = new Date(e.date);
+      if (
+        d.getFullYear() === now.getFullYear() &&
+        d.getMonth() === now.getMonth()
+      ) {
+        spentByCategory.set(
+          e.category,
+          (spentByCategory.get(e.category) || 0) + (e.amount || 0),
+        );
+      }
+    }
+    return budgets
+      .filter((b) => b.monthYear === thisMonthKey)
+      .map((b) => ({
+        ...b,
+        spent: spentByCategory.get(b.category) || 0,
+        pct: b.amount > 0 ? Math.min(100, Math.round(((spentByCategory.get(b.category) || 0) / b.amount) * 100)) : 100,
+        over: (spentByCategory.get(b.category) || 0) > b.amount,
+      }))
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 5);
+  }, [budgets, expenses, thisMonthKey, now]);
 
   // Module cards — driven by the accountant's privileges
   const modules = [
@@ -222,18 +247,6 @@ export default function AccountantDashboard() {
         ? `${payrollPending.length} pending (${fmt(payrollPendingTotal)})`
         : "All paid this month",
       tone: "amber",
-    },
-    {
-      key: "reports",
-      name: "Reports",
-      href: "/accountant/reports",
-      icon: ChartBarIcon,
-      value:
-        netPosition >= 0
-          ? `+${fmt(netPosition)}`
-          : `-${fmt(Math.abs(netPosition))}`,
-      sub: "Net position (collected − spent)",
-      tone: "sky",
     },
   ].filter((m) => can(m.key));
 
@@ -628,6 +641,52 @@ export default function AccountantDashboard() {
           </div>
         </div>
       </div>
+
+      {/* ===== Budget vs actual (current month) ===== */}
+      {can("expenses") && budgetRows.length > 0 && (
+        <div
+          className={`rounded-2xl p-5 ${dark ? "bg-white/5" : "bg-white"} ring-1 ${dark ? "ring-white/10" : "ring-gray-200"}`}
+        >
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-bold uppercase tracking-wide">
+              Budgets — {thisMonthStr}
+            </h2>
+            <Link
+              to="/accountant/expenses"
+              className={`text-xs font-semibold ${dark ? "text-blue-400" : "text-blue-600"}`}
+            >
+              Manage budgets →
+            </Link>
+          </div>
+          <div className="mt-4 space-y-4">
+            {budgetRows.map((b) => (
+              <div key={b.id}>
+                <div className="flex items-center justify-between text-sm">
+                  <span className="font-semibold capitalize">{b.category}</span>
+                  <span className={b.over ? "text-red-500" : dark ? "text-gray-400" : "text-gray-500"}>
+                    {fmt(b.spent)} / {fmt(b.amount)}
+                    {b.over && " · over budget"}
+                  </span>
+                </div>
+                <div
+                  className={`mt-1.5 h-2 w-full overflow-hidden rounded-full ${dark ? "bg-white/10" : "bg-gray-100"}`}
+                >
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${
+                      b.over
+                        ? "bg-gradient-to-r from-red-500 to-rose-600"
+                        : b.pct >= 80
+                          ? "bg-gradient-to-r from-amber-500 to-orange-500"
+                          : "bg-gradient-to-r from-emerald-500 to-teal-600"
+                    }`}
+                    style={{ width: `${b.pct}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ===== Pending payroll list ===== */}
       {can("payroll") && payrollPending.length > 0 && (

@@ -6,6 +6,7 @@ import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import { api } from '../../utils/api';
 import { unwrapRes } from '../../hooks/queryHelpers';
+import NumberInput from '../../components/NumberInput';
 import {
   PlusIcon,
   PencilIcon,
@@ -496,11 +497,11 @@ export default function AdminInventory() {
                 </div>
                 <div>
                   <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Quantity *</label>
-                  <input
-                    type="number"
+                  <NumberInput
                     min="0"
+                    maxDecimals={0}
                     value={formData.quantity}
-                    onChange={(e) => setFormData({ ...formData, quantity: Number(e.target.value) })}
+                    onChange={(raw) => setFormData({ ...formData, quantity: raw === '' ? 0 : Number(raw) })}
                     className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
                       theme === 'dark' ? 'bg-gray-800 border-gray-600 text-white' : 'bg-white border-gray-300 text-gray-900'
                     }`}

@@ -131,15 +131,27 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  // Users whose default dashboard is the teacher workspace (e.g. a teacher
-  // granted admin privileges) get a quick way back home from the top bar.
+  // Users whose default dashboard is NOT the admin panel (e.g. a teacher or
+  // accountant granted admin privileges) get a quick way back home from the
+  // top bar.
   const staffRoles = [...(user?.roles || []), user?.role].filter(Boolean) as string[];
   const isPureAdmin = staffRoles.includes('ADMIN') || staffRoles.includes('PRINCIPAL');
   const hasTeacherWorkspace = !isPureAdmin && (
     staffRoles.includes('TEACHER') ||
+    staffRoles.includes('ACCOUNTANT') ||
     (user?.privileges?.length || 0) > 0 ||
     (user?.allowedPages?.length || 0) > 0
   );
+  // Resolve the user's own home dashboard from their roles (never hardcoded to
+  // the Teacher Dashboard — an accountant must return to the accounts portal).
+  const homeDashboardPath = (() => {
+    if (staffRoles.includes('ACCOUNTANT')) return '/accountant';
+    if (staffRoles.includes('PARENT')) return '/parent';
+    if (staffRoles.includes('STUDENT')) return '/student';
+    // Every other staff role (TEACHER, HEAD_MISTRES, custom roles…) uses the
+    // shared teacher workspace as their home dashboard.
+    return '/teacher';
+  })();
   // Role label for the "back to my dashboard" button, e.g. "Teacher Dashboard"
   const homeRoleLabel =
     staffRoles.find(r => r !== 'ADMIN' && r !== 'PRINCIPAL') || 'My';
@@ -868,10 +880,10 @@ export default function AdminLayout() {
               )}
             </button>
 
-            {/* Back to my default (teacher) dashboard */}
+            {/* Back to my default dashboard (role-aware) */}
             {hasTeacherWorkspace && (
               <button
-                onClick={() => navigate('/teacher')}
+                onClick={() => navigate(homeDashboardPath)}
                 className={`hidden md:inline-flex items-center gap-1.5 ml-3 px-3 py-1.5 rounded-lg text-xs font-medium whitespace-nowrap transition-colors ${
                   theme === 'dark'
                     ? 'bg-blue-500/20 text-blue-300 hover:bg-blue-500/30'

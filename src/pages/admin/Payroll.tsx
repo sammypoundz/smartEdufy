@@ -5,6 +5,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
 import Swal from 'sweetalert2';
 import api from '../../services/api';
+import NumberInput from '../../components/NumberInput';
 import { unwrap, getErrorMessage } from '../../hooks/queryHelpers';
 import {
   PlusIcon,
@@ -511,7 +512,7 @@ export default function AdminPayroll() {
                   </div>
                   <div className="form-group">
                     <label className={isDark ? 'dark' : 'light'}>Amount (₦) *</label>
-                    <input type="number" name="amount" value={formData.amount} onChange={handleFormChange} className={isDark ? 'dark' : 'light'} placeholder="0" min="0" step="1000" />
+                    <NumberInput name="amount" value={formData.amount} onChange={(raw) => setFormData(prev => ({ ...prev, amount: raw }))} className={isDark ? 'dark' : 'light'} placeholder="0" />
                   </div>
                   <div className="form-group">
                     <label className={isDark ? 'dark' : 'light'}>Month *</label>

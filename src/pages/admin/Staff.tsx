@@ -43,7 +43,10 @@ interface StaffMember {
   id: string;
   name: string;
   email: string;
+  /** Primary role (display form, e.g. "Accountant"). */
   role: string;
+  /** Raw roles array from the API (e.g. ["ACCOUNTANT", "TEACHER"]). */
+  extraRoles: string[];
   teacherType: 'class_teacher' | 'subject_teacher' | null;
   assignedClass: string | null;
   assignedSubjects: SubjectAssignment[];
@@ -54,10 +57,19 @@ interface StaffMember {
 const staffExportColumns: ExportColumn<StaffMember>[] = [
   { header: 'Name', value: s => s.name },
   { header: 'Email', value: s => s.email },
-  { header: 'Role', value: s => s.role },
+  { header: 'Role', value: (s) => [s.role, ...s.extraRoles].join(' + ') },
   { header: 'Teacher Type', value: s => s.teacherType || '' },
   { header: 'Assigned Class', value: s => s.assignedClass || '' },
-  { header: 'Subjects', value: s => s.assignedSubjects?.map(x => x.subject).join(', ') || '' },
+  { header: 'Subjects', value: (s) =>
+      Object.entries(
+        s.assignedSubjects.reduce<Record<string, string[]>>((acc, x) => {
+          const classes = acc[x.subject] || [];
+          if (x.class && !classes.includes(x.class)) classes.push(x.class);
+          acc[x.subject] = classes;
+          return acc;
+        }, {}),
+      ).map(([subject, classes]) => `${subject} ( ${classes.join(', ')} )`).join('; ') || '',
+  },
   { header: 'Status', value: s => (s.isActive ? 'Active' : 'Inactive') },
 ];
 
@@ -65,6 +77,7 @@ interface StaffFormData {
   name: string;
   email: string;
   role: string;
+  extraRoles: string[];
   teacherType: string;
   assignedClass: string;
   assignedSubjects: SubjectAssignment[];
@@ -177,27 +190,69 @@ const StaffModal = ({
     name: staff?.name || '',
     email: staff?.email || '',
     role: staff?.role || 'Teacher',
+    extraRoles: staff?.extraRoles || [],
     teacherType: staff?.teacherType || 'none',
     assignedClass: staff?.assignedClass || '',
     assignedSubjects: staff?.assignedSubjects || [],
   });
 
+  // Whether the user teaches — either as primary role or secondary role.
+  const isTeacher = formData.role === 'Teacher' || formData.extraRoles.includes('Teacher');
+
+  /**
+   * Subject cards for the subject-teacher UI: one entry per selected subject,
+   * each holding the SET of classes the teacher offers that subject in.
+   * `assignedSubjects` (flat {subject, class} pairs) is the source of truth
+   * for saving, so this is derived on load and expanded back out on save.
+   */
+  const [subjectCards, setSubjectCards] = useState<{ subject: string; classes: string[] }[]>(() => {
+    const bySubject = new Map<string, string[]>();
+    for (const { subject, class: cls } of staff?.assignedSubjects || []) {
+      if (!subject) continue;
+      const list = bySubject.get(subject) || [];
+      if (cls && !list.includes(cls)) list.push(cls);
+      bySubject.set(subject, list);
+    }
+    return Array.from(bySubject.entries()).map(([subject, classes]) => ({ subject, classes }));
+  });
+
+  const handleToggleExtraRole = (r: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      extraRoles: prev.extraRoles.includes(r)
+        ? prev.extraRoles.filter((x) => x !== r)
+        : [...prev.extraRoles, r],
+    }));
+  };
+
   const handleAddSubject = () => {
-    setFormData({
-      ...formData,
-      assignedSubjects: [...formData.assignedSubjects, { subject: '', class: '' }],
+    setSubjectCards((prev) => [...prev, { subject: '', classes: [] }]);
+  };
+
+  const handleSubjectCardChange = (index: number, field: 'subject' | 'classes', value: string | string[]) => {
+    setSubjectCards((prev) => {
+      const updated = [...prev];
+      updated[index] = { ...updated[index], [field]: value } as any;
+      return updated;
     });
   };
 
-  const handleSubjectChange = (index: number, field: keyof SubjectAssignment, value: string) => {
-    const updated = [...formData.assignedSubjects];
-    updated[index] = { ...updated[index], [field]: value };
-    setFormData({ ...formData, assignedSubjects: updated });
+  const handleToggleSubjectClass = (index: number, className: string) => {
+    setSubjectCards((prev) => {
+      const updated = [...prev];
+      const card = updated[index];
+      updated[index] = {
+        ...card,
+        classes: card.classes.includes(className)
+          ? card.classes.filter((c) => c !== className)
+          : [...card.classes, className],
+      };
+      return updated;
+    });
   };
 
   const handleRemoveSubject = (index: number) => {
-    const updated = formData.assignedSubjects.filter((_, i) => i !== index);
-    setFormData({ ...formData, assignedSubjects: updated });
+    setSubjectCards((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async () => {
@@ -205,15 +260,28 @@ const StaffModal = ({
       toast.error('Name, email, and role are required');
       return;
     }
-    if (formData.role === 'Teacher' && formData.teacherType === 'none') {
+    if (isTeacher && formData.teacherType === 'none') {
       toast.error('Please select a teacher type');
       return;
     }
-    if (formData.role === 'Teacher' && formData.teacherType === 'class_teacher' && !formData.assignedClass) {
+    if (isTeacher && formData.teacherType === 'class_teacher' && !formData.assignedClass) {
       toast.error('Please select a class for the class teacher');
       return;
     }
-    await onSave(formData);
+    if (isTeacher && formData.teacherType === 'subject_teacher') {
+      const invalid = subjectCards.find((c) => !c.subject || c.classes.length === 0);
+      if (subjectCards.length > 0 && invalid) {
+        toast.error('Every subject must have at least one class selected');
+        return;
+      }
+    }
+    // Expand each subject card into one {subject, class} pair per class —
+    // the backend creates a subjectArm assignment for each pair.
+    const expandedSubjects: SubjectAssignment[] =
+      formData.teacherType === 'subject_teacher'
+        ? subjectCards.flatMap((c) => c.classes.map((cls) => ({ subject: c.subject, class: cls })))
+        : formData.assignedSubjects;
+    await onSave({ ...formData, assignedSubjects: expandedSubjects });
   };
 
   return (
@@ -301,7 +369,7 @@ const StaffModal = ({
                   ))}
                 </select>
               </div>
-              {formData.role === 'Teacher' && (
+              {isTeacher && (
                 <div>
                   <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
                     Teacher Type *
@@ -323,7 +391,40 @@ const StaffModal = ({
               )}
             </div>
 
-            {formData.role === 'Teacher' && formData.teacherType === 'class_teacher' && (
+            {/* Additional (secondary) roles — dual-role support */}
+            <div>
+              <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
+                Additional Roles
+              </label>
+              <p className={`text-xs mb-2 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
+                Grant extra functions (e.g. also teach classes) on top of the primary role.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {ROLES.filter((r) => r !== formData.role).map((r) => {
+                  const selected = formData.extraRoles.includes(r);
+                  const ExtraIcon = roleIconMap[r] || UserIcon;
+                  return (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => handleToggleExtraRole(r)}
+                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-bold border-2 transition-colors ${
+                        selected
+                          ? getRoleBadgeClass(r, theme)
+                          : theme === 'dark'
+                            ? 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'
+                            : 'bg-gray-100 text-gray-500 border-gray-300 hover:bg-gray-200'
+                      }`}
+                    >
+                      <ExtraIcon className="h-3.5 w-3.5" />
+                      {r}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {isTeacher && formData.teacherType === 'class_teacher' && (
               <div>
                 <label className={`block text-sm font-medium mb-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
                   Assign Class *
@@ -347,11 +448,11 @@ const StaffModal = ({
               </div>
             )}
 
-            {formData.role === 'Teacher' && formData.teacherType === 'subject_teacher' && (
+            {isTeacher && formData.teacherType === 'subject_teacher' && (
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Assigned Subjects (with Class)
+                    Subjects & Classes Taught
                   </label>
                   <button
                     onClick={handleAddSubject}
@@ -362,49 +463,81 @@ const StaffModal = ({
                     + Add Subject
                   </button>
                 </div>
-                {formData.assignedSubjects.map((subj, idx) => (
-                  <div key={idx} className="flex items-center gap-2">
-                    <select
-                      value={subj.subject}
-                      onChange={(e) => handleSubjectChange(idx, 'subject', e.target.value)}
-                      className={`flex-1 rounded-lg border-0 px-4 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 ${
-                        theme === 'dark'
-                          ? 'bg-gray-800 text-white border border-gray-700'
-                          : 'bg-white text-gray-900 border border-gray-300'
+                {/* One card per subject; tick EVERY class the teacher offers
+                    that subject in — a subject can span multiple classes. */}
+                {(() => {
+                  const uniqueClasses = Array.from(
+                    new Map(armOptions.map((opt) => [opt.className, opt])).values(),
+                  );
+                  return subjectCards.map((card, idx) => (
+                    <div
+                      key={idx}
+                      className={`rounded-xl p-4 space-y-3 ${
+                        theme === 'dark' ? 'bg-gray-800/60 border border-gray-700' : 'bg-gray-50 border border-gray-200'
                       }`}
                     >
-                      <option value="" className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>Subject</option>
-                      {subjectsList.map((s) => (
-                        <option key={s} className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>{s}</option>
-                      ))}
-                    </select>
-                    <select
-                      value={subj.class}
-                      onChange={(e) => handleSubjectChange(idx, 'class', e.target.value)}
-                      className={`flex-1 rounded-lg border-0 px-4 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 ${
-                        theme === 'dark'
-                          ? 'bg-gray-800 text-white border border-gray-700'
-                          : 'bg-white text-gray-900 border border-gray-300'
-                      }`}
-                    >
-                      <option value="" className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>Class</option>
-                      {armOptions.map((opt) => (
-                        <option key={opt.className} value={opt.className} className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>
-                          {opt.display}
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      onClick={() => handleRemoveSubject(idx)}
-                      className={`p-2 rounded-lg transition-colors ${
-                        theme === 'dark' ? 'text-red-400 hover:bg-white/10' : 'text-red-600 hover:bg-red-50'
-                      }`}
-                    >
-                      <XMarkIcon className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-                {formData.assignedSubjects.length === 0 && (
+                      <div className="flex items-center gap-2">
+                        <select
+                          value={card.subject}
+                          onChange={(e) => handleSubjectCardChange(idx, 'subject', e.target.value)}
+                          className={`flex-1 rounded-lg border-0 px-4 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 ${
+                            theme === 'dark'
+                              ? 'bg-gray-800 text-white border border-gray-700'
+                              : 'bg-white text-gray-900 border border-gray-300'
+                          }`}
+                        >
+                          <option value="" className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>Select subject</option>
+                          {subjectsList.map((s) => (
+                            <option key={s} className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>{s}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={() => handleRemoveSubject(idx)}
+                          className={`p-2 rounded-lg transition-colors ${
+                            theme === 'dark' ? 'text-red-400 hover:bg-white/10' : 'text-red-600 hover:bg-red-50'
+                          }`}
+                        >
+                          <XMarkIcon className="h-4 w-4" />
+                        </button>
+                      </div>
+                      <div>
+                        <p className={`text-xs font-semibold uppercase tracking-wider mb-2 ${
+                          theme === 'dark' ? 'text-gray-500' : 'text-gray-400'
+                        }`}>
+                          Classes this subject is offered in (tick all that apply)
+                        </p>
+                        <div className="flex flex-wrap gap-2">
+                          {uniqueClasses.map((opt) => {
+                            const isChecked = card.classes.includes(opt.className);
+                            return (
+                              <label
+                                key={opt.className}
+                                className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium border cursor-pointer select-none transition-colors ${
+                                  isChecked
+                                    ? theme === 'dark'
+                                      ? 'bg-blue-500/20 text-blue-300 border-blue-700'
+                                      : 'bg-blue-100 text-blue-700 border-blue-300'
+                                    : theme === 'dark'
+                                      ? 'bg-gray-800 text-gray-400 border-gray-700 hover:bg-gray-700'
+                                      : 'bg-white text-gray-500 border-gray-300 hover:bg-gray-100'
+                                }`}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => handleToggleSubjectClass(idx, opt.className)}
+                                  className="h-3.5 w-3.5 rounded accent-blue-600"
+                                />
+                                {opt.display}
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  ));
+                })()}
+                {subjectCards.length === 0 && (
                   <p className={`text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
                     No subjects assigned yet. Click "Add Subject" to start.
                   </p>
@@ -604,6 +737,10 @@ export default function AdminStaff() {
           assignedSubjects: item.assignedSubjects || [],
           isActive: item.isActive ?? true,
           role: roleDisplayMap[item.role] || item.role,
+          // All roles held except primary, in display form (e.g. ["Teacher"])
+          extraRoles: (item.roles || [])
+            .filter((r: string) => r !== item.role)
+            .map((r: string) => roleDisplayMap[r] || r),
           id: item.id,
         });
       });
@@ -615,6 +752,7 @@ export default function AdminStaff() {
           name: teacher.name || '',
           email: teacher.email,
           role: staffInfo?.role || 'Teacher',
+          extraRoles: staffInfo?.extraRoles || [],
           teacherType: staffInfo?.teacherType || null,
           assignedClass: staffInfo?.assignedClass || null,
           assignedSubjects: staffInfo?.assignedSubjects || [],
@@ -624,12 +762,15 @@ export default function AdminStaff() {
       });
 
       const nonTeacherStaff: StaffMember[] = staffList
-        .filter((item) => item.role !== 'TEACHER')
+        .filter((item) => item.role !== 'TEACHER' && !(item.roles || []).includes('TEACHER'))
         .map((item) => ({
           id: item.id,
           name: item.name || '',
           email: item.email,
           role: roleDisplayMap[item.role] || item.role,
+          extraRoles: (item.roles || [])
+            .filter((r: string) => r !== item.role)
+            .map((r: string) => roleDisplayMap[r] || r),
           teacherType: null,
           assignedClass: null,
           assignedSubjects: [],
@@ -668,6 +809,12 @@ export default function AdminStaff() {
   });
 
   const staffList = staffQuery.data ?? [];
+  // Defensive: some staff rows may come from a cached query or an older
+  // backend without the `roles`/`extraRoles` fields — always normalize.
+  const safeStaffList = useMemo(
+    () => staffList.map((s) => ({ ...s, extraRoles: s.extraRoles || [] })),
+    [staffList],
+  );
   const loading = staffQuery.isLoading;
   const error = staffQuery.error ? getErrorMessage(staffQuery.error, 'Failed to load staff') : null;
   const armOptions = optionsQuery.data?.armOptions ?? [];
@@ -847,18 +994,19 @@ export default function AdminStaff() {
 
   // ---------- Filter ----------
   const filteredStaff = useMemo(() => {
-    return staffList.filter((s) => {
+    return safeStaffList.filter((s) => {
       const matchesSearch =
         s.name.toLowerCase().includes(search.toLowerCase()) ||
         s.email.toLowerCase().includes(search.toLowerCase());
-      const matchesRole = roleFilter === 'All' || s.role === roleFilter;
+      const matchesRole = roleFilter === 'All' || s.role === roleFilter || s.extraRoles.includes(roleFilter);
       return matchesSearch && matchesRole;
     });
-  }, [staffList, search, roleFilter]);
+  }, [safeStaffList, search, roleFilter]);
 
   // ---------- Statistics ----------
   const totalStaff = filteredStaff.length;
-  const totalTeachers = filteredStaff.filter((s) => s.role === 'Teacher').length;
+  // Multi-role aware: count anyone who teaches (primary or secondary role).
+  const totalTeachers = filteredStaff.filter((s) => s.role === 'Teacher' || s.extraRoles.includes('Teacher')).length;
   const totalAdmins = filteredStaff.filter((s) => s.role === 'Admin').length;
   const totalInactive = filteredStaff.filter((s) => !s.isActive).length;
 
@@ -1112,25 +1260,47 @@ export default function AdminStaff() {
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <RoleIcon className={`h-4 w-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
-                          <span className={getRoleBadgeClass(staff.role, theme)}>
-                            {staff.role}
-                          </span>
+                        <div className="flex items-center flex-wrap gap-1.5">
+                          {[staff.role, ...staff.extraRoles].map((r) => {
+                            const RoleIcon = roleIconMap[r] || UserIcon;
+                            return (
+                              <span key={r} className={getRoleBadgeClass(r, theme)}>
+                                <RoleIcon className="h-3.5 w-3.5 mr-1" />
+                                {r}
+                              </span>
+                            );
+                          })}
                         </div>
                       </td>
                       <td className="whitespace-nowrap px-3 py-3">
-                        {staff.role === 'Teacher' ? (
+                        {staff.role === 'Teacher' || staff.extraRoles.includes('Teacher') ? (
                           staff.teacherType === 'class_teacher' ? (
                             <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
                               <span className="font-medium">Class Teacher</span>: {staff.assignedClass || 'None'}
                             </span>
                           ) : staff.teacherType === 'subject_teacher' ? (
                             <span className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                              <span className="font-medium">{staff.assignedSubjects.length} subjects</span>
+                              <span className="font-medium">{staff.assignedSubjects.length} assignments</span>
                               {staff.assignedSubjects.length > 0 && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500 block truncate max-w-xs">
-                                  {staff.assignedSubjects.map((s) => s.subject).join(', ')}
+                                <span className="text-xs text-gray-400 dark:text-gray-500 block max-w-xs">
+                                  {/* Group by subject: "Basic Science (JSS 1, JSS 2)" */}
+                                  {Object.entries(
+                                    staff.assignedSubjects.reduce<Record<string, string[]>>((acc, s) => {
+                                      const classes = acc[s.subject] || [];
+                                      if (s.class && !classes.includes(s.class)) classes.push(s.class);
+                                      acc[s.subject] = classes;
+                                      return acc;
+                                    }, {}),
+                                  ).map(([subject, classes]) => (
+                                    <span key={subject} className="block truncate">
+                                      {subject}
+                                      {classes.length > 0 && (
+                                        <span className="text-[10px] uppercase tracking-wide">
+                                          {' '}( {classes.join(', ')} )
+                                        </span>
+                                      )}
+                                    </span>
+                                  ))}
                                 </span>
                               )}
                             </span>
