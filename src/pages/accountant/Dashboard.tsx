@@ -113,7 +113,6 @@ export default function AccountantDashboard() {
   });
 
   const feeStructures = data?.feeStructures ?? [];
-  const students = data?.students ?? [];
   const payments = data?.payments ?? [];
   const expenses = data?.expenses ?? [];
   const payroll = data?.payroll ?? [];

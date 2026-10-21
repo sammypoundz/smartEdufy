@@ -1234,7 +1234,6 @@ export default function AdminStaff() {
               </thead>
               <tbody className={`divide-y ${theme === 'dark' ? 'divide-gray-700' : 'divide-gray-200'}`}>
                 {paginatedStaff.map((staff) => {
-                  const RoleIcon = roleIconMap[staff.role] || UserIcon;
                   return (
                     <motion.tr
                       key={staff.id}
