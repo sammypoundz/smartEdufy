@@ -124,6 +124,20 @@ export default function TimetablePage() {
   const [showCompiled, setShowCompiled] = useState(false);
   const [editableTimeSlots, setEditableTimeSlots] = useState<string[]>(DEFAULT_TIME_SLOTS);
 
+  // School info (logo + name) shown on the compiled timetable print-out
+  const [schoolInfo, setSchoolInfo] = useState<{ name: string; logoUrl: string | null }>({ name: '', logoUrl: null });
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/settings/general')
+      .then(res => (res.ok ? res.json() : {}))
+      .then((data) => {
+        if (cancelled) return;
+        setSchoolInfo({ name: (data as any).schoolName || '', logoUrl: (data as any).logoUrl || null });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // Loading states for buttons
   const [savingTimetable, setSavingTimetable] = useState(false);
   const [savingTimeSlots, setSavingTimeSlots] = useState(false);
@@ -745,15 +759,30 @@ export default function TimetablePage() {
               <div className={`w-full max-w-6xl max-h-[92vh] overflow-y-auto rounded-2xl p-4 sm:p-6 shadow-2xl print-area ${
                 theme === 'dark' ? 'bg-gray-900 print:bg-white' : 'bg-white'
               }`}>
-                {/* Header */}
+                {/* Header — includes the school letterhead so it prints with the timetable */}
                 <div className="flex justify-between items-start mb-4">
-                  <div>
-                    <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-                      Compiled Timetable
-                    </h2>
-                    <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-                      {selectedClass?.name} {selectedArm ? formatArm(selectedArm) : ''} · Term Overview
-                    </p>
+                  <div className="flex items-start gap-3">
+                    {schoolInfo.logoUrl && (
+                      <img
+                        src={schoolInfo.logoUrl}
+                        alt="School logo"
+                        className="h-14 w-14 rounded-full object-cover flex-shrink-0 ring-1 ring-black/10 dark:ring-white/10 print:ring-0"
+                        onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                      />
+                    )}
+                    <div>
+                      {schoolInfo.name && (
+                        <p className={`text-lg font-extrabold leading-tight ${theme === 'dark' ? 'text-white' : 'text-gray-900'} print:text-black`}>
+                          {schoolInfo.name}
+                        </p>
+                      )}
+                      <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'} print:text-black`}>
+                        Compiled Timetable
+                      </h2>
+                      <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'} print:text-gray-700`}>
+                        {selectedClass?.name} {selectedArm ? formatArm(selectedArm) : ''} · Term Overview
+                      </p>
+                    </div>
                   </div>
                   <div className="flex space-x-2 print-hidden">
                     <button

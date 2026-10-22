@@ -162,11 +162,13 @@ export default function TeacherLayout() {
       const academic = academicRes.ok ? await academicRes.json() : {};
       return {
         schoolName: (general.schoolName as string) || '',
+        logoUrl: (general.logoUrl as string) || null,
         currentTerm: (academic.currentTerm as string) || '',
       };
     },
   });
   const schoolName = topBar?.schoolName ?? '';
+  const schoolLogoUrl = topBar?.logoUrl ?? null;
   const currentTerm = topBar?.currentTerm ?? '';
   // ---------- Teacher profile (cached query) ----------
   const teacherProfileQuery = useQuery({
@@ -807,6 +809,14 @@ export default function TeacherLayout() {
               onMouseEnter={handleSchoolNameEnter}
               onMouseLeave={handleSchoolNameLeave}
             >
+              {schoolLogoUrl && (
+                <img
+                  src={schoolLogoUrl}
+                  alt="School logo"
+                  className="h-8 w-8 self-center rounded-full object-cover flex-shrink-0 cursor-default ring-1 ring-black/10 dark:ring-white/10"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
               {schoolName && (
                 <span
                   className={`${getSchoolNameTextClass(schoolName)} font-extrabold truncate cursor-default ${

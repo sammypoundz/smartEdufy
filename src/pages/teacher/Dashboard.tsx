@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import ProfileSetupBanner from '../../components/teacher/ProfileSetupBanner';
+import SchoolLogo from '../../components/SchoolLogo';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { effectivePrivileges } from '../../utils/privileges';
@@ -227,13 +228,16 @@ export default function TeacherDashboard() {
   return (
     <div className="space-y-6 p-3 sm:p-4 md:p-5 max-w-7xl mx-auto">
       {/* Greeting */}
-      <div>
-        <h1 className={`text-xl md:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-          Welcome back, {user?.name || 'Teacher'} 👋
-        </h1>
-        <p className={`text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-          Here is an overview of your classes and today's activities.
-        </p>
+      <div className="flex items-center gap-3">
+        <SchoolLogo className="h-10 w-10 md:h-11 md:w-11" />
+        <div>
+          <h1 className={`text-xl md:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+            Welcome back, {user?.name || 'Teacher'} 👋
+          </h1>
+          <p className={`text-xs md:text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+            Here is an overview of your classes and today's activities.
+          </p>
+        </div>
       </div>
 
       {/* Prompt to finish profile setup (self-registered teachers) */}

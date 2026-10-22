@@ -145,7 +145,7 @@ export default function AccountantLayout() {
       if (!token) return { schoolName: "" };
       const res = await api.get("/settings/general", token);
       const data = res.ok ? await res.json() : {};
-      return { schoolName: (data.schoolName as string) || "" };
+      return { schoolName: (data.schoolName as string) || "", logoUrl: (data.logoUrl as string) || null };
     },
   });
 
@@ -347,16 +347,26 @@ export default function AccountantLayout() {
             >
               <Bars3Icon className="h-6 w-6" />
             </button>
-            <div>
-              <p className="text-sm font-bold leading-tight">
-                {topBar?.schoolName || "Accounts Dashboard"}
-              </p>
-              <p
-                className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}
-              >
+            <div className="flex items-center gap-2">
+              {topBar?.logoUrl && (
+                <img
+                  src={topBar.logoUrl}
+                  alt="School logo"
+                  className="h-8 w-8 rounded-full object-cover flex-shrink-0 ring-1 ring-black/10 dark:ring-white/10"
+                  onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
+                />
+              )}
+              <div>
+                <p className="text-sm font-bold leading-tight">
+                  {topBar?.schoolName || "Accounts Dashboard"}
+                </p>
+                <p
+                  className={`text-xs ${dark ? "text-gray-400" : "text-gray-500"}`}
+                >
                 {allowedMenus.length + extraMenusList.length} module
                 {allowedMenus.length + extraMenusList.length === 1 ? "" : "s"} unlocked for your role
               </p>
+              </div>
             </div>
           </div>
           <div className="flex items-center gap-2">

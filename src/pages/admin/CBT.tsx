@@ -1036,7 +1036,7 @@ export default function AdminCBT() {
     term: 'First Term',
     academicYearId: '',
     resultType:
-      'ca1' as 'ca1' | 'ca2' | 'exam',
+      'ca1' as 'ca1' | 'ca2' | 'ca3' | 'exam',
   });
 
   const academicYearsQuery = useQuery<
@@ -3536,6 +3536,7 @@ export default function AdminCBT() {
                                           .value as
                                           | 'ca1'
                                           | 'ca2'
+                                          | 'ca3'
                                           | 'exam',
                                     })
                                   )
@@ -3552,6 +3553,10 @@ export default function AdminCBT() {
 
                                 <option value="ca2">
                                   Second CA
+                                </option>
+
+                                <option value="ca3">
+                                  Third CA
                                 </option>
 
                                 <option value="exam">

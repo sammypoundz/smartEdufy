@@ -11,15 +11,18 @@ import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import UploadProgress from '../../components/UploadProgress';
+import AiResultScannerModal from '../../components/AiResultScannerModal';
 import {
   DocumentArrowDownIcon,
+  PrinterIcon,
   CloudArrowUpIcon,
   DocumentChartBarIcon,
   ClockIcon,
+  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 // Types (unchanged)
-interface Class { id: string; name: string; }
+interface Class { id: string; name: string; gradingScaleGroup?: { id: string; name: string } | null; }
 interface Arm { id: string; letter: string; }
 interface Subject { id: string; name: string; }
 interface Student { id: string; name: string; admissionNumber?: string; }
@@ -27,7 +30,10 @@ interface Student { id: string; name: string; admissionNumber?: string; }
 interface StudentResult {
   studentId: string;
   studentName: string;
-  ca: number | null;
+  ca1: number | null;
+  ca2: number | null;
+  ca3: number | null;
+  ca: number | null;   // total CA = ca1 + ca2 + ca3
   exam: number | null;
   total: number | null;
   grade: string;
@@ -47,6 +53,9 @@ interface CompiledStudentResult {
 interface ApiResult {
   studentId: string;
   ca: number;
+  ca1?: number;
+  ca2?: number;
+  ca3?: number;
   exam: number;
   total: number;
   grade: string;
@@ -87,6 +96,7 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  const [showAiScanner, setShowAiScanner] = useState(false);
 
   // Grading scales (class-assigned group takes priority over school-wide)
   const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
@@ -100,6 +110,20 @@ export default function AdminResults() {
     });
   }, [token]);
 
+  // School info (logo + name) for the printable entry sheet letterhead
+  const [schoolInfo, setSchoolInfo] = useState<{ name: string; logoUrl: string | null }>({ name: '', logoUrl: null });
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/settings/general')
+      .then(res => (res.ok ? res.json() : {}))
+      .then((data) => {
+        if (cancelled) return;
+        setSchoolInfo({ name: (data as any).schoolName || '', logoUrl: (data as any).logoUrl || null });
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
   // ---------- Data fetching ----------
   const fetchClasses = useCallback(async () => {
     if (!token) return;
@@ -107,7 +131,8 @@ export default function AdminResults() {
       const res = await api.get('/classes', token);
       if (!res.ok) throw new Error(await res.text());
       const data = await res.json();
-      setClasses(data);
+      // Keep gradingScaleGroup so grades use the scale assigned to the class in Academic Setup
+      setClasses(data.map((c: any) => ({ id: String(c.id), name: c.name, gradingScaleGroup: c.gradingScaleGroup ?? null })));
       if (data.length > 0 && !selectedClassId) setSelectedClassId(data[0].id);
     } catch { toast.error('Failed to load classes'); }
   }, [token, selectedClassId]);
@@ -160,12 +185,15 @@ export default function AdminResults() {
       const res = await api.get(url, token);
       if (!res.ok) throw new Error(await res.text());
       const existing = await res.json() as ApiResult[];
-      const resultMap = new Map(existing.map(r => [r.studentId, { ca: r.ca, exam: r.exam, total: r.total, grade: r.grade }]));
+      const resultMap = new Map(existing.map(r => [r.studentId, { ca1: r.ca1, ca2: r.ca2, ca3: r.ca3, ca: r.ca, exam: r.exam, total: r.total, grade: r.grade }]));
       const combined = students.map(s => {
         const ex = resultMap.get(s.id);
         return {
           studentId: s.id,
           studentName: s.name,
+          ca1: ex?.ca1 !== undefined ? ex.ca1 : null,
+          ca2: ex?.ca2 !== undefined ? ex.ca2 : null,
+          ca3: ex?.ca3 !== undefined ? ex.ca3 : null,
           ca: ex?.ca !== undefined ? ex.ca : null,
           exam: ex?.exam !== undefined ? ex.exam : null,
           total: ex?.total !== undefined ? ex.total : null,
@@ -365,9 +393,12 @@ export default function AdminResults() {
       armId: selectedArmId,
       term: selectedTerm,
       academicYearId: selectedAcademicYearId,
-      ca: r.ca ?? 0,
+      ca1: r.ca1 ?? 0,
+      ca2: r.ca2 ?? 0,
+      ca3: r.ca3 ?? 0,
+      ca: (r.ca1 ?? 0) + (r.ca2 ?? 0) + (r.ca3 ?? 0),
       exam: r.exam ?? 0,
-      total: (r.ca ?? 0) + (r.exam ?? 0),
+      total: (r.ca1 ?? 0) + (r.ca2 ?? 0) + (r.ca3 ?? 0) + (r.exam ?? 0),
       grade: r.grade,
     }));
     setSaving(true);
@@ -386,11 +417,124 @@ export default function AdminResults() {
     } finally { setSaving(false); }
   };
 
+  // ---------- Download printable result entry sheet (PDF via print dialog) ----------
+  const downloadEntrySheetPdf = () => {
+    if (!selectedArmId || !selectedSubjectId || students.length === 0) {
+      toast.error('Select a class, arm, and subject first');
+      return;
+    }
+    const cls = classes.find(c => c.id === selectedClassId);
+    const arm = arms.find(a => a.id === selectedArmId);
+    const subject = subjects.find(s => s.id === selectedSubjectId);
+    const yearName = academicYears.find(y => y.id === selectedAcademicYearId)?.name || '';
+    const rows = students.map((s, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${s.admissionNumber || '—'}</td>
+        <td style="text-align:left">${s.name}</td>
+        <td></td><td></td><td></td><td></td><td></td>
+      </tr>`).join('');
+
+    const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Result Entry Sheet - ${cls?.name || ''} ${subject?.name || ''}</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #111; padding: 24px; }
+    .letterhead { display: flex; align-items: center; gap: 16px; border-bottom: 3px double #333; padding-bottom: 12px; }
+    .letterhead img { width: 64px; height: 64px; border-radius: 50%; object-fit: cover; }
+    .letterhead .school-name { font-size: 20px; font-weight: 800; letter-spacing: 0.5px; }
+    .meta { display: flex; justify-content: center; gap: 32px; margin: 14px 0 6px; font-size: 13px; font-weight: 600; flex-wrap: wrap; }
+    .meta span b { color: #444; font-weight: 400; margin-right: 4px; }
+    h2 { text-align: center; font-size: 15px; margin: 8px 0 14px; letter-spacing: 1px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th, td { border: 1px solid #444; padding: 7px 8px; text-align: center; }
+    thead th { background: #f0f0f0; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td.name { text-align: left; }
+    .sign { margin-top: 28px; display: flex; justify-content: space-between; font-size: 12px; }
+    .sign div { width: 30%; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
+    @media print { body { padding: 8px; } @page { size: A4 landscape; margin: 10mm; } }
+  </style>
+</head>
+<body>
+  <div class="letterhead">
+    ${schoolInfo.logoUrl ? `<img src="${schoolInfo.logoUrl}" alt="logo" />` : ''}
+    <div class="school-name">${schoolInfo.name || 'School'}</div>
+  </div>
+  <div class="meta">
+    <span><b>Class:</b> ${cls?.name || ''} ${arm ? formatArm(arm) : ''}</span>
+    <span><b>Subject:</b> ${subject?.name || ''}</span>
+    <span><b>Session:</b> ${yearName}</span>
+    <span><b>Term:</b> ${selectedTerm}</span>
+  </div>
+  <h2>RESULT ENTRY SHEET</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>S/N</th>
+        <th>Adm. No</th>
+        <th style="text-align:left">Student Name</th>
+        <th>1CA (10)</th>
+        <th>2CA (10)</th>
+        <th>3CA (10)</th>
+        <th>Exam (70)</th>
+        <th>Total (100)</th>
+      </tr>
+    </thead>
+    <tbody>${rows}</tbody>
+  </table>
+  <div class="sign">
+    <div>Subject Teacher's Signature</div>
+    <div>Date</div>
+    <div>Principal's Signature & Stamp</div>
+  </div>
+</body>
+</html>`;
+
+    // Print via a hidden iframe — opens the print dialog (which shows a PDF
+    // preview / 'Save as PDF') but leaves no popup window behind.
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = 'none';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => {
+      setTimeout(() => iframe.remove(), 500);
+    };
+
+    const doc = iframe.contentDocument;
+    if (!doc) {
+      iframe.remove();
+      toast.error('Could not generate the entry sheet');
+      return;
+    }
+    doc.open();
+    doc.write(html);
+    doc.close();
+
+    iframe.onload = () => {
+      try {
+        iframe.contentWindow?.focus();
+        iframe.contentWindow?.print();
+      } finally {
+        cleanup();
+      }
+    };
+  };
+
   const downloadTemplate = () => {
     const template = students.map(s => ({
       'Student Name': s.name,
       'Student ID': s.id,
-      'CA (max 30)': '',
+      '1CA (max 10)': '',
+      '2CA (max 10)': '',
+      '3CA (max 10)': '',
       'Exam (max 70)': '',
     }));
     const ws = XLSX.utils.json_to_sheet(template);
@@ -412,13 +556,16 @@ export default function AdminResults() {
       let processed = 0;
       for (const row of rows) {
         const studentId = row['Student ID'] || row['studentId'];
-        const ca = Number(row['CA (max 30)'] || row['ca']);
-        const exam = Number(row['Exam (max 70)'] || row['exam']);
-        if (studentId && !isNaN(ca) && !isNaN(exam)) {
+        const ca1 = Number(row['1CA (max 10)'] ?? row['CA (max 30)'] ?? row['ca1'] ?? 0) || 0;
+        const ca2 = Number(row['2CA (max 10)'] ?? row['ca2'] ?? 0) || 0;
+        const ca3 = Number(row['3CA (max 10)'] ?? row['ca3'] ?? 0) || 0;
+        const exam = Number(row['Exam (max 70)'] ?? row['exam'] ?? 0) || 0;
+        if (studentId) {
           const index = updatedResults.findIndex(r => r.studentId === studentId);
           if (index !== -1) {
+            const ca = ca1 + ca2 + ca3;
             const total = ca + exam;
-            updatedResults[index] = { ...updatedResults[index], ca, exam, total, grade: computeGrade(total) };
+            updatedResults[index] = { ...updatedResults[index], ca1, ca2, ca3, ca, exam, total, grade: computeGrade(total) };
           }
         }
         processed++;
@@ -444,18 +591,48 @@ export default function AdminResults() {
     input.click();
   };
 
-  // FIXED: handleScoreChange now accepts number | null
-  const handleScoreChange = (studentId: string, field: 'ca' | 'exam', value: number | null) => {
+  // ---------- AI Result Scanner: apply extracted rows to the score table ----------
+  const handleAiApply = (rows: { name: string; ca1: number | null; ca2: number | null; ca3: number | null; exam: number | null }[]) => {
+    let applied = 0;
+    setResults(prev => prev.map(r => {
+      const match = rows.find(x => x.name.toLowerCase().trim() === r.studentName.toLowerCase().trim());
+      if (!match) return r;
+      applied++;
+      const ca1 = match.ca1 ?? r.ca1;
+      const ca2 = match.ca2 ?? r.ca2;
+      const ca3 = match.ca3 ?? r.ca3;
+      const exam = match.exam ?? r.exam;
+      const ca = (ca1 ?? 0) + (ca2 ?? 0) + (ca3 ?? 0);
+      const total = ca + (exam ?? 0);
+      return { ...r, ca1, ca2, ca3, ca, exam, total, grade: computeGrade(total) };
+    }));
+    if (applied > 0) {
+      toast.success(`AI filled scores for ${applied} student(s). Review and save.`);
+    } else {
+      toast.error('No matching students found in the score table');
+    }
+    setShowAiScanner(false);
+  };
+
+  // Score change with 3 CAs: total = 1CA + 2CA + 3CA + Exam
+  type ScoreField = 'ca1' | 'ca2' | 'ca3' | 'exam';
+  const handleScoreChange = (studentId: string, field: ScoreField, value: number | null) => {
     setResults(prev => prev.map(r => {
       if (r.studentId === studentId) {
         // If value is null or undefined, set to null
         if (value === null || value === undefined || isNaN(value)) {
-          return { ...r, [field]: null, total: null, grade: '' };
+          const cleared = { ...r, [field]: null };
+          const ca = (cleared.ca1 ?? 0) + (cleared.ca2 ?? 0) + (cleared.ca3 ?? 0);
+          return { ...cleared, ca, total: ca + (cleared.exam ?? 0), grade: '' };
         }
-        const newCa = field === 'ca' ? value : (r.ca ?? 0);
-        const newExam = field === 'exam' ? value : (r.exam ?? 0);
-        const total = newCa + newExam;
-        return { ...r, ca: newCa, exam: newExam, total, grade: computeGrade(total) };
+        const updated = { ...r, [field]: value };
+        const ca1 = updated.ca1 ?? 0;
+        const ca2 = updated.ca2 ?? 0;
+        const ca3 = updated.ca3 ?? 0;
+        const exam = updated.exam ?? 0;
+        const ca = ca1 + ca2 + ca3;
+        const total = ca + exam;
+        return { ...updated, ca, total, grade: computeGrade(total) };
       }
       return r;
     }));
@@ -474,7 +651,9 @@ export default function AdminResults() {
         <div className="sm:flex sm:items-center sm:justify-between mb-8">
           <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
           <div className="mt-4 sm:mt-0 flex gap-3">
+            <button onClick={()=>setShowAiScanner(true)} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm shadow-lg disabled:opacity-50"><SparklesIcon className="h-4 w-4 mr-2"/>AI Scan</button>
             <button onClick={downloadTemplate} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50"><DocumentArrowDownIcon className="h-4 w-4 mr-2"/>Template</button>
+            <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-2"/>Entry Sheet PDF</button>
             <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-2"/>{uploading?'Uploading...':'Bulk Upload'}</button>
             <button onClick={compileResults} disabled={!selectedArmId || !selectedTerm || !selectedAcademicYearId || loadingCompiled} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white text-sm shadow-lg hover:shadow-xl disabled:opacity-50"><DocumentChartBarIcon className="h-4 w-4 mr-2"/>{loadingCompiled?'Compiling...':'Compile Results'}</button>
           </div>
@@ -560,7 +739,10 @@ export default function AdminResults() {
               <thead>
                 <tr className="border-b border-gray-200/50 dark:border-white/10">
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Student</th>
-                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>CA</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>1CA</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>2CA</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>3CA</th>
+                  <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>CA Total</th>
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Exam</th>
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Total</th>
                   <th className={`px-6 py-3 text-left text-xs font-medium uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>Grade</th>
@@ -568,27 +750,30 @@ export default function AdminResults() {
               </thead>
               <tbody className={`divide-y ${theme === 'dark' ? 'divide-white/10' : 'divide-gray-200/50'}`}>
                 {loading ? (
-                  <tr><td colSpan={5} className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Loading...</td></tr>
+                  <tr><td colSpan={8} className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Loading...</td></tr>
                 ) : results.length === 0 ? (
-                  <tr><td colSpan={5} className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No results found for this subject, term, and academic year. Enter scores above and save.</td></tr>
+                  <tr><td colSpan={8} className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No results found for this subject, term, and academic year. Enter scores above and save.</td></tr>
                 ) : (
                   results.map(r => (
                     <tr key={r.studentId} className={theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-50'}>
                       <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.studentName}</td>
-                      <td className="px-6 py-4 text-sm">
-                        <input
-                          type="number"
-                          min="0"
-                          max="30"
-                          value={r.ca ?? ''}
-                          onChange={e => {
-                            const val = e.target.value === '' ? null : Number(e.target.value);
-                            handleScoreChange(r.studentId, 'ca', val);
-                          }}
-                          className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
-                          placeholder="-"
-                        />
-                      </td>
+                      {(['ca1', 'ca2', 'ca3'] as const).map(field => (
+                        <td key={field} className="px-6 py-4 text-sm">
+                          <input
+                            type="number"
+                            min="0"
+                            max="10"
+                            value={r[field] ?? ''}
+                            onChange={e => {
+                              const val = e.target.value === '' ? null : Number(e.target.value);
+                              handleScoreChange(r.studentId, field, val);
+                            }}
+                            className={`w-20 rounded-xl border-0 px-3 py-2 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}
+                            placeholder="-"
+                          />
+                        </td>
+                      ))}
+                      <td className={`px-6 py-4 text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{(r.ca1 ?? 0) + (r.ca2 ?? 0) + (r.ca3 ?? 0)}</td>
                       <td className="px-6 py-4 text-sm">
                         <input
                           type="number"
@@ -657,6 +842,14 @@ export default function AdminResults() {
             )}
           </div>
         )}
+
+        {/* AI Result Scanner modal */}
+        <AiResultScannerModal
+          open={showAiScanner}
+          onClose={() => setShowAiScanner(false)}
+          onApply={handleAiApply}
+          rosterNames={students.map(s => s.name)}
+        />
       </div>
     </div>
   );

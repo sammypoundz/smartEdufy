@@ -30,6 +30,9 @@ interface Student { id: string; name: string; admissionNumber?: string; }
 interface ApiResult {
   studentId: string;
   ca: string | number;
+  ca1?: string | number;
+  ca2?: string | number;
+  ca3?: string | number;
   exam: string | number;
   total: string | number;
   grade: string;
@@ -38,6 +41,9 @@ interface ApiResult {
 interface SubjectResult {
   subjectId: string;
   subjectName: string;
+  ca1: number;
+  ca2: number;
+  ca3: number;
   ca: number;
   exam: number;
   total: number;
@@ -57,7 +63,10 @@ interface StudentResultCard {
 // Type for Excel rows – CA and Exam can be number or string (for empty cells)
 interface ExcelRow {
   Subject: string;
-  CA: number | string;
+  '1CA': number | string;
+  '2CA': number | string;
+  '3CA': number | string;
+  'CA Total': number | string;
   Exam: number | string;
   Total: number;
   Grade: string;
@@ -172,16 +181,19 @@ export default function AdminReports() {
     }
     setLoading(true);
     try {
-      const subjectResultsMap = new Map<string, Map<string, { ca: number; exam: number; total: number; grade: string }>>();
+      const subjectResultsMap = new Map<string, Map<string, { ca1: number; ca2: number; ca3: number; ca: number; exam: number; total: number; grade: string }>>();
 
       for (const sub of subjects) {
         const url = `/results?armId=${selectedArmId}&subjectId=${sub.id}&term=${encodeURIComponent(selectedTerm)}&academicYearId=${selectedAcademicYearId}`;
         const res = await api.get(url, token);
         if (!res.ok) continue;
         const results = (await res.json()) as ApiResult[];
-        const studentMap = new Map<string, { ca: number; exam: number; total: number; grade: string }>();
+        const studentMap = new Map<string, { ca1: number; ca2: number; ca3: number; ca: number; exam: number; total: number; grade: string }>();
         for (const r of results) {
           studentMap.set(r.studentId, {
+            ca1: toNumber(r.ca1),
+            ca2: toNumber(r.ca2),
+            ca3: toNumber(r.ca3),
             ca: toNumber(r.ca),
             exam: toNumber(r.exam),
             total: toNumber(r.total),
@@ -204,6 +216,9 @@ export default function AdminReports() {
             subjectsData.push({
               subjectId: sub.id,
               subjectName: sub.name,
+              ca1: result.ca1,
+              ca2: result.ca2,
+              ca3: result.ca3,
               ca: result.ca,
               exam: result.exam,
               total: result.total,
@@ -213,6 +228,9 @@ export default function AdminReports() {
             subjectsData.push({
               subjectId: sub.id,
               subjectName: sub.name,
+              ca1: 0,
+              ca2: 0,
+              ca3: 0,
               ca: 0,
               exam: 0,
               total: 0,
@@ -262,14 +280,20 @@ export default function AdminReports() {
     try {
       const rows: ExcelRow[] = card.subjects.map(sub => ({
         Subject: sub.subjectName,
-        'CA': Number(sub.ca),    // explicit number
+        '1CA': Number(sub.ca1),
+        '2CA': Number(sub.ca2),
+        '3CA': Number(sub.ca3),
+        'CA Total': Number(sub.ca),
         'Exam': Number(sub.exam),
         'Total': Number(sub.total),
         'Grade': sub.grade,
       }));
       rows.push({
         Subject: 'TOTAL / AVERAGE',
-        'CA': '',                // empty string allowed by ExcelRow type
+        '1CA': '',
+        '2CA': '',
+        '3CA': '',
+        'CA Total': '',
         'Exam': '',
         'Total': Number(card.totalScore),
         'Grade': `${Number(card.average).toFixed(2)}% (${card.overallGrade})`,
@@ -304,14 +328,20 @@ export default function AdminReports() {
       for (const card of resultCards) {
         const rows: ExcelRow[] = card.subjects.map(sub => ({
           Subject: sub.subjectName,
-          'CA': Number(sub.ca),
+          '1CA': Number(sub.ca1),
+          '2CA': Number(sub.ca2),
+          '3CA': Number(sub.ca3),
+          'CA Total': Number(sub.ca),
           'Exam': Number(sub.exam),
           'Total': Number(sub.total),
           'Grade': sub.grade,
         }));
         rows.push({
           Subject: 'TOTAL / AVERAGE',
-          'CA': '',
+          '1CA': '',
+          '2CA': '',
+          '3CA': '',
+          'CA Total': '',
           'Exam': '',
           'Total': Number(card.totalScore),
           'Grade': `${Number(card.average).toFixed(2)}% (${card.overallGrade})`,
@@ -358,11 +388,11 @@ export default function AdminReports() {
       for (const card of resultCards) {
         htmlContent += `<div class="card"><div class="header"><h2>${card.studentName}</h2>
           <p>Admission No: ${card.admissionNumber || '—'} | Session: ${yearName} | Term: ${selectedTerm}</p></div>
-          <table><thead><tr><th>Subject</th><th>CA</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>`;
+          <table><thead><tr><th>Subject</th><th>1CA</th><th>2CA</th><th>3CA</th><th>CA Total</th><th>Exam</th><th>Total</th><th>Grade</th></tr></thead><tbody>`;
         for (const sub of card.subjects) {
-          htmlContent += `<tr><td>${sub.subjectName}</td><td>${sub.ca}</td><td>${sub.exam}</td><td>${sub.total}</td><td>${sub.grade}</td></tr>`;
+          htmlContent += `<tr><td>${sub.subjectName}</td><td>${sub.ca1}</td><td>${sub.ca2}</td><td>${sub.ca3}</td><td>${sub.ca}</td><td>${sub.exam}</td><td>${sub.total}</td><td>${sub.grade}</td></tr>`;
         }
-        htmlContent += `<tr class="total-row"><td><strong>TOTAL / AVERAGE</strong></td><td></td><td></td>
+        htmlContent += `<tr class="total-row"><td><strong>TOTAL / AVERAGE</strong></td><td></td><td></td><td></td><td></td><td></td>
           <td><strong>${card.totalScore}</strong></td><td><strong>${card.average.toFixed(2)}% (${card.overallGrade})</strong></td></tr>
           </tbody></table></div>`;
       }
@@ -548,12 +578,15 @@ export default function AdminReports() {
                   <div className="overflow-x-auto">
                     <table className="min-w-full text-sm">
                       <thead className={`border-b ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'}`}>
-                        <tr><th className={`text-left py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Subject</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>CA</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Exam</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Total</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Grade</th></tr>
+                        <tr><th className={`text-left py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Subject</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>1CA</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>2CA</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>3CA</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>CA Total</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Exam</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Total</th><th className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Grade</th></tr>
                       </thead>
                       <tbody>
                         {selectedCard.subjects.map(sub => (
                           <tr key={sub.subjectId} className="border-b border-gray-100 dark:border-gray-800">
                             <td className={`py-2 px-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{sub.subjectName}</td>
+                            <td className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{sub.ca1}</td>
+                            <td className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{sub.ca2}</td>
+                            <td className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{sub.ca3}</td>
                             <td className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{sub.ca}</td>
                             <td className={`text-center py-2 px-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>{sub.exam}</td>
                             <td className={`text-center py-2 px-2 font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{sub.total}</td>

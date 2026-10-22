@@ -52,6 +52,8 @@ interface Activity {
 }
 
 // ---------- Sub-components ----------
+import SchoolLogo from '../../components/SchoolLogo';
+
 const Greeting = ({ name, role, school, theme }: { name: string; role: string; school: string; theme: string }) => {
   const hour = new Date().getHours();
   let greeting = 'Good morning';
@@ -64,13 +66,16 @@ const Greeting = ({ name, role, school, theme }: { name: string; role: string; s
     : '';
 
   return (
-    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-5 md:mb-6">
-      <h1 className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-        {greeting}, {name} 👋
-      </h1>
-      <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-        {roleLabel ? `${roleLabel} • ` : ''}{school} — {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-      </p>
+    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-5 md:mb-6 flex items-center gap-3">
+      <SchoolLogo className="h-11 w-11 md:h-12 md:w-12" />
+      <div>
+        <h1 className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
+          {greeting}, {name} 👋
+        </h1>
+        <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
+          {roleLabel ? `${roleLabel} • ` : ''}{school} — {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+        </p>
+      </div>
     </motion.div>
   );
 };
