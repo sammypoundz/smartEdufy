@@ -332,6 +332,21 @@ function EdufyPanel() {
     return () => window.removeEventListener('keydown', onKey);
   }, [open, closePanel]);
 
+  // Touch fix: on touchscreens the browser computes the click target at
+  // pointerup time, so the same tap that opens the panel can dispatch its
+  // synthetic click onto the freshly-mounted backdrop (which covers the tap
+  // coordinates), instantly closing the panel. Ignore backdrop clicks for a
+  // short window after open — mouse clicks target the button (from mousedown)
+  // and are unaffected.
+  const openedAtRef = useRef(0);
+  useEffect(() => {
+    if (open) openedAtRef.current = Date.now();
+  }, [open]);
+  const handleBackdropClick = () => {
+    if (Date.now() - openedAtRef.current < 400) return;
+    closePanel();
+  };
+
   return (
     <AnimatePresence>
       {open && (
@@ -342,7 +357,7 @@ function EdufyPanel() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            onClick={closePanel}
+            onClick={handleBackdropClick}
             className="fixed inset-0 z-[65] bg-black/30 backdrop-blur-[1px] md:bg-transparent"
             aria-hidden="true"
           />

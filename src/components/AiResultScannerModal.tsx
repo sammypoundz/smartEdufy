@@ -224,11 +224,23 @@ export default function AiResultScannerModal({
     onApply(valid);
   };
 
+  // Touch fix: the same tap that opens the modal can fire a click on the
+  // freshly-mounted overlay (event re-targeting on mobile). Ignore overlay
+  // clicks for a short window after mount.
+  const openedAtRef = useRef(0);
+  useEffect(() => {
+    if (open) openedAtRef.current = Date.now();
+  }, [open]);
+  const handleOverlayClick = (e: React.MouseEvent) => {
+    if (Date.now() - openedAtRef.current < 400) return;
+    onClose();
+  };
+
   return createPortal(
     <div
       className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60"
       style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
-      onClick={onClose}
+      onClick={handleOverlayClick}
     >
       <div
         className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900"
