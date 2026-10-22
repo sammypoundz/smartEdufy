@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import toast from "react-hot-toast";
 import { useDropzone } from "react-dropzone";
 import {
   ArrowUpTrayIcon,
@@ -13,21 +15,38 @@ import {
   XMarkIcon,
 } from "@heroicons/react/24/outline";
 import { useEdufy } from "./EdufyContext";
+import { useAuth } from "../contexts/AuthContext";
+import { api } from "../utils/api";
 
-// ---------------- mock extraction (frontend demo only) ----------------
-// Two rows are intentionally imperfect (a suspicious CA2 and an OCR-noise
-// name) to demo the edit-and-correct step in the review stage.
-const MOCK_EXTRACTED = [
-  { id: 1, name: "Adaeze Okafor", class: "JSS 2A", ca1: 18, ca2: 16, exam: 58 },
-  { id: 2, name: "Chidi Nwosu", class: "JSS 2A", ca1: 15, ca2: 14, exam: 52 },
-  { id: 3, name: "Fatima Bello", class: "JSS 2A", ca1: 20, ca2: 19, exam: 61 },
-  { id: 4, name: "Emeka Obi", class: "JSS 2A", ca1: 12, ca2: 10, exam: 47 },
-  { id: 5, name: "Grace Adeyemi", class: "JSS 2A", ca1: 19, ca2: 17, exam: 60 },
-  { id: 6, name: "Ibrahim Musa", class: "JSS 2A", ca1: 17, ca2: 1, exam: 55 },
-  { id: 7, name: "Ngozi Okafor2", class: "JSS 2A", ca1: 14, ca2: 13, exam: 50 },
-];
+// Real extraction: the file is sent to POST /api/ai-scan/result-sheet, which
+// uses Gemini vision to read the table (printed or handwritten). The scanned
+// rows are then reviewed here and can be pushed into the Result Compiler via
+// the Results page.
+
+interface ExtractedRow {
+  id: number;
+  name: string;
+  admissionNumber?: string | null;
+  ca1: number | null;
+  ca2: number | null;
+  ca3: number | null;
+  exam: number | null;
+  confidence: "high" | "medium" | "low";
+}
+
+const CONFIDENCE_STYLES: Record<string, string> = {
+  high: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
+  medium: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  low: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+};
 
 type Stage = "upload" | "scanning" | "review" | "saved";
+
+const clampMark = (v: any): number | null => {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? Math.max(0, Math.min(100, n)) : null;
+};
 
 const PROGRESS_STEPS = [
   "Uploading image…",
@@ -38,57 +57,98 @@ const PROGRESS_STEPS = [
 ];
 
 export default function ResultScannerScreen() {
-  const { back } = useEdufy();
+  const { back, scannerHandoff, resetToMenu } = useEdufy();
+  const { token } = useAuth();
+  const rosterNames = scannerHandoff?.rosterNames ?? [];
+  const onApply = scannerHandoff?.onApply;
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>("upload");
   const [progress, setProgress] = useState(0);
   const [stepIdx, setStepIdx] = useState(0);
-  const [rows, setRows] = useState(MOCK_EXTRACTED.map((r) => ({ ...r })));
+  const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [cameraOn, setCameraOn] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(
+    typeof window !== "undefined" && window.innerWidth < 768,
+  );
   const [startingCamera, setStartingCamera] = useState(false);
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
-  const onDrop = useCallback((accepted: File[], rejected: { file: File }[]) => {
-    if (rejected.length) {
-      setError(
-        "Unsupported file. Please upload a JPG, PNG or PDF result sheet.",
-      );
-      return;
-    }
+  // Send the file to the real backend and map the response into review rows.
+  const scan = async (f: File) => {
     setError(null);
-    const f = accepted[0];
-    if (!f) return;
-    setFile(f);
-    if (f.type.startsWith("image/")) setPreviewUrl(URL.createObjectURL(f));
-    else setPreviewUrl(null);
-    setStage("scanning");
-  }, []);
+    setRows([]);
+    try {
+      const fd = new FormData();
+      fd.append("image", f);
+      const res = await api.post("/ai-scan/result-sheet", fd, token);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "AI scan failed");
+      const students: any[] = Array.isArray(data.students) ? data.students : [];
+      if (students.length === 0) {
+        throw new Error(
+          "No student rows could be read from this image. Try a clearer, well-lit photo of the full table.",
+        );
+      }
+      setRows(
+        students.map((s, i) => ({
+          id: i + 1,
+          name: String(s.name ?? "").trim(),
+          admissionNumber: s.admissionNumber ?? null,
+          ca1: clampMark(s.ca1),
+          ca2: clampMark(s.ca2),
+          ca3: clampMark(s.ca3),
+          exam: clampMark(s.exam),
+          confidence: ["high", "medium", "low"].includes(s.confidence)
+            ? s.confidence
+            : "medium",
+        })),
+      );
+      setStage("review");
+    } catch (err: any) {
+      setError(err.message || "AI scan failed");
+      setStage("upload");
+    }
+  };
+
+  const onDrop = useCallback(
+    (accepted: File[], rejected: { file: File }[]) => {
+      if (rejected.length) {
+        setError("Unsupported file. Please upload a JPG or PNG result sheet.");
+        return;
+      }
+      setError(null);
+      const f = accepted[0];
+      if (!f) return;
+      setFile(f);
+      if (f.type.startsWith("image/")) setPreviewUrl(URL.createObjectURL(f));
+      else setPreviewUrl(null);
+      setStage("scanning");
+      scan(f);
+    },
+    [token],
+  );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    accept: { "image/jpeg": [], "image/png": [], "application/pdf": [] },
+    accept: { "image/jpeg": [], "image/png": [] },
     maxFiles: 1,
   });
 
-  // Simulated extraction progress — mock only.
+  // Indeterminate progress animation while the real request is in flight.
+  // The stage advances to "review" when the scan resolves (not from here).
   useEffect(() => {
     if (stage !== "scanning") return;
     setProgress(0);
     setStepIdx(0);
     timer.current = setInterval(() => {
+      setProgress((p) => Math.min(p + 4 + Math.random() * 6, 95));
       setProgress((p) => {
-        const next = p + 4 + Math.random() * 6;
-        if (next >= 100) {
-          clearInterval(timer.current!);
-          setTimeout(() => setStage("review"), 350);
-          return 100;
-        }
-        setStepIdx(Math.min(Math.floor(next / 20), PROGRESS_STEPS.length - 1));
-        return next;
+        setStepIdx(Math.min(Math.floor(p / 20), PROGRESS_STEPS.length - 1));
+        return p;
       });
     }, 220);
     return () => {
@@ -104,6 +164,14 @@ export default function ResultScannerScreen() {
   }, []);
 
   useEffect(() => stopCamera, [stopCamera]);
+
+  // Track viewport so the camera renders in exactly one place (the ref must
+  // not be shared between the full-screen portal and the inline preview).
+  useEffect(() => {
+    const onResize = () => setIsMobileView(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // Attach the stream once the video element mounts.
   useEffect(() => {
@@ -149,6 +217,7 @@ export default function ResultScannerScreen() {
         setFile(f);
         setPreviewUrl(URL.createObjectURL(blob));
         setStage("scanning");
+        scan(f);
       },
       "image/jpeg",
       0.92,
@@ -157,11 +226,19 @@ export default function ResultScannerScreen() {
 
   const updateRow = (
     id: number,
-    field: "ca1" | "ca2" | "exam",
+    field: "name" | "ca1" | "ca2" | "ca3" | "exam",
     value: string,
   ) => {
-    const num = Math.max(0, Math.min(100, Number(value) || 0));
-    setRows((rs) => rs.map((r) => (r.id === id ? { ...r, [field]: num } : r)));
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.id !== id) return r;
+        if (field === "name") return { ...r, name: value };
+        return {
+          ...r,
+          [field]: value === "" ? null : Math.max(0, Math.min(100, Number(value) || 0)),
+        };
+      }),
+    );
   };
 
   const removeRow = (id: number) =>
@@ -173,10 +250,35 @@ export default function ResultScannerScreen() {
     setPreviewUrl(null);
     setStage("upload");
     setProgress(0);
-    setRows(MOCK_EXTRACTED.map((r) => ({ ...r })));
+    setRows([]);
   };
 
-  const total = (r: (typeof MOCK_EXTRACTED)[number]) => r.ca1 + r.ca2 + r.exam;
+  const total = (r: ExtractedRow) =>
+    (r.ca1 ?? 0) + (r.ca2 ?? 0) + (r.ca3 ?? 0) + (r.exam ?? 0);
+
+  const inRoster = (name: string) =>
+    rosterNames.some((n) => n.toLowerCase().trim() === name.toLowerCase().trim());
+
+  // Apply the reviewed rows to the host page (e.g. the Results score table).
+  // Only available when the scanner was opened with a handoff.
+  const applyToHost = () => {
+    if (!onApply) return;
+    const valid = rows.filter((r) => r.name.trim());
+    if (valid.length === 0) {
+      toast.error("No rows with a student name to apply");
+      return;
+    }
+    const unmatched = valid.filter((r) => !inRoster(r.name));
+    if (unmatched.length > 0) {
+      toast.error(
+        `${unmatched.length} name(s) don't match the class roster (e.g. "${unmatched[0].name}"). Fix or remove them first.`,
+      );
+      return;
+    }
+    onApply(valid);
+    restart();
+    resetToMenu();
+  };
 
   return (
     <div className="flex h-full flex-col">
@@ -204,7 +306,7 @@ export default function ResultScannerScreen() {
         <div>
           <h3 className="text-sm font-bold text-gray-900 dark:text-gray-100">AI Result Scanner</h3>
           <p className="text-[11px] text-gray-500 dark:text-gray-400">
-            Upload a result sheet — review before saving
+            Photo of a result sheet → marks extracted
           </p>
         </div>
       </div>
@@ -247,8 +349,43 @@ export default function ResultScannerScreen() {
             {startingCamera ? "Starting camera…" : "Take photo with camera"}
           </button>
 
-          {cameraOn && (
-            <div className="mt-3 overflow-hidden rounded-2xl border border-gray-300 bg-black dark:border-gray-600">
+          {cameraOn && isMobileView && createPortal(
+            // Full-screen camera on phones (portal to body so it escapes the
+            // panel's width); inline preview on desktop.
+            <div
+              className="fixed inset-0 z-[10000] flex flex-col bg-black md:hidden"
+              style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
+            >
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                autoPlay
+                className="min-h-0 w-full flex-1 object-contain"
+                aria-label="Live camera preview"
+              />
+              <div className="flex shrink-0 items-center justify-center gap-4 bg-black px-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] pt-4">
+                <button
+                  onClick={capturePhoto}
+                  className="h-16 w-16 rounded-full border-4 border-white bg-white/20 transition active:scale-95"
+                  aria-label="Capture photo"
+                >
+                  <CameraIcon className="mx-auto h-7 w-7 text-white" />
+                </button>
+                <button
+                  onClick={stopCamera}
+                  aria-label="Close camera"
+                  className="absolute right-6 top-6 rounded-full bg-white/15 p-3 text-white"
+                >
+                  <XMarkIcon className="h-6 w-6" />
+                </button>
+              </div>
+            </div>,
+            document.body,
+          )}
+
+          {cameraOn && !isMobileView && (
+            <div className="mt-3 hidden overflow-hidden rounded-2xl border border-gray-300 bg-black dark:border-gray-600 md:block">
               <video
                 ref={videoRef}
                 playsInline
@@ -346,7 +483,7 @@ export default function ResultScannerScreen() {
               ))}
             </ul>
             <p className="mt-4 text-center text-[10px] text-gray-400 dark:text-gray-500">
-              Mock extraction — demo data will be shown for review.
+              AI is reading the sheet — this usually takes a few seconds.
             </p>
           </div>
         )}
@@ -380,10 +517,12 @@ export default function ResultScannerScreen() {
                 <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                   <tr>
                     <th className="px-2 py-2">Student</th>
-                    <th className="px-2 py-2">CA1</th>
-                    <th className="px-2 py-2">CA2</th>
+                    <th className="px-2 py-2">1CA</th>
+                    <th className="px-2 py-2">2CA</th>
+                    <th className="px-2 py-2">3CA</th>
                     <th className="px-2 py-2">Exam</th>
                     <th className="px-2 py-2">Total</th>
+                    <th className="px-2 py-2">AI</th>
                     <th className="px-2 py-2">
                       <span className="sr-only">Remove</span>
                     </th>
@@ -404,20 +543,24 @@ export default function ResultScannerScreen() {
                               ),
                             )
                           }
-                          className="w-24 rounded-md border border-transparent bg-transparent px-1 py-0.5 text-gray-800 hover:border-gray-300 focus:border-blue-500 focus:outline-none dark:text-gray-100 dark:hover:border-gray-600"
+                          className={`w-24 rounded-md border bg-transparent px-1 py-0.5 text-gray-800 focus:border-blue-500 focus:outline-none dark:text-gray-100 ${
+                            inRoster(r.name)
+                              ? "border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                              : "border-red-300 dark:border-red-500/60"
+                          }`}
                           aria-label={`Edit name for ${r.name}`}
                         />
                         <span className="ml-1 text-[9px] text-gray-400 dark:text-gray-500">
-                          {r.class}
+                          {r.admissionNumber}
                         </span>
                       </td>
-                      {(["ca1", "ca2", "exam"] as const).map((f) => (
+                      {(["ca1", "ca2", "ca3", "exam"] as const).map((f) => (
                         <td key={f} className="px-2 py-1.5">
                           <input
                             type="number"
                             min={0}
                             max={100}
-                            value={r[f]}
+                            value={r[f] ?? ""}
                             onChange={(e) => updateRow(r.id, f, e.target.value)}
                             className="w-12 rounded-md border border-gray-200 bg-transparent px-1 py-0.5 text-center text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:text-gray-100"
                             aria-label={`${f} for ${r.name}`}
@@ -426,6 +569,13 @@ export default function ResultScannerScreen() {
                       ))}
                       <td className="px-2 py-1.5 font-bold text-blue-700 dark:text-blue-300">
                         {total(r)}
+                      </td>
+                      <td className="px-2 py-1.5">
+                        <span
+                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold ${CONFIDENCE_STYLES[r.confidence]}`}
+                        >
+                          {r.confidence}
+                        </span>
                       </td>
                       <td className="px-2 py-1.5">
                         <button
@@ -441,7 +591,7 @@ export default function ResultScannerScreen() {
                   {rows.length === 0 && (
                     <tr>
                       <td
-                        colSpan={6}
+                        colSpan={8}
                         className="px-3 py-6 text-center text-gray-400"
                       >
                         No rows extracted. Scan another sheet.
@@ -453,15 +603,19 @@ export default function ResultScannerScreen() {
             </div>
 
             <button
-              onClick={() => setStage("saved")}
+              onClick={onApply ? applyToHost : () => setStage("saved")}
               disabled={rows.length === 0}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              <CheckCircleIcon className="h-4 w-4" /> Review &amp; Save{" "}
-              {rows.length} Students
+              <CheckCircleIcon className="h-4 w-4" />{" "}
+              {onApply
+                ? `Apply ${rows.length} to score table`
+                : "Done — review extraction"}
             </button>
             <p className="mt-2 text-center text-[10px] text-gray-400">
-              Mock save — no data is sent anywhere in this demo.
+              {onApply
+                ? "Names must match a student in the selected class (red names need fixing). Blank cells stay untouched."
+                : "These marks were read from your sheet. Open the Results module and use the AI Scanner button to apply them to a class score table."}
             </p>
           </div>
         )}
@@ -476,11 +630,12 @@ export default function ResultScannerScreen() {
               Extraction Complete!
             </h4>
             <p className="mt-1 max-w-[240px] text-[11px] text-gray-500 dark:text-gray-400">
-              {rows.length} students were reviewed and saved to “JSS 2A — First
-              Term Results”. You can edit them anytime in the Result Compiler.
+              {rows.length} students were extracted. To push them into a class
+              score table, open the <strong>Results</strong> module, pick the
+              class and subject, and tap the AI Scanner button there.
             </p>
             <div className="mt-4 flex w-full items-center justify-center rounded-xl bg-blue-50 p-3 text-[11px] text-blue-800 dark:bg-blue-500/10 dark:text-blue-200">
-              <DocumentTextIcon className="mr-2 h-4 w-4" /> Preview saved in{" "}
+              <DocumentTextIcon className="mr-2 h-4 w-4" /> Apply in{" "}
               <strong className="mx-1">Results</strong> module
             </div>
             <div className="mt-4 flex gap-2">

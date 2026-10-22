@@ -11,7 +11,7 @@ import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import UploadProgress from '../../components/UploadProgress';
-import AiResultScannerModal from '../../components/AiResultScannerModal';
+import { useEdufy } from '../../edufy/EdufyContext';
 import {
   DocumentArrowDownIcon,
   PrinterIcon,
@@ -96,11 +96,9 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  // AI Scanner: auto-open on desktop (≥1024px) on page load; on mobile it
-  // stays closed until the user taps the "AI Scan" button.
-  const [showAiScanner, setShowAiScanner] = useState(
-    typeof window !== 'undefined' && window.innerWidth >= 1024,
-  );
+  // AI scanning happens in the Edufy agent panel (floating modal). The button
+  // below hands the current class roster to the agent's Result Scanner.
+  const { openScanner } = useEdufy();
 
   // Grading scales (class-assigned group takes priority over school-wide)
   const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
@@ -615,7 +613,6 @@ export default function AdminResults() {
     } else {
       toast.error('No matching students found in the score table');
     }
-    setShowAiScanner(false);
   };
 
   // Score change with 3 CAs: total = 1CA + 2CA + 3CA + Exam
@@ -655,7 +652,7 @@ export default function AdminResults() {
         <div className="sm:flex sm:items-center sm:justify-between mb-8">
           <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
           <div className="mt-4 sm:mt-0 flex gap-3">
-            <button onClick={()=>setShowAiScanner(true)} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm shadow-lg disabled:opacity-50"><SparklesIcon className="h-4 w-4 mr-2"/>AI Scan</button>
+            <button onClick={() => openScanner({ rosterNames: students.map(s => s.name), onApply: handleAiApply })} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm shadow-lg disabled:opacity-50"><SparklesIcon className="h-4 w-4 mr-2"/>AI Scan</button>
             <button onClick={downloadTemplate} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50"><DocumentArrowDownIcon className="h-4 w-4 mr-2"/>Template</button>
             <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-2"/>Entry Sheet PDF</button>
             <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-2"/>{uploading?'Uploading...':'Bulk Upload'}</button>
@@ -847,13 +844,6 @@ export default function AdminResults() {
           </div>
         )}
 
-        {/* AI Result Scanner modal */}
-        <AiResultScannerModal
-          open={showAiScanner}
-          onClose={() => setShowAiScanner(false)}
-          onApply={handleAiApply}
-          rosterNames={students.map(s => s.name)}
-        />
       </div>
     </div>
   );

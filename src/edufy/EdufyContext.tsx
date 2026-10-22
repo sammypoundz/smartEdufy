@@ -36,12 +36,30 @@ export interface ChatMessage {
   status?: "loading" | "error";
 }
 
+/** A row extracted by the AI Result Scanner (backend /ai-scan/result-sheet). */
+export interface EdufyScanRow {
+  name: string;
+  admissionNumber?: string | null;
+  ca1: number | null;
+  ca2: number | null;
+  ca3: number | null;
+  exam: number | null;
+  confidence: "high" | "medium" | "low";
+}
+
+/** Handoff from a host page (e.g. Results) into the agent's scanner screen. */
+export interface ScannerHandoff {
+  rosterNames: string[];
+  onApply: (rows: EdufyScanRow[]) => void;
+}
+
 interface EdufyContextValue {
   open: boolean;
   screen: EdufyScreen;
   history: EdufyScreen[];
   chat: ChatMessage[];
   chatTyping: boolean;
+  scannerHandoff: ScannerHandoff | null;
   openPanel: () => void;
   closePanel: () => void;
   togglePanel: () => void;
@@ -49,6 +67,8 @@ interface EdufyContextValue {
   back: () => void;
   resetToMenu: () => void;
   sendChat: (text: string) => void;
+  /** Open the agent directly on the Result Scanner with a host handoff. */
+  openScanner: (handoff: ScannerHandoff) => void;
 }
 
 const EdufyContext = createContext<EdufyContextValue | null>(null);
@@ -109,6 +129,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
     },
   ]);
   const [chatTyping, setChatTyping] = useState(false);
+  const [scannerHandoff, setScannerHandoff] = useState<ScannerHandoff | null>(null);
 
   // ---------- Auth-gated transient greeting ----------
   // The assistant auto-greets ONLY for logged-in users, and the greeting is
@@ -164,6 +185,18 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
     setOpen((o) => !o);
   }, []);
 
+  const openScanner = useCallback((handoff: ScannerHandoff) => {
+    // Manual open cancels any pending auto-close — the panel stays open.
+    if (autoCloseTimer.current) {
+      clearTimeout(autoCloseTimer.current);
+      autoCloseTimer.current = null;
+    }
+    setScannerHandoff(handoff);
+    setScreen("result-scanner");
+    setHistory((h) => [...h, "result-scanner"]);
+    setOpen(true);
+  }, []);
+
   const go = useCallback((s: EdufyScreen) => {
     setHistory((h) => [...h, s]);
     setScreen(s);
@@ -180,6 +213,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
   const resetToMenu = useCallback(() => {
     setScreen("menu");
     setHistory([]);
+    setScannerHandoff(null);
   }, []);
 
   const sendChat = useCallback((text: string) => {
@@ -216,6 +250,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       history,
       chat,
       chatTyping,
+      scannerHandoff,
       openPanel,
       closePanel,
       togglePanel,
@@ -223,6 +258,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       back,
       resetToMenu,
       sendChat,
+      openScanner,
     }),
     [
       open,
@@ -230,6 +266,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       history,
       chat,
       chatTyping,
+      scannerHandoff,
       openPanel,
       closePanel,
       togglePanel,
@@ -237,6 +274,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       back,
       resetToMenu,
       sendChat,
+      openScanner,
     ],
   );
 
