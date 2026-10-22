@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 import { useDropzone } from "react-dropzone";
 import {
@@ -57,10 +58,12 @@ const PROGRESS_STEPS = [
 ];
 
 export default function ResultScannerScreen() {
-  const { back, scannerHandoff, resetToMenu } = useEdufy();
+  const { back, scannerHandoff, resetToMenu, pushScan, closePanel } = useEdufy();
   const { token } = useAuth();
+  const navigate = useNavigate();
   const rosterNames = scannerHandoff?.rosterNames ?? [];
   const onApply = scannerHandoff?.onApply;
+  const scanContext = scannerHandoff?.context;
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [stage, setStage] = useState<Stage>("upload");
@@ -261,6 +264,34 @@ export default function ResultScannerScreen() {
 
   // Apply the reviewed rows to the host page (e.g. the Results score table).
   // Only available when the scanner was opened with a handoff.
+  // Queue the reviewed rows and jump to the Result Compiler, which will
+  // pre-select the class/arm/subject/term/year from the scan context and fill
+  // the score fields.
+  const pushToCompiler = () => {
+    const valid = rows.filter((r) => r.name.trim());
+    if (valid.length === 0) {
+      toast.error("No rows with a student name to push");
+      return;
+    }
+    pushScan({
+      rows: valid.map(({ name, admissionNumber, ca1, ca2, ca3, exam }) => ({
+        name,
+        admissionNumber,
+        ca1,
+        ca2,
+        ca3,
+        exam,
+        confidence: "medium" as const,
+      })),
+      context: scanContext,
+    });
+    closePanel();
+    navigate("/admin/results");
+    toast.success(
+      "Scan queued — the Result Compiler will fill the score table.",
+    );
+  };
+
   const applyToHost = () => {
     if (!onApply) return;
     const valid = rows.filter((r) => r.name.trim());
@@ -603,19 +634,19 @@ export default function ResultScannerScreen() {
             </div>
 
             <button
-              onClick={onApply ? applyToHost : () => setStage("saved")}
+              onClick={onApply ? applyToHost : pushToCompiler}
               disabled={rows.length === 0}
               className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2.5 text-xs font-bold text-white shadow-md transition hover:from-blue-500 hover:to-indigo-500 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <CheckCircleIcon className="h-4 w-4" />{" "}
               {onApply
                 ? `Apply ${rows.length} to score table`
-                : "Done — review extraction"}
+                : `Push ${rows.length} to Result Compiler`}
             </button>
             <p className="mt-2 text-center text-[10px] text-gray-400">
               {onApply
                 ? "Names must match a student in the selected class (red names need fixing). Blank cells stay untouched."
-                : "These marks were read from your sheet. Open the Results module and use the AI Scanner button to apply them to a class score table."}
+                : "Opens the Result Compiler, pre-selects the right class, subject and term, and fills the score fields."}
             </p>
           </div>
         )}

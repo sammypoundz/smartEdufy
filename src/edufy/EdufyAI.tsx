@@ -10,6 +10,7 @@ import {
   ExclamationTriangleIcon,
 } from "@heroicons/react/24/solid";
 import { EdufyProvider, useEdufy, type EdufyScreen as Screen } from "./EdufyContext";
+export { EdufyProvider };
 import {
   EDUFY_FEATURES,
   EdufyLogo,
@@ -417,9 +418,9 @@ export default function EdufyAI() {
   const isLoggedIn = !!auth?.user && !!auth?.token;
   if (!isLoggedIn) return null;
   return (
-    <EdufyProvider>
+    <>
       <FloatingEdufyButton />
       <EdufyPanel />
-    </EdufyProvider>
+    </>
   );
 }

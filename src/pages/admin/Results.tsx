@@ -18,7 +18,6 @@ import {
   CloudArrowUpIcon,
   DocumentChartBarIcon,
   ClockIcon,
-  SparklesIcon,
 } from '@heroicons/react/24/outline';
 
 // Types (unchanged)
@@ -96,9 +95,33 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  // AI scanning happens in the Edufy agent panel (floating modal). The button
-  // below hands the current class roster to the agent's Result Scanner.
-  const { openScanner } = useEdufy();
+  // AI scanning happens in the Edufy agent panel (floating modal). When a
+  // completed scan is pushed from the panel, it lands here to be consumed.
+  const { pendingScan, consumePendingScan } = useEdufy();
+
+  // Consume a scan pushed from the agent: pre-select class/arm/subject/term/
+  // year from the scan context, then fill the score fields once the table
+  // loads. Runs after mount so the fetch effects react to the selections.
+  useEffect(() => {
+    if (!pendingScan) return;
+    const ctx = pendingScan.context;
+    if (ctx?.classId) setSelectedClassId(ctx.classId);
+    if (ctx?.armId) setSelectedArmId(ctx.armId);
+    if (ctx?.subjectId) setSelectedSubjectId(ctx.subjectId);
+    if (ctx?.term) setSelectedTerm(ctx.term);
+    if (ctx?.academicYearId) setSelectedAcademicYearId(ctx.academicYearId);
+  }, [pendingScan]);
+
+  // Fill score fields once the results table for the pushed scan is loaded.
+  const [filledFromScan, setFilledFromScan] = useState<string | null>(null);
+  useEffect(() => {
+    if (!pendingScan || results.length === 0) return;
+    if (filledFromScan) return; // already filled for this scan
+    fillScoresFromScan(pendingScan.rows);
+    setFilledFromScan(pendingScan.rows.map(r => r.name).join('|'));
+    consumePendingScan();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingScan, results]);
 
   // Grading scales (class-assigned group takes priority over school-wide)
   const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
@@ -594,12 +617,10 @@ export default function AdminResults() {
   };
 
   // ---------- AI Result Scanner: apply extracted rows to the score table ----------
-  const handleAiApply = (rows: { name: string; ca1: number | null; ca2: number | null; ca3: number | null; exam: number | null }[]) => {
-    let applied = 0;
+  const fillScoresFromScan = (rows: { name: string; ca1: number | null; ca2: number | null; ca3: number | null; exam: number | null }[]) => {
     setResults(prev => prev.map(r => {
       const match = rows.find(x => x.name.toLowerCase().trim() === r.studentName.toLowerCase().trim());
       if (!match) return r;
-      applied++;
       const ca1 = match.ca1 ?? r.ca1;
       const ca2 = match.ca2 ?? r.ca2;
       const ca3 = match.ca3 ?? r.ca3;
@@ -608,6 +629,9 @@ export default function AdminResults() {
       const total = ca + (exam ?? 0);
       return { ...r, ca1, ca2, ca3, ca, exam, total, grade: computeGrade(total) };
     }));
+    const applied = rows.filter(x =>
+      results.some(r => r.studentName.toLowerCase().trim() === x.name.toLowerCase().trim()),
+    ).length;
     if (applied > 0) {
       toast.success(`AI filled scores for ${applied} student(s). Review and save.`);
     } else {
@@ -652,7 +676,6 @@ export default function AdminResults() {
         <div className="sm:flex sm:items-center sm:justify-between mb-8">
           <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
           <div className="mt-4 sm:mt-0 flex gap-3">
-            <button onClick={() => openScanner({ rosterNames: students.map(s => s.name), onApply: handleAiApply })} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-600 text-white text-sm shadow-lg disabled:opacity-50"><SparklesIcon className="h-4 w-4 mr-2"/>AI Scan</button>
             <button onClick={downloadTemplate} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50"><DocumentArrowDownIcon className="h-4 w-4 mr-2"/>Template</button>
             <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-2"/>Entry Sheet PDF</button>
             <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-2"/>{uploading?'Uploading...':'Bulk Upload'}</button>

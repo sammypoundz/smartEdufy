@@ -56,7 +56,7 @@ import AuditLogPage from './pages/admin/AuditLog';
 import ActivityPage from './pages/admin/Activity';
 import TeacherQuestions from './pages/teacher/Questions';
 import QuestionReviewPage from './pages/admin/QuestionReview';
-import EdufyAI from './edufy/EdufyAI';
+import EdufyAI, { EdufyProvider } from './edufy/EdufyAI';
 import OfflineManager from './pages/admin/OfflineManager';
 
 // Teacher layout
@@ -95,6 +95,9 @@ const RoleBasedRedirect = () => {
 function App() {
   return (
     <BrowserRouter>
+      {/* Edufy provider wraps the whole app so any page (e.g. Results) can
+          open the agent panel via useEdufy(). */}
+      <EdufyProvider>
       {/* Global offline banner — shown whenever the app has no internet */}
       <OfflineIndicator />
       {/* Edufy AI floating assistant — available on all pages */}
@@ -256,6 +259,7 @@ function App() {
           <Route path="/student/*" element={<StudentDashboard />} />
         </Route>
       </Routes>
+      </EdufyProvider>
     </BrowserRouter>
   );
 }

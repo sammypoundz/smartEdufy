@@ -51,6 +51,20 @@ export interface EdufyScanRow {
 export interface ScannerHandoff {
   rosterNames: string[];
   onApply: (rows: EdufyScanRow[]) => void;
+  /** Where the scanned marks should land when pushed to the Result Compiler. */
+  context?: {
+    classId?: string;
+    armId?: string;
+    subjectId?: string;
+    term?: string;
+    academicYearId?: string;
+  };
+}
+
+/** A completed scan waiting to be pushed into the Result Compiler page. */
+export interface PendingScan {
+  rows: EdufyScanRow[];
+  context?: ScannerHandoff["context"];
 }
 
 interface EdufyContextValue {
@@ -60,6 +74,7 @@ interface EdufyContextValue {
   chat: ChatMessage[];
   chatTyping: boolean;
   scannerHandoff: ScannerHandoff | null;
+  pendingScan: PendingScan | null;
   openPanel: () => void;
   closePanel: () => void;
   togglePanel: () => void;
@@ -69,6 +84,10 @@ interface EdufyContextValue {
   sendChat: (text: string) => void;
   /** Open the agent directly on the Result Scanner with a host handoff. */
   openScanner: (handoff: ScannerHandoff) => void;
+  /** Queue a completed scan for the Result Compiler page to consume. */
+  pushScan: (scan: PendingScan) => void;
+  /** Consume (clear) the queued scan — called by the Result Compiler. */
+  consumePendingScan: () => void;
 }
 
 const EdufyContext = createContext<EdufyContextValue | null>(null);
@@ -130,6 +149,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
   ]);
   const [chatTyping, setChatTyping] = useState(false);
   const [scannerHandoff, setScannerHandoff] = useState<ScannerHandoff | null>(null);
+  const [pendingScan, setPendingScan] = useState<PendingScan | null>(null);
 
   // ---------- Auth-gated transient greeting ----------
   // The assistant auto-greets ONLY for logged-in users, and the greeting is
@@ -197,6 +217,14 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
     setOpen(true);
   }, []);
 
+  const pushScan = useCallback((scan: PendingScan) => {
+    setPendingScan(scan);
+  }, []);
+
+  const consumePendingScan = useCallback(() => {
+    setPendingScan(null);
+  }, []);
+
   const go = useCallback((s: EdufyScreen) => {
     setHistory((h) => [...h, s]);
     setScreen(s);
@@ -214,6 +242,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
     setScreen("menu");
     setHistory([]);
     setScannerHandoff(null);
+    setPendingScan(null);
   }, []);
 
   const sendChat = useCallback((text: string) => {
@@ -251,6 +280,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       chat,
       chatTyping,
       scannerHandoff,
+      pendingScan,
       openPanel,
       closePanel,
       togglePanel,
@@ -259,6 +289,8 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       resetToMenu,
       sendChat,
       openScanner,
+      pushScan,
+      consumePendingScan,
     }),
     [
       open,
@@ -267,6 +299,7 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       chat,
       chatTyping,
       scannerHandoff,
+      pendingScan,
       openPanel,
       closePanel,
       togglePanel,
@@ -275,6 +308,8 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       resetToMenu,
       sendChat,
       openScanner,
+      pushScan,
+      consumePendingScan,
     ],
   );
 
