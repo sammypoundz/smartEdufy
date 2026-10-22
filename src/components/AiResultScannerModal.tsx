@@ -231,7 +231,7 @@ export default function AiResultScannerModal({
   useEffect(() => {
     if (open) openedAtRef.current = Date.now();
   }, [open]);
-  const handleOverlayClick = (e: React.MouseEvent) => {
+  const handleOverlayClick = () => {
     if (Date.now() - openedAtRef.current < 400) return;
     onClose();
   };
