@@ -60,7 +60,6 @@ export default function AiResultScannerModal({
   const [stage, setStage] = useState<Stage>("pick");
   const [rows, setRows] = useState<ExtractedRow[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [scanning, setScanning] = useState(false);
   const [cameraOn, setCameraOn] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [startingCamera, setStartingCamera] = useState(false);
@@ -116,7 +115,6 @@ export default function AiResultScannerModal({
 
   const scan = async (file: File) => {
     setError(null);
-    setScanning(true);
     setStage("scanning");
     setPreviewUrl(
       file.type.startsWith("image/") ? URL.createObjectURL(file) : null,
@@ -150,8 +148,6 @@ export default function AiResultScannerModal({
     } catch (err: any) {
       setError(err.message || "AI scan failed");
       setStage("pick");
-    } finally {
-      setScanning(false);
     }
   };
 
