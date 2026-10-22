@@ -272,6 +272,33 @@ export default function AdminFees() {
   const [showPaymentModal, setShowPaymentModal] =
     useState(false);
 
+  // Edit / unmark payments (corrections)
+  const [editingPayment, setEditingPayment] =
+    useState<FeePayment | null>(null);
+
+  const [showEditPaymentModal, setShowEditPaymentModal] =
+    useState(false);
+
+  const [editPaymentForm, setEditPaymentForm] = useState<
+    {
+      amountPaid: number;
+      paymentMethod: string;
+      reference: string;
+      breakdownItems: { itemName: string; amount: number; originalAmount?: number }[];
+    }
+  >({
+    amountPaid: 0,
+    paymentMethod: 'cash',
+    reference: '',
+    breakdownItems: [],
+  });
+
+  const [editingPaymentSubmitting, setEditingPaymentSubmitting] =
+    useState(false);
+
+  const [deletingPaymentId, setDeletingPaymentId] =
+    useState<string | null>(null);
+
   const [paymentStudent, setPaymentStudent] =
     useState<Student | null>(null);
 
@@ -454,6 +481,60 @@ export default function AdminFees() {
       toast.error(getErrorMessage(err, 'Payment failed'));
     },
     onSettled: () => setPaymentSubmitting(false),
+  });
+
+  // ---- Edit / unmark payment mutations ----
+
+  const updatePaymentMutation = useMutation({
+    mutationFn: async (payload: {
+      id: string;
+      amountPaid: number;
+      paymentMethod: string;
+      reference?: string;
+      breakdownItems: { itemName: string; amount: number }[];
+      unmarkAll?: boolean;
+    }) => {
+      const { id, unmarkAll, ...rest } = payload;
+      const body = {
+        ...rest,
+        breakdownItems: rest.breakdownItems.map(
+          ({ itemName, amount }) => ({ itemName, amount })
+        ),
+      };
+      const res = await api.put(`/fees/payments/${id}`, body);
+      return { ...res.data, unmarkAll };
+    },
+    onSuccess: (result) => {
+      invalidateFeesData();
+      toast.success(
+        result?.unmarkAll
+          ? 'Payment fully unmarked — outstanding balance restored'
+          : 'Payment updated — balances recalculated'
+      );
+      setShowEditPaymentModal(false);
+      setEditingPayment(null);
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Failed to update payment'));
+    },
+    onSettled: () => setEditingPaymentSubmitting(false),
+  });
+
+  const deletePaymentMutation = useMutation({
+    mutationFn: async (paymentId: string) => {
+      const res = await api.delete(`/fees/payments/${paymentId}`);
+      return res.data;
+    },
+    onSuccess: () => {
+      invalidateFeesData();
+      toast.success('Payment removed — balances recalculated');
+    },
+    onError: (err) => {
+      console.error(err);
+      toast.error(getErrorMessage(err, 'Failed to remove payment'));
+    },
+    onSettled: () => setDeletingPaymentId(null),
   });
 
   // ============================================================
@@ -911,6 +992,84 @@ export default function AdminFees() {
     setShowPaymentDetailsModal(
       true
     );
+  };
+
+  // ============================================================
+  // Edit / Unmark Payments (corrections)
+  // ============================================================
+
+  /** Payments belonging to the selected student (for the details modal). */
+  const getStudentPayments = (student: Student) =>
+    filteredPayments.filter((p) => p.studentId === student.id);
+
+  const openEditPaymentModal = (payment: FeePayment) => {
+    setEditingPayment(payment);
+    setEditPaymentForm({
+      amountPaid: payment.amountPaid,
+      paymentMethod: payment.paymentMethod || 'cash',
+      reference: payment.reference || '',
+      breakdownItems: (payment.breakdownItems || []).map((item) => ({
+        itemName: item.itemName,
+        amount: item.amount,
+        originalAmount: item.amount,
+      })),
+    });
+    setShowEditPaymentModal(true);
+  };
+
+  const updateEditPaymentItem = (index: number, amount: number) => {
+    setEditPaymentForm((prev) => {
+      const items = [...prev.breakdownItems];
+      items[index] = { ...items[index], amount: Math.max(0, amount) };
+      return {
+        ...prev,
+        breakdownItems: items,
+        amountPaid: items.reduce((sum, i) => sum + i.amount, 0),
+      };
+    });
+  };
+
+  const handleSavePaymentEdit = () => {
+    if (!editingPayment) return;
+
+    const total = editPaymentForm.breakdownItems.reduce(
+      (sum, i) => sum + i.amount,
+      0
+    );
+
+    if (total !== editPaymentForm.amountPaid) {
+      toast.error('Sum of fee items must equal the total amount paid');
+      return;
+    }
+
+    // All items unmarked — the backend removes the whole payment
+    const unmarkingAll = editPaymentForm.breakdownItems.every((i) => i.amount === 0);
+
+    setEditingPaymentSubmitting(true);
+    updatePaymentMutation.mutate({
+      id: editingPayment.id,
+      amountPaid: total,
+      paymentMethod: editPaymentForm.paymentMethod,
+      reference: editPaymentForm.reference || undefined,
+      breakdownItems: editPaymentForm.breakdownItems,
+      unmarkAll: unmarkingAll,
+    });
+  };
+
+  const handleUnmarkPayment = async (payment: FeePayment) => {
+    const result = await Swal.fire({
+      title: 'Unmark as Paid',
+      text: `Remove this payment of ₦${payment.amountPaid.toLocaleString()}? The student's outstanding balance will be recalculated.`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      confirmButtonText: 'Yes, remove it',
+    });
+
+    if (!result.isConfirmed) return;
+
+    setDeletingPaymentId(payment.id);
+    deletePaymentMutation.mutate(payment.id);
   };
 
   // ============================================================
@@ -2927,6 +3086,92 @@ export default function AdminFees() {
                         </tbody>
                       </table>
                     </div>
+
+                    {/* ==================================================
+                        PAYMENT HISTORY (edit / unmark as paid)
+                    ================================================== */}
+
+                    <div className="mt-8">
+                      <h4 className={`text-sm font-bold uppercase tracking-wide mb-3 ${mutedText}`}>
+                        Payment History
+                      </h4>
+
+                      {(() => {
+                        const studentPayments = getStudentPayments(selectedStudent);
+
+                        if (studentPayments.length === 0) {
+                          return (
+                            <div className={`p-4 text-center text-sm rounded-xl ${mutedText} ${
+                              isDark ? 'bg-white/5' : 'bg-gray-50'
+                            }`}>
+                              No payments recorded yet.
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div className="space-y-2">
+                            {studentPayments.map((payment) => (
+                              <div
+                                key={payment.id}
+                                className={`p-4 rounded-xl border ${
+                                  isDark
+                                    ? 'bg-white/5 border-white/10'
+                                    : 'bg-gray-50 border-gray-200'
+                                }`}
+                              >
+                                <div className="flex justify-between items-start gap-3">
+                                  <div className="min-w-0">
+                                    <p className={`font-medium text-sm ${headingText}`}>
+                                      ₦{payment.amountPaid.toLocaleString()}
+                                      {' — '}
+                                      {(payment.breakdownItems || []).map((i) => i.itemName).join(', ') || 'General'}
+                                    </p>
+                                    <p className={`text-xs mt-1 ${mutedText}`}>
+                                      {new Date(payment.paymentDate).toLocaleString()}
+                                      {' • '}
+                                      {payment.paymentMethod?.replace('_', ' ')}
+                                      {payment.reference ? ` • Ref: ${payment.reference}` : ''}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex items-center gap-1 flex-shrink-0">
+                                    <button
+                                      onClick={() => openEditPaymentModal(payment)}
+                                      className={`p-2 rounded-lg transition-colors ${
+                                        isDark
+                                          ? 'text-gray-400 hover:text-blue-400 hover:bg-blue-500/10'
+                                          : 'text-gray-500 hover:text-blue-600 hover:bg-blue-50'
+                                      }`}
+                                      title="Edit payment (fix a mistake)"
+                                    >
+                                      <PencilIcon className="h-4 w-4" />
+                                    </button>
+
+                                    <button
+                                      onClick={() => handleUnmarkPayment(payment)}
+                                      disabled={deletingPaymentId === payment.id}
+                                      className={`p-2 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                                        isDark
+                                          ? 'text-gray-400 hover:text-red-400 hover:bg-red-500/10'
+                                          : 'text-gray-500 hover:text-red-600 hover:bg-red-50'
+                                      }`}
+                                      title="Unmark as paid (remove payment)"
+                                    >
+                                      {deletingPaymentId === payment.id ? (
+                                        <div className="h-4 w-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                                      ) : (
+                                        <TrashIcon className="h-4 w-4" />
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })()}
+                    </div>
                   </div>
 
                   <div
@@ -3705,6 +3950,201 @@ export default function AdminFees() {
               </motion.div>
             </>
           )}
+      </AnimatePresence>
+
+      {/* ======================================================
+          EDIT PAYMENT MODAL (fix mistakes / adjust amounts)
+      ====================================================== */}
+
+      <AnimatePresence>
+        {showEditPaymentModal && editingPayment && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowEditPaymentModal(false)}
+              className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40"
+            />
+
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="fixed inset-0 flex items-center justify-center z-50 p-4"
+            >
+              <div className={`w-full max-w-xl rounded-2xl shadow-2xl overflow-hidden ${cardBackground}`}>
+                {/* Header */}
+                <div className={`flex justify-between items-center p-6 border-b ${
+                  isDark ? 'border-gray-700' : 'border-gray-200'
+                }`}>
+                  <div>
+                    <h3 className={`text-xl font-bold ${headingText}`}>
+                      Edit Payment
+                    </h3>
+                    <p className={`text-sm mt-1 ${mutedText}`}>
+                      Correct a mistake, or unmark individual fees as paid (set to Unmark). If every fee is unmarked, the whole payment is removed and the balance restored. Amounts update automatically.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => setShowEditPaymentModal(false)}
+                    className={`p-2 rounded-full ${
+                      isDark ? 'hover:bg-gray-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'
+                    }`}
+                  >
+                    <XMarkIcon className="h-5 w-5" />
+                  </button>
+                </div>
+
+                {/* Body */}
+                <div className="p-6 space-y-5 max-h-[70vh] overflow-y-auto">
+                  <div>
+                    <label className={`block text-sm font-semibold mb-3 ${bodyText}`}>
+                      Fee Items Paid
+                    </label>
+
+                    <div className="space-y-3">
+                      {editPaymentForm.breakdownItems.map((item, idx) => {
+                        const unmarked = item.amount === 0;
+                        return (
+                        <div
+                          key={`${item.itemName}-${idx}`}
+                          className={`p-4 rounded-xl border ${
+                            unmarked
+                              ? 'border-red-300 dark:border-red-500/40 bg-red-50 dark:bg-red-500/10'
+                              : isDark
+                              ? 'bg-white/5 border-white/10'
+                              : 'bg-gray-50 border-gray-200'
+                          }`}
+                        >
+                          <div className="flex justify-between items-center gap-3">
+                            <div className="min-w-0">
+                              <span className={`font-medium text-sm ${headingText} ${unmarked ? 'line-through opacity-60' : ''}`}>
+                                {item.itemName}
+                              </span>
+                              {unmarked && (
+                                <span className="ml-2 inline-flex px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300">
+                                  Unmarked
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-2 flex-shrink-0">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateEditPaymentItem(idx, unmarked ? item.originalAmount ?? 0 : 0)
+                                }
+                                className={`px-3 py-1.5 rounded-lg text-xs font-medium transition ${
+                                  unmarked
+                                    ? 'bg-green-600 text-white hover:bg-green-700'
+                                    : isDark
+                                    ? 'bg-gray-700 text-gray-200 hover:bg-gray-600'
+                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                }`}
+                                title={unmarked ? 'Mark this fee as paid again' : 'Unmark this fee as paid'}
+                              >
+                                {unmarked ? 'Mark Paid' : 'Unmark'}
+                              </button>
+
+                              <span className={`text-xs ${mutedText}`}>₦</span>
+                              <NumberInput
+                                min="0"
+                                value={item.amount}
+                                onChange={(raw) =>
+                                  updateEditPaymentItem(idx, raw === '' ? 0 : Number(raw))
+                                }
+                                className={`w-36 px-3 py-2 text-sm rounded-lg border focus:outline-none focus:ring-2 ${inputClass} ${unmarked ? 'opacity-50' : ''}`}
+                              />
+                            </div>
+                          </div>
+                        </div>
+                        );
+                      })}
+
+                      {editPaymentForm.breakdownItems.length === 0 && (
+                        <p className={`text-sm ${mutedText}`}>No fee items on this payment.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className={`block text-sm font-medium mb-1.5 ${bodyText}`}>
+                        Payment Method
+                      </label>
+                      <select
+                        value={editPaymentForm.paymentMethod}
+                        onChange={(e) =>
+                          setEditPaymentForm((prev) => ({ ...prev, paymentMethod: e.target.value }))
+                        }
+                        className={`w-full px-3 py-2.5 rounded-lg border focus:outline-none focus:ring-2 ${inputClass}`}
+                      >
+                        <option value="cash">Cash</option>
+                        <option value="bank_transfer">Bank Transfer</option>
+                        <option value="card">Card</option>
+                        <option value="cheque">Cheque</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className={`block text-sm font-medium mb-1.5 ${bodyText}`}>
+                        Reference (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={editPaymentForm.reference}
+                        onChange={(e) =>
+                          setEditPaymentForm((prev) => ({ ...prev, reference: e.target.value }))
+                        }
+                        className={`w-full px-3 py-2.5 rounded-lg border focus:outline-none focus:ring-2 ${inputClass}`}
+                        placeholder="Receipt / Transaction ID"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Total */}
+                  <div className={`p-4 rounded-xl border ${
+                    isDark ? 'bg-blue-500/10 border-blue-500/20' : 'bg-blue-50 border-blue-100'
+                  }`}>
+                    <div className="flex justify-between items-center">
+                      <span className={`text-sm font-medium ${bodyText}`}>Total Amount</span>
+                      <span className={`text-xl font-bold ${isDark ? 'text-blue-400' : 'text-blue-700'}`}>
+                        ₦{editPaymentForm.amountPaid.toLocaleString()}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer */}
+                <div className={`flex justify-end gap-3 p-6 border-t ${
+                  isDark ? 'border-gray-700' : 'border-gray-200'
+                }`}>
+                  <button
+                    onClick={() => setShowEditPaymentModal(false)}
+                    disabled={editingPaymentSubmitting}
+                    className={`px-4 py-2.5 rounded-lg font-medium ${
+                      isDark ? 'bg-gray-700 text-gray-200 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    } disabled:opacity-50`}
+                  >
+                    Cancel
+                  </button>
+
+                  <button
+                    onClick={handleSavePaymentEdit}
+                    disabled={editingPaymentSubmitting}
+                    className="px-5 py-2.5 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center gap-2 font-medium transition"
+                  >
+                    {editingPaymentSubmitting && (
+                      <div className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    )}
+                    {editingPaymentSubmitting ? 'Saving...' : 'Save Changes'}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </>
+        )}
       </AnimatePresence>
     </div>
   );
