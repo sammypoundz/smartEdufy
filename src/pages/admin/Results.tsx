@@ -96,7 +96,11 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
-  const [showAiScanner, setShowAiScanner] = useState(false);
+  // AI Scanner: auto-open on desktop (≥1024px) on page load; on mobile it
+  // stays closed until the user taps the "AI Scan" button.
+  const [showAiScanner, setShowAiScanner] = useState(
+    typeof window !== 'undefined' && window.innerWidth >= 1024,
+  );
 
   // Grading scales (class-assigned group takes priority over school-wide)
   const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);

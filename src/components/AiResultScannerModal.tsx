@@ -2,6 +2,7 @@
 // handwritten) result sheet, send it to the backend AI endpoint, review the
 // extracted marks, then push them into the Result Compiler's score table.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import toast from "react-hot-toast";
 import { api } from "../utils/api";
 import { useAuth } from "../contexts/AuthContext";
@@ -223,9 +224,16 @@ export default function AiResultScannerModal({
     onApply(valid);
   };
 
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
-      <div className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900">
+  return createPortal(
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/60"
+      style={{ position: "fixed", top: 0, left: 0, right: 0, bottom: 0 }}
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-2xl max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl dark:bg-gray-900"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Header */}
         <div className="flex items-center justify-between border-b border-gray-200 px-5 py-4 dark:border-gray-700">
           <div className="flex items-center gap-2">
@@ -480,6 +488,7 @@ export default function AiResultScannerModal({
           </div>
         )}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
