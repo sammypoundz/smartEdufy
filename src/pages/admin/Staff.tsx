@@ -84,7 +84,9 @@ interface StaffFormData {
 }
 
 // ---------- Constants ----------
-const ROLES = ['Principal', 'Teacher', 'Accountant', 'Admin', 'Librarian', 'Bursar'];
+// Base (system) roles shown on the staff page. Custom roles created on the
+// Roles & Privileges page are fetched from /roles and merged in at runtime.
+const BASE_ROLES = ['Principal', 'Teacher', 'Accountant', 'Admin', 'Librarian', 'Bursar'];
 
 const roleDisplayMap: Record<string, string> = {
   ADMIN: 'Admin',
@@ -93,7 +95,12 @@ const roleDisplayMap: Record<string, string> = {
   BURSAR: 'Bursar',
   ACCOUNTANT: 'Accountant',
   LIBRARIAN: 'Librarian',
+  VICE_PRINCIPAL: 'Vice Principal',
 };
+
+// Stable colors for unknown/custom roles so badges stay readable.
+const FALLBACK_ROLE_COLORS_DARK = 'bg-gradient-to-r from-slate-700/40 to-gray-700/40 text-slate-200 border-slate-600';
+const FALLBACK_ROLE_COLORS_LIGHT = 'bg-slate-500 text-white border-slate-600';
 
 // ---------- Badge styling (exact same pattern as AdminUsers) ----------
 const ROLE_COLORS_DARK: Record<string, string> = {
@@ -116,7 +123,8 @@ const ROLE_COLORS_LIGHT: Record<string, string> = {
 
 const getRoleBadgeClass = (role: string, theme: string) => {
   const base = 'inline-flex items-center px-3 py-1 rounded-full text-xs font-bold tracking-wide shadow-sm border-2';
-  const colorClass = theme === 'dark' ? ROLE_COLORS_DARK[role] : ROLE_COLORS_LIGHT[role];
+  const colorClass = (theme === 'dark' ? ROLE_COLORS_DARK[role] : ROLE_COLORS_LIGHT[role])
+    || (theme === 'dark' ? FALLBACK_ROLE_COLORS_DARK : FALLBACK_ROLE_COLORS_LIGHT);
   return `${base} ${colorClass}`;
 };
 
@@ -175,6 +183,8 @@ interface StaffModalProps {
   loading: boolean;
   armOptions: { display: string; className: string }[];
   subjectsList: string[];
+  /** All selectable roles (system + custom roles from /roles). */
+  roles: string[];
 }
 
 const StaffModal = ({
@@ -185,6 +195,7 @@ const StaffModal = ({
   loading,
   armOptions,
   subjectsList,
+  roles,
 }: StaffModalProps) => {
   const [formData, setFormData] = useState<StaffFormData>({
     name: staff?.name || '',
@@ -364,7 +375,7 @@ const StaffModal = ({
                       : 'bg-white text-gray-900 border border-gray-300'
                   }`}
                 >
-                  {ROLES.map((r) => (
+                  {(roles || []).map((r) => (
                     <option key={r} className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>{r}</option>
                   ))}
                 </select>
@@ -400,7 +411,7 @@ const StaffModal = ({
                 Grant extra functions (e.g. also teach classes) on top of the primary role.
               </p>
               <div className="flex flex-wrap gap-2">
-                {ROLES.filter((r) => r !== formData.role).map((r) => {
+                {(roles || []).filter((r) => r !== formData.role).map((r) => {
                   const selected = formData.extraRoles.includes(r);
                   const ExtraIcon = roleIconMap[r] || UserIcon;
                   return (
@@ -720,6 +731,21 @@ export default function AdminStaff() {
   const [generatingLink, setGeneratingLink] = useState(false);
 
   // ---------- Queries ----------
+  // All selectable roles: system roles + custom roles created by the admin
+  // on the Roles & Privileges page (POST /roles). Custom roles appear in the
+  // primary-role dropdown, the additional-roles chips and the role filter.
+  const rolesQuery = useQuery<string[]>({
+    queryKey: ['roles'],
+    queryFn: async () => {
+      const list = await unwrap<any[]>(api.get('/roles'));
+      if (!Array.isArray(list)) return BASE_ROLES;
+      const labels = list.map((r: any) => r.label || roleDisplayMap[r.name] || r.name);
+      const merged = Array.from(new Set([...BASE_ROLES, ...labels]));
+      return merged;
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   // Staff list: merge /staff (assignments + roles) with /teachers (profiles)
   const staffQuery = useQuery<StaffMember[]>({
     queryKey: ['staff'],
@@ -819,6 +845,7 @@ export default function AdminStaff() {
   const error = staffQuery.error ? getErrorMessage(staffQuery.error, 'Failed to load staff') : null;
   const armOptions = optionsQuery.data?.armOptions ?? [];
   const subjectsList = optionsQuery.data?.subjectsList ?? [];
+  const availableRoles = rolesQuery.data ?? BASE_ROLES;
 
   const invalidateStaff = () => queryClient.invalidateQueries({ queryKey: ['staff'] });
 
@@ -1202,7 +1229,7 @@ export default function AdminStaff() {
               }`}
             >
               <option value="All" className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>All Roles</option>
-              {ROLES.map((r) => (
+              {availableRoles.map((r) => (
                 <option key={r} className={theme === 'dark' ? 'bg-gray-800 text-white' : ''}>{r}</option>
               ))}
             </select>
@@ -1465,6 +1492,7 @@ export default function AdminStaff() {
             loading={submitting}
             armOptions={armOptions}
             subjectsList={subjectsList}
+            roles={availableRoles}
           />
         )}
       </AnimatePresence>
@@ -1479,6 +1507,7 @@ export default function AdminStaff() {
             loading={submitting}
             armOptions={armOptions}
             subjectsList={subjectsList}
+            roles={availableRoles}
           />
         )}
       </AnimatePresence>
