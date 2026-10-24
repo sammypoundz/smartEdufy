@@ -296,12 +296,12 @@ const StaffModal = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm">
       <motion.div
         initial={{ opacity: 0, scale: 0.95 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.95 }}
-        className={`relative w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden ${
+        className={`relative w-full max-w-2xl max-h-[92vh] rounded-t-2xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col ${
           theme === 'dark' ? 'bg-gray-900 border border-white/10' : 'bg-white border border-gray-200'
         }`}
       >
@@ -316,7 +316,7 @@ const StaffModal = ({
           </button>
         </div>
 
-        <div className="p-6 space-y-6 max-h-[70vh] overflow-y-auto">
+        <div className="p-4 sm:p-6 space-y-6 max-h-[70vh] sm:max-h-none flex-1 overflow-y-auto">
           <div className="space-y-4">
             <h4 className={`text-sm font-semibold uppercase tracking-wider ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
               Personal Information
@@ -1149,7 +1149,7 @@ export default function AdminStaff() {
               Manage all staff members, roles, and assignments.
             </p>
           </div>
-          <div className="flex flex-wrap gap-3 mt-4 sm:mt-0">
+          <div className="flex flex-wrap gap-2 sm:gap-3 mt-4 sm:mt-0">
             <ExportButtons
               disabled={filteredStaff.length === 0}
               onExcel={() => exportToExcel('staff', staffExportColumns, filteredStaff)}
@@ -1159,7 +1159,7 @@ export default function AdminStaff() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowCreateModal(true)}
-              className="inline-flex items-center justify-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
             >
               <PlusIcon className="h-5 w-5 mr-1" /> Add Staff
             </motion.button>
@@ -1168,7 +1168,7 @@ export default function AdminStaff() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={() => setShowBulkModal(true)}
-              className="inline-flex items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               <CloudArrowUpIcon className="h-5 w-5 mr-1" /> Bulk Upload
             </motion.button>
@@ -1177,7 +1177,7 @@ export default function AdminStaff() {
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
               onClick={downloadTemplate}
-              className="inline-flex items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700"
             >
               <DocumentArrowDownIcon className="h-5 w-5 mr-1" /> Download Template
             </motion.button>
@@ -1187,7 +1187,7 @@ export default function AdminStaff() {
               whileTap={{ scale: 0.98 }}
               onClick={generateRegistrationLink}
               disabled={generatingLink}
-              className="inline-flex items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
+              className="inline-flex flex-1 sm:flex-none items-center justify-center rounded-lg bg-white dark:bg-gray-800 px-4 py-2.5 text-sm font-medium text-gray-700 dark:text-gray-200 shadow-sm border border-gray-300 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 disabled:opacity-50"
             >
               {generatingLink ? (
                 <div className="h-5 w-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
@@ -1218,11 +1218,11 @@ export default function AdminStaff() {
             />
           </motion.div>
 
-          <motion.div variants={item}>
+          <motion.div variants={item} className="w-full sm:w-40">
             <select
               value={roleFilter}
               onChange={(e) => setRoleFilter(e.target.value)}
-              className={`w-40 rounded-lg border-0 px-4 py-2 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 ${
+              className={`w-full rounded-lg border-0 px-4 py-2.5 text-sm shadow-sm focus:ring-2 focus:ring-blue-500 ${
                 theme === 'dark'
                   ? 'bg-gray-800 text-white border border-gray-700'
                   : 'bg-white text-gray-900 border border-gray-300 shadow-md'

@@ -286,8 +286,8 @@ export default function AdminInventory() {
         </div>
 
         {/* Filters & Search */}
-        <div className="flex flex-wrap items-center gap-4 mb-6">
-          <div className={`relative flex-1 min-w-[200px] rounded-xl shadow-xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-6">
+          <div className={`relative flex-1 rounded-xl shadow-xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
               <MagnifyingGlassIcon className={`h-5 w-5 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
             </div>
@@ -303,7 +303,7 @@ export default function AdminInventory() {
           <select
             value={categoryFilter}
             onChange={(e) => setCategoryFilter(e.target.value)}
-            className={`rounded-xl border-0 px-4 py-2 text-sm shadow-xl focus:ring-2 focus:ring-blue-500 ${
+            className={`w-full sm:w-auto rounded-xl border-0 px-4 py-2.5 text-sm shadow-xl focus:ring-2 focus:ring-blue-500 ${
               theme === 'dark'
                 ? 'bg-gray-800 border-gray-700 text-white'
                 : 'bg-white/30 backdrop-blur-md border border-white/20 text-gray-900'

@@ -72,7 +72,7 @@ export default function ExportButtons({
     }
   }, [onPDF, tableSelector, filename, pdfTitle, tableIndex]);
   const base =
-    "inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed";
+    "inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium shadow transition-all disabled:opacity-40 disabled:cursor-not-allowed flex-1 sm:flex-none";
   return (
     <div className="inline-flex items-center gap-2">
       <button

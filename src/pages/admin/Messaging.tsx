@@ -292,7 +292,7 @@ export default function AdminMessaging() {
         </motion.div>
 
         {/* Tabs & Search */}
-        <div className="flex flex-wrap items-center gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 mb-6">
           <div className="flex gap-2 border-b border-gray-200 dark:border-gray-700">
             {['inbox', 'sent', 'drafts'].map((tab) => (
               <button
@@ -309,7 +309,7 @@ export default function AdminMessaging() {
             ))}
           </div>
 
-          <div className={`relative flex-1 min-w-[200px] rounded-xl shadow-xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
+          <div className={`relative flex-1 rounded-xl shadow-xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
             <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-4">
               <MagnifyingGlassIcon className={`h-5 w-5 ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`} />
             </div>

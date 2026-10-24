@@ -341,7 +341,7 @@ export default function AdminBroadsheet() {
           <p className={`mt-2 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>View consolidated student results with positions and grades.</p>
         </motion.div>
 
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-4 mb-8">
+        <div className="grid grid-cols-2 gap-3 sm:gap-6 sm:grid-cols-4 mb-6 sm:mb-8">
           <div>
             <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class</label>
             <select

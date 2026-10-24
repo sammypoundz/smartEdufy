@@ -1606,7 +1606,7 @@ export default function AdminFees() {
 
               {/* Summary Cards */}
 
-              <div className="grid grid-cols-1 gap-5 sm:grid-cols-3 mb-8">
+              <div className="grid grid-cols-1 gap-3 sm:gap-5 sm:grid-cols-3 mb-6 sm:mb-8">
 
                 {/* Total Fees */}
 

@@ -673,19 +673,21 @@ export default function AdminResults() {
         {uploadProgress !== null && (
           <UploadProgress progress={uploadProgress} label="Processing results upload…" className="mb-4" />
         )}
-        <div className="sm:flex sm:items-center sm:justify-between mb-8">
-          <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
-          <div className="mt-4 sm:mt-0 flex gap-3">
-            <button onClick={downloadTemplate} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50"><DocumentArrowDownIcon className="h-4 w-4 mr-2"/>Template</button>
-            <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-2"/>Entry Sheet PDF</button>
-            <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-2"/>{uploading?'Uploading...':'Bulk Upload'}</button>
-            <button onClick={compileResults} disabled={!selectedArmId || !selectedTerm || !selectedAcademicYearId || loadingCompiled} className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white text-sm shadow-lg hover:shadow-xl disabled:opacity-50"><DocumentChartBarIcon className="h-4 w-4 mr-2"/>{loadingCompiled?'Compiling...':'Compile Results'}</button>
+        <div className="sm:flex sm:items-center sm:justify-between mb-6 sm:mb-8">
+          <h2 className={`text-xl sm:text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>Result Compiler</h2>
+          {/* Action buttons: 2-up grid on phones, inline row on larger screens. */}
+          <div className="mt-4 sm:mt-0 grid grid-cols-2 gap-2 sm:flex sm:gap-3">
+            <button onClick={downloadTemplate} disabled={students.length===0} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-xs sm:text-sm shadow-lg disabled:opacity-50"><DocumentArrowDownIcon className="h-4 w-4 mr-1.5"/>Template</button>
+            <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-xs sm:text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-1.5"/>Entry Sheet</button>
+            <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-xs sm:text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-1.5"/>{uploading?'Uploading...':'Bulk Upload'}</button>
+            <button onClick={compileResults} disabled={!selectedArmId || !selectedTerm || !selectedAcademicYearId || loadingCompiled} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs sm:text-sm shadow-lg hover:shadow-xl disabled:opacity-50"><DocumentChartBarIcon className="h-4 w-4 mr-1.5"/>{loadingCompiled?'Compiling...':'Compile Results'}</button>
           </div>
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-5 mb-8">
-          <div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 sm:gap-6 mb-6 sm:mb-8">
+          {/* Class spans both columns on phones so long class names fit */}
+          <div className="col-span-2 sm:col-span-1">
             <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class</label>
             <select value={selectedClassId} onChange={e=>setSelectedClassId(e.target.value)} className={`mt-1 w-full rounded-xl border-0 px-4 py-3 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}>
               {classes.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -705,7 +707,7 @@ export default function AdminResults() {
               {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
             </select>
           </div>
-          <div>
+          <div className="col-span-2 sm:col-span-1">
             <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Academic Year</label>
             <select value={selectedAcademicYearId} onChange={e=>setSelectedAcademicYearId(e.target.value)} className={`mt-1 w-full rounded-xl border-0 px-4 py-3 text-sm shadow-lg focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white/40 text-gray-900 border border-white/20'}`}>
               <option value="">Select year</option>
@@ -752,13 +754,76 @@ export default function AdminResults() {
         )}
 
         {/* Tabs */}
-        <div className="flex space-x-4 mb-6 border-b border-gray-200 dark:border-gray-700">
-          <button onClick={()=>setShowCompiled(false)} className={`py-2 px-4 text-sm font-medium ${!showCompiled ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Subject Scores Entry</button>
-          <button onClick={()=>setShowCompiled(true)} className={`py-2 px-4 text-sm font-medium ${showCompiled ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Compiled Results</button>
+        <div className="flex flex-wrap gap-2 mb-6 sm:space-x-4 border-b border-gray-200 dark:border-gray-700">
+          <button onClick={()=>setShowCompiled(false)} className={`py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium whitespace-nowrap ${!showCompiled ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Subject Scores Entry</button>
+          <button onClick={()=>setShowCompiled(true)} className={`py-2 px-3 sm:px-4 text-xs sm:text-sm font-medium whitespace-nowrap ${showCompiled ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400' : 'text-gray-500 dark:text-gray-400'}`}>Compiled Results</button>
         </div>
 
         {!showCompiled ? (
-          <div className="overflow-x-auto rounded-2xl shadow-xl bg-white/30 backdrop-blur-md border border-white/20 dark:bg-white/5 dark:border-white/10">
+          <div className="rounded-2xl shadow-xl bg-white/30 backdrop-blur-md border border-white/20 dark:bg-white/5 dark:border-white/10">
+            {/* ===== Mobile: card-per-student score entry ===== */}
+            <div className="md:hidden">
+              {loading ? (
+                <div className={`text-center py-8 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Loading...</div>
+              ) : results.length === 0 ? (
+                <div className={`text-center py-8 px-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No results found for this subject, term, and academic year. Enter scores below and save.</div>
+              ) : (
+                <div className="divide-y divide-gray-200/50 dark:divide-white/10">
+                  {results.map(r => (
+                    <div key={r.studentId} className="p-4">
+                      <p className={`font-semibold text-sm mb-3 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{r.studentName}</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {(['ca1', 'ca2', 'ca3'] as const).map(field => (
+                          <div key={field}>
+                            <label className={`block text-[10px] font-medium uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>{field === 'ca1' ? '1CA' : field === 'ca2' ? '2CA' : '3CA'}</label>
+                            <input
+                              type="number"
+                              inputMode="numeric"
+                              min="0"
+                              max="10"
+                              value={r[field] ?? ''}
+                              onChange={e => {
+                                const val = e.target.value === '' ? null : Number(e.target.value);
+                                handleScoreChange(r.studentId, field, val);
+                              }}
+                              className={`w-full rounded-lg border-0 px-2 py-2.5 text-sm shadow focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-200'}`}
+                              placeholder="-"
+                            />
+                          </div>
+                        ))}
+                        <div className="col-span-2">
+                          <label className={`block text-[10px] font-medium uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Exam</label>
+                          <input
+                            type="number"
+                            inputMode="numeric"
+                            min="0"
+                            max="70"
+                            value={r.exam ?? ''}
+                            onChange={e => {
+                              const val = e.target.value === '' ? null : Number(e.target.value);
+                              handleScoreChange(r.studentId, 'exam', val);
+                            }}
+                            className={`w-full rounded-lg border-0 px-2 py-2.5 text-sm shadow focus:ring-2 focus:ring-blue-500 ${theme === 'dark' ? 'bg-gray-800 text-white border border-white/10' : 'bg-white text-gray-900 border border-gray-200'}`}
+                            placeholder="-"
+                          />
+                        </div>
+                        <div className="flex flex-col justify-end">
+                          <span className={`text-[10px] font-medium uppercase tracking-wide mb-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>Total</span>
+                          <span className={`rounded-lg px-2 py-2.5 text-sm font-bold text-center ${theme === 'dark' ? 'bg-white/10 text-white' : 'bg-gray-100 text-gray-900'}`}>{r.total ?? '—'} {r.grade && <span className={`text-[10px] font-semibold ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>({r.grade})</span>}</span>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="p-4">
+                <button onClick={saveResults} disabled={saving} className="w-full py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white font-medium shadow-lg disabled:opacity-50">{saving?'Saving...':'Save Results'}</button>
+              </div>
+            </div>
+
+            {/* ===== Desktop: table score entry ===== */}
+            <div className="hidden md:block">
+              <div className="overflow-x-auto">
             <table className="min-w-full">
               <thead>
                 <tr className="border-b border-gray-200/50 dark:border-white/10">
@@ -819,18 +884,21 @@ export default function AdminResults() {
                 )}
               </tbody>
             </table>
+              </div>
             <div className="flex justify-end p-6">
               <button onClick={saveResults} disabled={saving} className="px-6 py-3 rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg disabled:opacity-50">{saving?'Saving...':'Save Results'}</button>
             </div>
+            </div>
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-2xl shadow-xl bg-white/30 backdrop-blur-md border border-white/20 dark:bg-white/5 dark:border-white/10">
+          <div className="rounded-2xl shadow-xl bg-white/30 backdrop-blur-md border border-white/20 dark:bg-white/5 dark:border-white/10">
             {loadingCompiled ? (
               <div className={`text-center py-12 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>Compiling results, please wait...</div>
             ) : compiledData.length === 0 ? (
-              <div className={`text-center py-12 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No compiled data yet. Select academic year & term and click "Compile Results".</div>
+              <div className={`text-center py-12 px-4 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>No compiled data yet. Select academic year & term and click "Compile Results".</div>
             ) : (
               <>
+                <div className="overflow-x-auto">
                 <table className="min-w-full">
                   <thead>
                     <tr className="border-b border-gray-200/50 dark:border-white/10">
@@ -859,8 +927,9 @@ export default function AdminResults() {
                     ))}
                   </tbody>
                 </table>
-                <div className="flex justify-end p-6">
-                  <button onClick={exportCompiled} className="px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg">Export Compiled Results (Excel)</button>
+                </div>
+                <div className="flex justify-end p-4 sm:p-6">
+                  <button onClick={exportCompiled} className="w-full sm:w-auto px-6 py-3 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-lg">Export Compiled Results (Excel)</button>
                 </div>
               </>
             )}

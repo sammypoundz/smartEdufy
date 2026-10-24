@@ -544,7 +544,7 @@ export default function TimetablePage() {
         </motion.div>
 
         {/* Class & Arm Selection */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+        <div className="grid grid-cols-1 gap-3 sm:gap-6 lg:grid-cols-3 mb-6 sm:mb-8">
           <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className={`block text-sm font-medium mb-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Select Class</label>

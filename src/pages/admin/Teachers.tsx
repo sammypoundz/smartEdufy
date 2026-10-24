@@ -660,14 +660,14 @@ export default function AdminTeachers() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+            className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4 bg-black/50 backdrop-blur-sm"
             onClick={() => setShowModal(false)}
           >
             <motion.div
               initial={{ scale: 0.95, y: 10 }}
               animate={{ scale: 1, y: 0 }}
               exit={{ scale: 0.95, y: 10 }}
-              className={`relative w-full max-w-md rounded-2xl shadow-2xl ${
+              className={`relative w-full max-w-md max-h-[92vh] overflow-y-auto rounded-t-2xl sm:rounded-2xl shadow-2xl ${
                 theme === 'dark'
                   ? 'bg-gray-900 border border-gray-700'
                   : 'bg-white/90 backdrop-blur-xl border border-gray-200/60'

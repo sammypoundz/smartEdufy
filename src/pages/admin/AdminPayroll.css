@@ -5,8 +5,14 @@
 /* ---------- Base Styles ---------- */
 .payroll-page {
   min-height: 100vh;
-  padding: 2rem 1.5rem;
+  padding: 1.25rem 1rem;
   transition: background-color 0.3s;
+}
+
+@media (min-width: 640px) {
+  .payroll-page {
+    padding: 2rem 1.5rem;
+  }
 }
 
 .payroll-page.light {
@@ -92,13 +98,25 @@
 
 .header-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-top: 1rem;
+  width: 100%;
+}
+
+.header-actions .btn-primary,
+.header-actions button {
+  flex: 1 1 45%;
 }
 
 @media (min-width: 640px) {
   .header-actions {
     margin-top: 0;
+    width: auto;
+  }
+  .header-actions .btn-primary,
+  .header-actions button {
+    flex: 0 0 auto;
   }
 }
 
@@ -710,18 +728,33 @@
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-end;
   justify-content: center;
   z-index: 50;
-  padding: 1rem;
+  padding: 0;
+}
+
+@media (min-width: 640px) {
+  .modal-content {
+    align-items: center;
+    padding: 1rem;
+  }
 }
 
 .modal-box {
   width: 100%;
   max-width: 28rem;
-  border-radius: 1rem;
+  max-height: 92vh;
+  overflow-y: auto;
+  border-radius: 1rem 1rem 0 0;
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  overflow: hidden;
+  overflow: hidden auto;
+}
+
+@media (min-width: 640px) {
+  .modal-box {
+    border-radius: 1rem;
+  }
 }
 
 .modal-box.light {

@@ -457,14 +457,14 @@ export default function AdminReports() {
           <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent' : 'bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent'}`}>
             Student Result Cards
           </h2>
-          <div className="mt-4 sm:mt-0 flex gap-3">
+          <div className="mt-4 sm:mt-0 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:flex sm:gap-3">
             <button onClick={downloadAllCards} disabled={resultCards.length === 0 || loading || downloadingAll}
-              className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50">
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-lg bg-gradient-to-r from-emerald-500 to-green-600 text-white text-sm shadow-lg disabled:opacity-50">
               {downloadingAll ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" /> : <DocumentArrowDownIcon className="h-4 w-4 mr-2" />}
               {downloadingAll ? 'Downloading...' : 'Download All (Excel)'}
             </button>
             <button onClick={printAllCards} disabled={resultCards.length === 0 || loading || printingAll}
-              className="inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50">
+              className="inline-flex items-center justify-center px-4 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-sm shadow-lg disabled:opacity-50">
               {printingAll ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" /> : <PrinterIcon className="h-4 w-4 mr-2" />}
               {printingAll ? 'Preparing...' : 'Print All Cards'}
             </button>
@@ -472,7 +472,7 @@ export default function AdminReports() {
         </div>
 
         {/* Filters */}
-        <div className="grid grid-cols-1 gap-6 sm:grid-cols-4 mb-8">
+        <div className="grid grid-cols-2 gap-3 sm:gap-6 sm:grid-cols-4 mb-6 sm:mb-8">
           <div>
             <label className={`block text-sm font-medium ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Class</label>
             <select value={selectedClassId} onChange={e => setSelectedClassId(e.target.value)}
