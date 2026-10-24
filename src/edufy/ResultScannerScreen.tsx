@@ -543,7 +543,78 @@ export default function ResultScannerScreen() {
               </button>
             </div>
 
-            <div className="overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+            {/* ===== Narrow: card-per-student review (phones + default panel) ===== */}
+            <div className="md:hidden space-y-3">
+              {rows.length === 0 && (
+                <p className="rounded-xl border border-gray-200 py-6 text-center text-[11px] text-gray-400 dark:border-gray-700">
+                  No rows extracted. Scan another sheet.
+                </p>
+              )}
+              {rows.map((r) => (
+                <div
+                  key={r.id}
+                  className="rounded-xl border border-gray-200 p-3 dark:border-gray-700"
+                >
+                  <div className="mb-2 flex items-center justify-between gap-2">
+                    <input
+                      value={r.name}
+                      onChange={(e) =>
+                        setRows((rs) =>
+                          rs.map((x) =>
+                            x.id === r.id
+                              ? { ...x, name: e.target.value }
+                              : x,
+                          ),
+                        )
+                      }
+                      className={`min-w-0 flex-1 rounded-md border bg-transparent px-2 py-1.5 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:text-gray-100 ${
+                        inRoster(r.name)
+                          ? "border-transparent hover:border-gray-300 dark:hover:border-gray-600"
+                          : "border-red-300 dark:border-red-500/60"
+                      }`}
+                      aria-label={`Edit name for ${r.name}`}
+                    />
+                    <span
+                      className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold ${CONFIDENCE_STYLES[r.confidence]}`}
+                    >
+                      {r.confidence}
+                    </span>
+                    <button
+                      onClick={() => removeRow(r.id)}
+                      aria-label={`Remove ${r.name}`}
+                      className="shrink-0 text-gray-400 transition hover:text-red-500"
+                    >
+                      <TrashIcon className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-4 gap-2">
+                    {(["ca1", "ca2", "ca3", "exam"] as const).map((f) => (
+                      <div key={f}>
+                        <label className="block text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                          {f === "exam" ? "Exam" : f.replace("ca", "") + "CA"}
+                        </label>
+                        <input
+                          type="number"
+                          inputMode="numeric"
+                          min={0}
+                          max={100}
+                          value={r[f] ?? ""}
+                          onChange={(e) => updateRow(r.id, f, e.target.value)}
+                          className="w-full rounded-md border border-gray-200 bg-transparent px-1 py-1.5 text-center text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:text-gray-100"
+                          aria-label={`${f} for ${r.name}`}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-right text-[10px] font-bold text-blue-700 dark:text-blue-300">
+                    Total: {total(r)}
+                  </p>
+                </div>
+              ))}
+            </div>
+
+            {/* ===== Wide (expanded panel / desktop): table review ===== */}
+            <div className="hidden md:block overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
               <table className="w-full min-w-[380px] text-left text-[11px]">
                 <thead className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500 dark:bg-gray-800 dark:text-gray-400">
                   <tr>

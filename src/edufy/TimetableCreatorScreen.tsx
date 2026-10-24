@@ -208,7 +208,7 @@ export default function TimetableCreatorScreen() {
                   <button
                     key={s}
                     onClick={() => toggle(subjects, s, setSubjects)}
-                    className={`rounded-full px-2.5 py-1 text-[10px] font-semibold transition ${
+                    className={`rounded-full px-3 py-1.5 text-[10px] font-semibold transition ${
                       subjects.includes(s)
                         ? "bg-blue-600 text-white shadow-sm"
                         : "bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700/70 dark:text-gray-300 dark:hover:bg-gray-600"
