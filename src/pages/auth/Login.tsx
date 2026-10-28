@@ -17,6 +17,8 @@ import {
   SunIcon,
   MoonIcon,
 } from "@heroicons/react/24/outline";
+import logoWhiteUrl from "../../assets/smart edufy.png";
+import logoBlackUrl from "../../assets/smart edufy II.png";
 
 /** Deterministic pseudo-random particle field (stable across re-renders). */
 const PARTICLES = Array.from({ length: 26 }, (_, i) => ({
@@ -194,21 +196,17 @@ export default function Login() {
 
         {/* Logo */}
         <div className="relative z-10 flex items-center gap-3 mb-5">
-          <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-            <SparklesIcon className="h-5 w-5 text-white" />
-          </div>
-          <div>
-            <span
-              className={`block text-xl font-semibold tracking-tight ${dark ? "text-white" : "text-slate-900"}`}
-            >
-              SmartEdufy
-            </span>
-            <span
-              className={`block text-xs ${dark ? "text-slate-400" : "text-slate-600"}`}
-            >
-              The AI-Powered School Management System
-            </span>
-          </div>
+          <img
+            src={dark ? logoWhiteUrl : logoBlackUrl}
+            alt="SmartEdufy logo"
+            className="h-12 w-auto object-contain"
+            draggable={false}
+          />
+          <span
+            className={`block text-xs ${dark ? "text-slate-400" : "text-slate-600"}`}
+          >
+            The AI-Powered School Management System
+          </span>
         </div>
 
         {/* Headline + classroom illustration + feature cards */}
@@ -339,14 +337,12 @@ export default function Login() {
           {/* Mobile logo */}
           <div className="lg:hidden flex flex-col items-center gap-2 mb-6 sm:mb-8">
             <div className="flex items-center gap-3">
-              <div className="h-11 w-11 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/30">
-                <SparklesIcon className="h-5 w-5 text-white" />
-              </div>
-              <span
-                className={`text-2xl font-semibold tracking-tight ${dark ? "text-white" : "text-slate-900"}`}
-              >
-                SmartEdufy
-              </span>
+              <img
+                src={dark ? logoWhiteUrl : logoBlackUrl}
+                alt="SmartEdufy logo"
+                className="h-14 w-auto object-contain"
+                draggable={false}
+              />
             </div>
             <span
               className={`block text-center text-xs ${dark ? "text-slate-400" : "text-slate-600"}`}

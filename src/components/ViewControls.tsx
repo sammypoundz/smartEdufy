@@ -70,36 +70,38 @@ export default function ViewControls() {
 
   return (
     <>
-      <button
-        onClick={() => applyZoom(zoom - 0.1)}
-        className={btnClass}
-        title="Smaller view (like Ctrl -)"
-        aria-label="Zoom out"
-      >
-        <MinusIcon className="h-5 w-5" />
-      </button>
-      <button
-        onClick={() => applyZoom(1)}
-        className={`hidden sm:block text-xs font-medium px-1 rounded-lg transition-colors ${btnClass}`}
-        title={`Zoom ${Math.round(zoom * 100)}% – click to reset`}
-        aria-label="Reset zoom"
-      >
-        {Math.round(zoom * 100)}%
-      </button>
-      <button
-        onClick={() => applyZoom(zoom + 0.1)}
-        className={btnClass}
-        title="Larger view (like Ctrl +)"
-        aria-label="Zoom in"
-      >
-        <PlusIcon className="h-5 w-5" />
-      </button>
-      <button
-        onClick={toggleFullscreen}
-        className={btnClass}
-        title={isFullscreen ? "Exit full screen" : "Full screen browser"}
-        aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
-      >
+      {/* Zoom & fullscreen controls are desktop-only utilities */}
+      <div className="hidden md:flex items-center">
+        <button
+          onClick={() => applyZoom(zoom - 0.1)}
+          className={btnClass}
+          title="Smaller view (like Ctrl -)"
+          aria-label="Zoom out"
+        >
+          <MinusIcon className="h-5 w-5" />
+        </button>
+        <button
+          onClick={() => applyZoom(1)}
+          className={`text-xs font-medium px-1 rounded-lg transition-colors ${btnClass}`}
+          title={`Zoom ${Math.round(zoom * 100)}% – click to reset`}
+          aria-label="Reset zoom"
+        >
+          {Math.round(zoom * 100)}%
+        </button>
+        <button
+          onClick={() => applyZoom(zoom + 0.1)}
+          className={btnClass}
+          title="Larger view (like Ctrl +)"
+          aria-label="Zoom in"
+        >
+          <PlusIcon className="h-5 w-5" />
+        </button>
+        <button
+          onClick={toggleFullscreen}
+          className={btnClass}
+          title={isFullscreen ? "Exit full screen" : "Full screen browser"}
+          aria-label={isFullscreen ? "Exit full screen" : "Full screen"}
+        >
         {isFullscreen ? (
           <ArrowsPointingInIcon className="h-5 w-5" />
         ) : (
@@ -117,7 +119,8 @@ export default function ViewControls() {
             />
           </svg>
         )}
-      </button>
+        </button>
+      </div>
     </>
   );
 }

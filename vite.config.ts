@@ -7,20 +7,20 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg'],
+      includeAssets: ['favicon.svg', 'smart-edufy-icon.png'],
       manifest: {
-        name: 'SmartEdufy',
+        name: 'SmartEdufy - AI powered school management system',
         short_name: 'SmartEdufy',
-        description: 'SmartEdufy school management system',
+        description: 'SmartEdufy - AI powered school management system',
         theme_color: '#2563eb',
         background_color: '#f8fafc',
         display: 'standalone',
         start_url: '/',
         icons: [
           {
-            src: 'favicon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
+            src: 'smart-edufy-icon.png',
+            sizes: '192x192 512x512 2246x2208',
+            type: 'image/png',
             purpose: 'any',
           },
         ],

@@ -1,6 +1,9 @@
 import { useState, useEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
+import iconUrl from "../assets/smart edufy icon.png";
+import logoDarkUrl from "../assets/smart edufy.png";
+import logoLightUrl from "../assets/smart edufy II.png";
 import {
   HomeIcon,
   UserGroupIcon,
@@ -229,26 +232,18 @@ export default function ParentLayout() {
             className={`flex flex-shrink-0 items-center ${effectiveIsCollapsed ? "justify-center px-2" : "px-6"}`}
           >
             {effectiveIsCollapsed ? (
-              <span
-                className={`text-xl font-bold ${
-                  theme === "dark"
-                    ? "bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent"
-                    : "bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent"
-                }`}
-              >
-                SE
-              </span>
+              <img
+                src={iconUrl}
+                alt="SmartEdufy"
+                className="h-9 w-9 rounded-xl object-contain"
+              />
             ) : (
               <>
-                <h1
-                  className={`text-xl font-bold ${
-                    theme === "dark"
-                      ? "bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent"
-                      : "bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent"
-                  }`}
-                >
-                  SmartEdufy
-                </h1>
+                <img
+                  src={theme === "dark" ? logoDarkUrl : logoLightUrl}
+                  alt="SmartEdufy"
+                  className="h-9 w-auto object-contain"
+                />
                 <span
                   className={`ml-2 px-2 py-1 text-xs font-medium rounded-full border ${
                     theme === "dark"
@@ -454,15 +449,11 @@ export default function ParentLayout() {
               }`}
             >
               <div className="flex items-center gap-2">
-                <h1
-                  className={`text-lg font-bold ${
-                    theme === "dark"
-                      ? "bg-gradient-to-r from-blue-400 to-indigo-300 bg-clip-text text-transparent"
-                      : "bg-gradient-to-r from-blue-600 to-indigo-700 bg-clip-text text-transparent"
-                  }`}
-                >
-                  SmartEdufy
-                </h1>
+                <img
+                  src={theme === "dark" ? logoDarkUrl : logoLightUrl}
+                  alt="SmartEdufy"
+                  className="h-7 w-auto object-contain"
+                />
                 <span
                   className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider rounded-full ${
                     theme === "dark"
@@ -670,6 +661,13 @@ export default function ParentLayout() {
           }`}
         >
           <div className="flex items-center flex-1 min-w-0">
+            {/* Mobile brand icon (visible only on small screens) */}
+            <img
+              src={iconUrl}
+              alt="SmartEdufy"
+              className="md:hidden h-12 w-12 rounded-xl object-contain flex-shrink-0"
+              draggable={false}
+            />
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebar}

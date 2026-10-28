@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { Link, Outlet, useNavigate, useLocation } from "react-router-dom";
+import iconUrl from "../assets/smart edufy icon.png";
+import logoDarkUrl from "../assets/smart edufy.png";
+import logoLightUrl from "../assets/smart edufy II.png";
 import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
@@ -17,7 +20,6 @@ import {
   BellIcon,
   Bars3Icon,
   XMarkIcon,
-  BuildingLibraryIcon,
   AcademicCapIcon,
   UsersIcon,
   CubeIcon,
@@ -179,11 +181,12 @@ export default function AccountantLayout() {
       >
         {/* Brand */}
         <div className="flex items-center gap-3 px-5 h-16 flex-shrink-0">
-          <span className="h-10 w-10 flex items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-md shadow-blue-500/30">
-            <BuildingLibraryIcon className="h-6 w-6" />
-          </span>
+          <img
+            src={dark ? logoDarkUrl : logoLightUrl}
+            alt="SmartEdufy"
+            className="h-10 w-auto object-contain flex-shrink-0"
+          />
           <div className="min-w-0">
-            <p className="text-sm font-bold tracking-tight">SmartEdufy</p>
             <p className="text-[11px] text-blue-500 font-semibold uppercase tracking-wider">
               Accounts Portal
             </p>
@@ -339,15 +342,22 @@ export default function AccountantLayout() {
               : "bg-white/80 border-gray-200"
           }`}
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 min-w-0">
             <button
-              className="md:hidden p-2 rounded-lg hover:bg-black/5"
+              className="md:hidden p-2 rounded-lg hover:bg-black/5 flex-shrink-0"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open menu"
             >
               <Bars3Icon className="h-6 w-6" />
             </button>
-            <div className="flex items-center gap-2">
+            {/* Mobile brand icon (visible only on small screens) */}
+            <img
+              src={iconUrl}
+              alt="SmartEdufy"
+              className="md:hidden h-12 w-12 rounded-xl object-contain flex-shrink-0"
+              draggable={false}
+            />
+            <div className="flex items-center gap-2 min-w-0">
               {topBar?.logoUrl && (
                 <img
                   src={topBar.logoUrl}
@@ -356,8 +366,8 @@ export default function AccountantLayout() {
                   onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }}
                 />
               )}
-              <div>
-                <p className="text-sm font-bold leading-tight">
+              <div className="min-w-0">
+                <p className="text-sm font-bold leading-tight truncate">
                   {topBar?.schoolName || "Accounts Dashboard"}
                 </p>
                 <p

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
+import logoDarkUrl from '../../assets/smart edufy.png';
+import logoLightUrl from '../../assets/smart edufy II.png';
 import { api } from '../../utils/api';
 import { SERVER_URL } from '../../config/server';
 import { formatArm } from '../../utils/arm';
@@ -12,7 +14,6 @@ import {
   ChevronRightIcon,
   ClockIcon,
   CheckCircleIcon,
-  AcademicCapIcon,
   UserIcon,
   IdentificationIcon,
   DocumentTextIcon,
@@ -560,13 +561,14 @@ export default function TestPortal() {
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
             transition={{ duration: 0.5 }}
-            className="inline-flex items-center justify-center p-3 bg-gradient-to-r from-blue-500 to-indigo-600 rounded-2xl shadow-lg mb-4"
+            className="inline-flex items-center justify-center mb-4"
           >
-            <AcademicCapIcon className="h-8 w-8 text-white" />
+            <img
+              src={theme === 'dark' ? logoDarkUrl : logoLightUrl}
+              alt="SmartEdufy"
+              className="h-16 w-auto object-contain"
+            />
           </motion.div>
-          <h1 className={`text-4xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent ${theme === 'dark' ? 'from-blue-400 to-indigo-300' : ''}`}>
-            SmartEdufy
-          </h1>
           <p className={`mt-2 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>Computer-Based Testing Platform</p>
         </div>
 
