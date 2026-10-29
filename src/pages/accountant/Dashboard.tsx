@@ -300,8 +300,8 @@ export default function AccountantDashboard() {
     <div className="space-y-6">
       {/* ===== Header ===== */}
       <div className="flex flex-wrap items-end justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <SchoolLogo className="h-10 w-10" />
+        <div className="dash-greeting flex items-center gap-3">
+          <SchoolLogo className="h-9 w-9 md:h-10 md:w-10" />
           <div>
             <h1 className="text-2xl font-bold tracking-tight">
               {greeting}, {user?.name?.split(" ")[0] || "Accountant"} 👋
@@ -328,7 +328,7 @@ export default function AccountantDashboard() {
       </div>
 
       {/* ===== KPI strip ===== */}
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {isLoading
           ? Array.from({ length: 4 }).map((_, i) => (
               <div
@@ -342,7 +342,7 @@ export default function AccountantDashboard() {
                 <Link
                   key={m.key}
                   to={m.href}
-                  className={`group rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
+                  className={`stat-card group rounded-2xl p-5 transition-all hover:-translate-y-0.5 hover:shadow-lg ${
                     dark
                       ? "bg-white/5 hover:bg-white/10"
                       : "bg-white hover:shadow-gray-200/60"
@@ -527,7 +527,7 @@ export default function AccountantDashboard() {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         {/* Recent payments */}
         <div
-          className={`rounded-2xl p-5 ${dark ? "bg-white/5" : "bg-white"} ring-1 ${dark ? "ring-white/10" : "ring-gray-200"}`}
+          className={`dash-activity rounded-2xl p-5 ${dark ? "bg-white/5" : "bg-white"} ring-1 ${dark ? "ring-white/10" : "ring-gray-200"}`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wide">
@@ -588,7 +588,7 @@ export default function AccountantDashboard() {
 
         {/* Recent expenses */}
         <div
-          className={`rounded-2xl p-5 ${dark ? "bg-white/5" : "bg-white"} ring-1 ${dark ? "ring-white/10" : "ring-gray-200"}`}
+          className={`dash-activity rounded-2xl p-5 ${dark ? "bg-white/5" : "bg-white"} ring-1 ${dark ? "ring-white/10" : "ring-gray-200"}`}
         >
           <div className="flex items-center justify-between">
             <h2 className="text-sm font-bold uppercase tracking-wide">

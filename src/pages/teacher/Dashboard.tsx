@@ -141,12 +141,12 @@ export default function TeacherDashboard() {
 
   const totalAttendanceRecorded = attendanceSummary.filter((s) => s.recorded).length;
 
-  const card = `rounded-2xl p-4 md:p-5 shadow-lg border transition-all ${
+  const card = `dash-card rounded-2xl p-4 md:p-5 shadow-lg border transition-all ${
     theme === 'dark'
       ? 'bg-white/5 backdrop-blur-xl border-white/10'
       : 'bg-white/40 backdrop-blur-md border-white/20'
   }`;
-  const statCard = `rounded-2xl p-4 md:p-5 shadow-md border transition-all hover:shadow-lg active:scale-[0.98] ${
+  const statCard = `stat-card rounded-2xl p-4 md:p-5 shadow-md border transition-all hover:shadow-lg active:scale-[0.98] ${
     theme === 'dark'
       ? 'bg-white/5 backdrop-blur-xl border-white/10'
       : 'bg-white/60 backdrop-blur-md border-white/20'
@@ -228,8 +228,8 @@ export default function TeacherDashboard() {
   return (
     <div className="space-y-6 p-3 sm:p-4 md:p-5 max-w-7xl mx-auto">
       {/* Greeting */}
-      <div className="flex items-center gap-3">
-        <SchoolLogo className="h-10 w-10 md:h-11 md:w-11" />
+      <div className="dash-greeting flex items-center gap-3">
+        <SchoolLogo className="h-9 w-9 md:h-11 md:w-11" />
         <div>
           <h1 className={`text-xl md:text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
             Welcome back, {user?.name || 'Teacher'} 👋

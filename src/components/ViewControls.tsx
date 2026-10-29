@@ -62,7 +62,7 @@ export default function ViewControls() {
     }
   };
 
-  const btnClass = `p-2 rounded-lg transition-colors ${
+  const btnClass = `flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
     theme === "dark"
       ? "text-gray-400 hover:text-white hover:bg-white/10"
       : "text-gray-600 hover:text-gray-900 hover:bg-white/40"
@@ -82,7 +82,7 @@ export default function ViewControls() {
         </button>
         <button
           onClick={() => applyZoom(1)}
-          className={`text-xs font-medium px-1 rounded-lg transition-colors ${btnClass}`}
+          className={`text-xs font-medium rounded-lg transition-colors ${btnClass}`}
           title={`Zoom ${Math.round(zoom * 100)}% – click to reset`}
           aria-label="Reset zoom"
         >
@@ -96,6 +96,7 @@ export default function ViewControls() {
         >
           <PlusIcon className="h-5 w-5" />
         </button>
+        <span className="mx-0.5 h-5 w-px bg-current opacity-10" aria-hidden="true" />
         <button
           onClick={toggleFullscreen}
           className={btnClass}

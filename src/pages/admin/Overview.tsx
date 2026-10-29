@@ -52,7 +52,6 @@ interface Activity {
 }
 
 // ---------- Sub-components ----------
-import SchoolLogo from '../../components/SchoolLogo';
 
 const Greeting = ({ name, role, school, theme }: { name: string; role: string; school: string; theme: string }) => {
   const hour = new Date().getHours();
@@ -65,61 +64,115 @@ const Greeting = ({ name, role, school, theme }: { name: string; role: string; s
     ? role.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())
     : '';
 
+  const isDark = theme === 'dark';
+  const today = new Date().toLocaleDateString('en-US', {
+    weekday: 'long', day: 'numeric', month: 'long', year: 'numeric',
+  });
+
   return (
-    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="mb-5 md:mb-6 flex items-center gap-3">
-      <SchoolLogo className="h-11 w-11 md:h-12 md:w-12" />
-      <div>
-        <h1 className={`text-2xl md:text-3xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>
-          {greeting}, {name} 👋
-        </h1>
-        <p className={`mt-1 text-sm ${theme === 'dark' ? 'text-gray-400' : 'text-gray-600'}`}>
-          {roleLabel ? `${roleLabel} • ` : ''}{school} — {new Date().toLocaleDateString('en-US', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
-        </p>
+    <motion.header
+      initial={{ opacity: 0, y: -12 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="dash-greeting relative mb-5 md:mb-8 overflow-hidden rounded-3xl shadow-lg md:shadow-xl"
+    >
+      {/* Elegant gradient banner */}
+      <div
+        className={`relative px-5 py-6 md:px-8 md:py-9 ${
+          isDark
+            ? 'bg-gradient-to-br from-blue-600/25 via-indigo-700/15 to-transparent border border-white/10'
+            : 'bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800'
+        }`}
+      >
+        {/* Decorative orbs */}
+        <div className="pointer-events-none absolute -right-10 -top-16 h-48 w-48 rounded-full bg-white/10 blur-2xl" />
+        <div className="pointer-events-none absolute -bottom-20 -left-8 h-40 w-40 rounded-full bg-sky-300/20 blur-2xl" />
+        <div className="pointer-events-none absolute right-16 top-6 hidden h-16 w-16 rounded-full bg-white/5 blur-lg md:block" />
+
+        <div className="relative flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+          <div className="min-w-0">
+            {/* Role pill */}
+            {roleLabel && (
+              <span className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-white/15 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.15em] text-white ring-1 ring-white/20 backdrop-blur-sm md:text-[11px]">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-300" />
+                {roleLabel}
+              </span>
+            )}
+            <h1 className="text-2xl font-bold tracking-tight text-white md:text-4xl">
+              {greeting}, <span className="font-extrabold">{name}</span> 👋
+            </h1>
+            <p className="mt-1.5 text-sm font-medium text-blue-100/90 md:text-base">
+              {school}
+            </p>
+          </div>
+
+          {/* Date chip — right aligned on desktop, below on mobile */}
+          <div className="flex items-center gap-2 self-start rounded-2xl bg-white/10 px-4 py-2.5 ring-1 ring-white/15 backdrop-blur-sm md:self-auto md:flex-col md:items-end md:gap-0.5 md:rounded-2xl md:px-5 md:py-3">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-blue-200">Today</span>
+            <span className="whitespace-nowrap text-xs font-semibold text-white md:text-sm">{today}</span>
+          </div>
+        </div>
       </div>
-    </motion.div>
+    </motion.header>
   );
 };
 
 const ActivityFeed = ({ activities, theme, navigate }: { activities: Activity[]; theme: string; navigate: any }) => {
-  if (activities.length === 0) return null;
+  // On phones show just the latest items; desktop keeps the full feed.
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
+  const visible = isMobile ? activities.slice(0, 4) : activities;
+  if (visible.length === 0) return null;
 
   const getIcon = (type: Activity['type']) => {
     switch (type) {
-      case 'registration': return <UserPlusIcon className="w-4 h-4 text-green-500" />;
+      case 'registration': return <UserPlusIcon className="w-4 h-4 text-emerald-500" />;
       case 'payment': return <CurrencyDollarIcon className="w-4 h-4 text-blue-500" />;
       case 'payroll': return <WalletIcon className="w-4 h-4 text-purple-500" />;
-      case 'result': return <DocumentTextIcon className="w-4 h-4 text-yellow-500" />;
+      case 'result': return <DocumentTextIcon className="w-4 h-4 text-amber-500" />;
       default: return <DocumentTextIcon className="w-4 h-4 text-gray-400" />;
     }
   };
 
   return (
-    <motion.div variants={item} className={`rounded-2xl p-4 md:p-6 shadow-lg ${
+    <motion.div variants={item} className={`dash-activity rounded-2xl p-4 md:p-6 shadow-lg ${
       theme === 'dark'
         ? 'bg-white/5 border border-white/10'
         : 'bg-white/80 backdrop-blur-md border border-gray-200/60 shadow-gray-200/50'
     }`}>
       <div className="flex justify-between items-center mb-4">
-        <h3 className={`text-base md:text-lg font-medium ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Recent Activity</h3>
+        <div className="flex items-center gap-2.5">
+          <span className={`h-8 w-8 flex items-center justify-center rounded-xl ${
+            theme === 'dark' ? 'bg-blue-500/15 text-blue-300' : 'bg-blue-100 text-blue-700'
+          }`}>
+            <ChartBarIcon className="h-4 w-4" />
+          </span>
+          <div>
+            <h3 className={`text-base md:text-lg font-semibold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Recent Activity</h3>
+            <p className={`text-[11px] ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
+              {isMobile ? 'Latest updates' : "What's happening in your school"}
+            </p>
+          </div>
+        </div>
         <button
           onClick={() => navigate('/admin/activity')}
-          className={`text-sm flex items-center gap-1 ${
-            theme === 'dark' ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'
+          className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+            theme === 'dark'
+              ? 'bg-blue-500/15 text-blue-300 hover:bg-blue-500/25'
+              : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
           }`}
         >
-          See All <ArrowRightIcon className="w-4 h-4" />
+          See All <ArrowRightIcon className="w-3.5 h-3.5" />
         </button>
       </div>
-      <ul className="space-y-1.5 md:space-y-3 max-h-72 md:max-h-64 overflow-y-auto pr-1 no-scrollbar">
-        {activities.map((activity) => (
+      <ul className="space-y-1 md:space-y-2.5 md:max-h-64 md:overflow-y-auto md:pr-1 no-scrollbar">
+        {visible.map((activity, idx) => (
           <li
             key={activity.id}
             onClick={() => activity.path && navigate(activity.path)}
-            className={`flex items-start gap-3 text-sm p-2.5 md:p-2 rounded-xl md:rounded-lg cursor-pointer transition-colors active:scale-[0.99] ${
-              theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-100/50'
-            }`}
+            className={`group flex items-center gap-3 text-sm p-2.5 md:p-3 rounded-xl cursor-pointer transition-all active:scale-[0.99] ${
+              theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-100/60'
+            } ${idx > 0 ? (theme === 'dark' ? 'border-t border-white/[0.04]' : 'border-t border-gray-100') : ''}`}
           >
-            <span className={`mt-0.5 h-8 w-8 flex items-center justify-center rounded-lg flex-shrink-0 ${
+            <span className={`h-9 w-9 md:h-8 md:w-8 flex items-center justify-center rounded-xl flex-shrink-0 ${
               theme === 'dark' ? 'bg-white/10' : 'bg-gray-100'
             }`}>
               {getIcon(activity.type)}
@@ -130,7 +183,7 @@ const ActivityFeed = ({ activities, theme, navigate }: { activities: Activity[];
             <span className={`text-xs whitespace-nowrap hidden sm:block ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
               {new Date(activity.time).toLocaleString('en-US', { hour: '2-digit', minute: '2-digit' })}
             </span>
-            <ChevronRightIcon className={`w-4 h-4 mt-2 flex-shrink-0 sm:hidden ${theme === 'dark' ? 'text-gray-600' : 'text-gray-300'}`} />
+            <ChevronRightIcon className={`w-4 h-4 flex-shrink-0 ${theme === 'dark' ? 'text-gray-600' : 'text-gray-300'}`} />
           </li>
         ))}
       </ul>

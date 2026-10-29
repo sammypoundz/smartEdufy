@@ -584,3 +584,238 @@ body {
 .app-swal-dark .swal2-popup.app-swal-popup .swal2-close:hover {
   background: rgba(255, 255, 255, 0.1);
 }
+
+/* =====================================================================
+   ===== PREMIUM MOBILE DASHBOARD REFINEMENT (<=767px ONLY) ============
+   Desktop (md+) is COMPLETELY untouched — every rule below sits inside
+   a max-width media query. Design tokens:
+   bg #F6F8FC · card #FFFFFF · accent #315EEB · text #172033
+   muted #64748B · border #E7EBF2 · radius 14-16px · 8px spacing
+   ===================================================================== */
+@media (max-width: 767px) {
+  /* ---- 1. Page background ---- */
+  .min-h-screen.bg-gradient-to-br,
+  [class*='bg-gradient-to-br from-blue-50'] {
+    background: #F6F8FC !important;
+    background-image: none !important;
+  }
+
+  /* ---- 2. Dashboard cards: flat white, subtle border, equal height ---- */
+  .stat-card,
+  .dash-card,
+  .dash-activity {
+    background: #FFFFFF !important;
+    background-image: none !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    border: 1px solid #E7EBF2 !important;
+    border-radius: 16px !important;
+    box-shadow: 0 1px 2px rgba(23, 32, 51, 0.04) !important;
+    padding: 14px !important;
+  }
+  .stat-card:hover,
+  .dash-card:hover {
+    transform: none !important;
+    box-shadow: 0 2px 8px rgba(23, 32, 51, 0.06) !important;
+  }
+  .stat-card::before,
+  .stat-card::after,
+  .dash-card::before,
+  .dash-card::after {
+    display: none !important;
+  }
+  /* Absolute decorative glow blobs inside cards */
+  .stat-card > div[class*='absolute'],
+  .dash-card > div[class*='absolute'],
+  .dash-activity > div[class*='absolute'] {
+    display: none !important;
+  }
+
+  /* ---- 3. Stat cards: compact, aligned, quiet icons ---- */
+  .stat-card {
+    min-height: 108px;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow: hidden;
+  }
+  .stat-card .stat-card-icon {
+    padding: 7px !important;
+    border-radius: 10px !important;
+    background: #EEF2FF !important;
+    background-image: none !important;
+    color: #315EEB !important;
+    box-shadow: none !important;
+  }
+  .stat-card .stat-card-icon svg,
+  .stat-card > div > svg,
+  div[class*='stat-card'] svg.h-6 {
+    width: 20px;
+    height: 20px;
+  }
+  .stat-card p:first-child,
+  .stat-card p[class*='text-xs'] {
+    font-size: 12px !important;
+    line-height: 1.35 !important;
+    color: #64748B !important;
+    font-weight: 500 !important;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .stat-card p[class*='font-bold'],
+  .stat-card p[class*='text-2xl'],
+  .stat-card p[class*='text-3xl'] {
+    font-size: 28px !important;
+    line-height: 1.15 !important;
+    margin-top: 4px !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.02em;
+    color: #172033;
+  }
+  /* Teacher dashboard: icon sits above label — tighten the stack */
+  .stat-card svg { flex-shrink: 0; }
+
+  /* ---- 4. Welcome / greeting section: compact and balanced ---- */
+  .dash-greeting {
+    margin-bottom: 16px !important;
+    gap: 10px !important;
+  }
+  .dash-greeting h1 {
+    font-size: 19px !important;
+    line-height: 1.3 !important;
+    font-weight: 700 !important;
+    letter-spacing: -0.01em;
+  }
+  .dash-greeting p {
+    margin-top: 2px !important;
+    font-size: 12px !important;
+    line-height: 1.4 !important;
+  }
+
+  /* ---- 5. Recent activity: compact rows with subtle separators ---- */
+  .dash-activity ul {
+    max-height: none !important;
+  }
+  .dash-activity li {
+    padding: 10px 2px !important;
+    border-radius: 0 !important;
+    gap: 10px !important;
+    font-size: 13px;
+  }
+  .dash-activity li + li {
+    border-top: 1px solid #F1F4F9 !important;
+  }
+  .dash-activity li:hover {
+    background: transparent !important;
+  }
+  .dash-activity li > span:first-child {
+    height: 32px !important;
+    width: 32px !important;
+    border-radius: 10px !important;
+    margin-top: 0 !important;
+  }
+  .dash-activity li > span:first-child svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  /* ---- 6. Quick actions grid on dashboards ---- */
+  .dash-card a[class*='rounded-2xl'],
+  [class*='grid-cols-3'] > button[class*='rounded-2xl'] {
+    border-radius: 14px !important;
+  }
+
+  /* ---- 7. Dark mode keeps its own surfaces — scope light tokens to
+     :not(.dark) so night mode is untouched ---- */
+  :not(.dark) > * .stat-card,
+  :not(.dark) .stat-card { color: #172033; }
+}
+
+/* Dark mode variants for the same mobile hooks (mobile only, dark only) */
+@media (max-width: 767px) {
+  .dark .stat-card,
+  .dark .dash-card,
+  .dark .dash-activity {
+    background: rgba(255, 255, 255, 0.05) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    box-shadow: none !important;
+  }
+  .dark .stat-card p[class*='font-bold'],
+  .dark .stat-card p[class*='text-2xl'],
+  .dark .stat-card p[class*='text-3xl'] { color: #fff; }
+  .dark .stat-card .stat-card-icon {
+    background: rgba(49, 94, 235, 0.15) !important;
+    color: #93b4ff !important;
+  }
+}
+
+/* =====================================================================
+   ===== MOBILE HEADER + EDUFY AI FAB REFINEMENT (<=767px only) ========
+   ===================================================================== */
+@media (max-width: 767px) {
+  /* ---- Header: tighter icon spacing, compact and comfortable ---- */
+  header.sticky {
+    height: 56px !important;
+    min-height: 56px !important;
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    background: rgba(255, 255, 255, 0.92) !important;
+    backdrop-filter: blur(12px) !important;
+    -webkit-backdrop-filter: blur(12px) !important;
+  }
+  .dark header.sticky {
+    background: rgba(11, 17, 32, 0.92) !important;
+  }
+  header.sticky [class*='space-x-4'],
+  header.sticky [class*='space-x-1'] {
+    gap: 4px !important;
+  }
+  header.sticky img[class*='rounded-xl'] {
+    height: 32px !important;
+    width: 32px !important;
+  }
+
+  /* ---- Sync/Online status pill: compact dot-only indicator ---- */
+  header.sticky button[class*='rounded-full'][class*='items-center'] {
+    padding: 4px !important;
+    gap: 0 !important;
+    min-width: 28px !important;
+    min-height: 28px !important;
+  }
+  header.sticky button[class*='rounded-full'] > svg {
+    width: 16px !important;
+    height: 16px !important;
+  }
+  header.sticky button[class*='rounded-full'] > span:not([class*='hidden']) {
+    font-size: 0 !important;
+  }
+
+  /* ---- Edufy AI floating button: smaller, quieter on phones ---- */
+  .edufy-fab {
+    height: 46px !important;
+    width: 46px !important;
+    box-shadow: 0 4px 14px rgba(49, 94, 235, 0.35) !important;
+    /* Force the blue gradient on phones — other mobile rules strip
+       Tailwind gradient utility images with !important. */
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 55%, #1d4ed8 100%) !important;
+    background-image: linear-gradient(135deg, #3b82f6 0%, #2563eb 55%, #1d4ed8 100%) !important;
+    -webkit-background: linear-gradient(135deg, #3b82f6 0%, #2563eb 55%, #1d4ed8 100%) !important;
+    color: #ffffff !important;
+    border: none !important;
+    outline: 2px solid rgba(147, 197, 253, 0.5) !important;
+    outline-offset: -1px;
+  }
+  .edufy-fab > svg {
+    color: #ffffff !important;
+    fill: #ffffff !important;
+  }
+  .edufy-fab > svg {
+    width: 22px !important;
+    height: 22px !important;
+  }
+  /* Soften the ping halo so it doesn't dominate small screens */
+  .edufy-fab > span[class*='animate-ping'] {
+    opacity: 0.5;
+  }
+}

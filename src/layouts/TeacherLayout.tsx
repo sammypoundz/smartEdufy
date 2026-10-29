@@ -13,7 +13,6 @@ import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
 import ViewControls from '../components/ViewControls';
 import LogoutConfirmModal from '../components/LogoutConfirmModal';
-import SyncStatusBadge from '../components/SyncStatusBadge';
 import Swal from 'sweetalert2';
 import toast from 'react-hot-toast';
 import {
@@ -789,7 +788,7 @@ export default function TeacherLayout() {
             <img
               src={iconUrl}
               alt="SmartEdufy"
-              className="md:hidden h-12 w-12 rounded-xl object-contain flex-shrink-0"
+              className="md:hidden h-9 w-9 rounded-xl object-contain flex-shrink-0"
               draggable={false}
             />
             {/* Desktop collapse toggle */}
@@ -963,8 +962,7 @@ export default function TeacherLayout() {
             <div className="flex items-center space-x-1">
               <ViewControls />
             </div>
-            {/* Offline / sync status indicator */}
-            <SyncStatusBadge />
+            {/* Offline / sync status indicator removed */}
             <Link
               to="/teacher/notifications"
               className={`relative p-2 rounded-lg transition-colors ${

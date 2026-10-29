@@ -665,7 +665,7 @@ export default function ParentLayout() {
             <img
               src={iconUrl}
               alt="SmartEdufy"
-              className="md:hidden h-12 w-12 rounded-xl object-contain flex-shrink-0"
+              className="md:hidden h-9 w-9 rounded-xl object-contain flex-shrink-0"
               draggable={false}
             />
             {/* Desktop collapse toggle */}

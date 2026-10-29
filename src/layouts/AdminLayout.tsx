@@ -15,7 +15,6 @@ import { usePendingLinkRequestCount } from '../hooks/useParentLink';
 import { usePendingTeacherRegistrationCount } from '../hooks/useTeacherRegistration';
 import ViewControls from '../components/ViewControls';
 import LogoutConfirmModal from '../components/LogoutConfirmModal';
-import SyncStatusBadge from '../components/SyncStatusBadge';
 import Swal from 'sweetalert2';
 import {
   FolderIcon,
@@ -290,7 +289,6 @@ export default function AdminLayout() {
   const [searchResults, setSearchResults] = useState<typeof allNavItems>([]);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [searchExpanded, setSearchExpanded] = useState(false);
   const [searchModalOpen, setSearchModalOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchDropdownRef = useRef<HTMLDivElement>(null);
@@ -348,7 +346,6 @@ export default function AdminLayout() {
       ) {
         setShowSearchDropdown(false);
         setSearchQuery('');
-        setSearchExpanded(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -365,7 +362,6 @@ export default function AdminLayout() {
   const handleResultClick = (href: string) => {
     navigate(href);
     closeSearchModal();
-    setSearchExpanded(false);
   };
 
   // ---------- Handlers ----------
@@ -872,13 +868,13 @@ export default function AdminLayout() {
             <img
               src={iconUrl}
               alt="SmartEdufy"
-              className="md:hidden h-12 w-12 rounded-xl object-contain flex-shrink-0"
+              className="md:hidden h-9 w-9 rounded-xl object-contain flex-shrink-0"
               draggable={false}
             />
             {/* Desktop collapse toggle */}
             <button
               onClick={toggleSidebar}
-              className="hidden md:block p-2 rounded-lg text-gray-500 hover:text-gray-700 transition-colors"
+              className="hidden md:flex h-9 w-9 items-center justify-center rounded-lg text-gray-500 hover:text-gray-700 transition-colors"
               title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
             >
               {isCollapsed ? (
@@ -942,25 +938,19 @@ export default function AdminLayout() {
           </div>
 
           {/* ====== Search Bar – icon opens a search modal (spans across like the parent dashboard) ====== */}
-          <div className="flex items-center justify-end flex-1 min-w-0 mr-2 relative" ref={searchContainerRef}>
-            <div
-              className={`relative transition-all duration-300 ease-in-out ${
-                searchExpanded ? 'w-full' : 'w-10'
-              }`}
-            >
-              <div className="relative">
-                <button
-                  type="button"
-                  onClick={handleIconClick}
-                  title="Search"
-                  aria-label="Open search"
-                  className={`p-2 -m-2 rounded-full transition-colors ${
-                    theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
-                  }`}
-                >
-                  <MagnifyingGlassIcon className="h-5 w-5" />
-                </button>
-              </div>
+          <div className="flex items-center justify-end flex-1 min-w-0 relative" ref={searchContainerRef}>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={handleIconClick}
+                title="Search"
+                aria-label="Open search"
+                className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+                  theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-white/40'
+                }`}
+              >
+                <MagnifyingGlassIcon className="h-5 w-5" />
+              </button>
             </div>
           </div>
 
@@ -1062,16 +1052,15 @@ export default function AdminLayout() {
             onCancel={() => setShowLogoutConfirm(false)}
           />
 
-          {/* Right icons */}
-          <div className="flex items-center space-x-4 flex-shrink-0">
-            <div className="flex items-center space-x-1">
+          {/* Right icons — every control is an equal 36×36 square, aligned */}
+          <div className="flex items-center gap-1 flex-shrink-0">
+            <div className="flex items-center gap-1">
               <ViewControls />
             </div>
-            {/* Offline / sync status indicator */}
-            <SyncStatusBadge />
+            {/* Offline / sync status indicator removed */}
             <Link
               to="/admin/notifications"
-              className={`relative p-2 rounded-lg transition-colors ${
+              className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
                 theme === 'dark'
                   ? 'text-gray-400 hover:text-white hover:bg-white/10'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'
@@ -1086,7 +1075,7 @@ export default function AdminLayout() {
             </Link>
             <button
               onClick={toggleTheme}
-              className={`p-2 rounded-lg transition-colors ${
+              className={`flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
                 theme === 'dark'
                   ? 'text-gray-400 hover:text-white hover:bg-white/10'
                   : 'text-gray-600 hover:text-gray-900 hover:bg-white/40'

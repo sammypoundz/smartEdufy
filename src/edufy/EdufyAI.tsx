@@ -34,7 +34,11 @@ import {
 // ============================ Floating Button ============================
 const EDUFY_POS_KEY = "edufy-button-pos";
 const BTN = 56; // button is h-14 w-14
+const BTN_MOBILE = 46; // slightly smaller on phones — less visual dominance
 const MARGIN = 8;
+// The floating pill bottom-nav sits at bottom-4 (1rem) and is ~64px tall;
+// keep the assistant safely above it (plus home-bar inset is handled by CSS).
+const MOBILE_BOTTOM_CLEARANCE = 96;
 
 /** Button position in px from the top-left of the viewport. */
 interface EdufyPos {
@@ -42,11 +46,16 @@ interface EdufyPos {
   y: number;
 }
 
-const defaultPos = (): EdufyPos => ({
-  // Matches the previous right-6 bottom-6 anchor.
-  x: window.innerWidth - BTN - 24,
-  y: window.innerHeight - BTN - 24,
-});
+const defaultPos = (): EdufyPos => {
+  const isMobile = window.innerWidth < 768;
+  const btn = isMobile ? BTN_MOBILE : BTN;
+  const bottomClearance = isMobile ? MOBILE_BOTTOM_CLEARANCE : 24;
+  return {
+    // Matches the previous right-6 bottom-6 anchor (mobile clears the nav).
+    x: window.innerWidth - btn - 24,
+    y: window.innerHeight - btn - bottomClearance,
+  };
+};
 
 function loadSavedPos(): EdufyPos {
   try {
@@ -73,9 +82,15 @@ function FloatingEdufyButton() {
 
   // Constrain to the viewport and persist whenever the position changes.
   const updatePos = useCallback((x: number, y: number) => {
+    const isMobile = window.innerWidth < 768;
+    const btn = isMobile ? BTN_MOBILE : BTN;
+    // On phones also respect the floating bottom-nav + safe area.
+    const bottomLimit = isMobile
+      ? Math.max(window.innerHeight - btn - MOBILE_BOTTOM_CLEARANCE, MARGIN)
+      : Math.max(window.innerHeight - btn - MARGIN, MARGIN);
     const clamped = {
-      x: Math.min(Math.max(x, MARGIN), Math.max(window.innerWidth - BTN - MARGIN, MARGIN)),
-      y: Math.min(Math.max(y, MARGIN), Math.max(window.innerHeight - BTN - MARGIN, MARGIN)),
+      x: Math.min(Math.max(x, MARGIN), Math.max(window.innerWidth - btn - MARGIN, MARGIN)),
+      y: Math.min(Math.max(y, MARGIN), bottomLimit),
     };
     setPos(clamped);
     localStorage.setItem(EDUFY_POS_KEY, JSON.stringify(clamped));
@@ -152,11 +167,11 @@ function FloatingEdufyButton() {
       aria-label={open ? "Close Edufy AI assistant" : "Open Edufy AI assistant"}
       aria-expanded={open}
       title="Drag to reposition · tap to open"
-      className="group fixed z-[60] flex h-14 w-14 select-none items-center justify-center rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-indigo-700 text-white shadow-xl shadow-blue-600/40 outline-none transition-colors duration-300 hover:scale-105 focus-visible:ring-4 focus-visible:ring-blue-300"
+      className="edufy-fab group fixed z-[60] flex h-14 w-14 select-none items-center justify-center rounded-full bg-gradient-to-br from-blue-500 via-blue-600 to-blue-700 text-white shadow-xl shadow-blue-500/50 ring-2 ring-blue-300/60 outline-none transition-colors duration-300 hover:scale-105 focus-visible:ring-4 focus-visible:ring-blue-400"
     >
       {/* glow pulse */}
       <span
-        className="absolute inset-0 -z-10 animate-ping rounded-full bg-blue-500/25 [animation-duration:2.5s]"
+        className="absolute inset-0 -z-10 animate-ping rounded-full bg-blue-400/35 [animation-duration:2.5s]"
         aria-hidden="true"
       />
       {/* tooltip */}

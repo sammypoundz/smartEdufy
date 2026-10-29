@@ -167,6 +167,12 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
       if (autoCloseTimer.current) clearTimeout(autoCloseTimer.current);
       return;
     }
+    // Mobile view: never auto-open — the greeting covers the small screen and
+    // the button is enough. Desktop keeps the once-per-session greeting.
+    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+      autoOpenedRef.current = true; // consume the once-per-session flag
+      return;
+    }
     // Logged in → transient greeting once per login session, unless the
     // user has already opened the panel themselves.
     if (autoOpenedRef.current) return;
@@ -182,6 +188,20 @@ export function EdufyProvider({ children }: { children: React.ReactNode }) {
     }, 1200);
     return () => clearTimeout(t);
   }, [isLoggedIn]);
+
+  // If the viewport crosses into mobile while the transient greeting is up
+  // (rotation, window resize), close it immediately.
+  useEffect(() => {
+    const onResize = () => {
+      if (window.innerWidth < 768 && autoCloseTimer.current) {
+        clearTimeout(autoCloseTimer.current);
+        autoCloseTimer.current = null;
+        setOpen(false);
+      }
+    };
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, []);
 
   const openPanel = useCallback(() => {
     // A manual open cancels any pending auto-close — the panel stays open.

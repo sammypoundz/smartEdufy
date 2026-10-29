@@ -1,0 +1,8 @@
+{
+  "appId": "com.smartedufy.app",
+  "appName": "SmartEdufy",
+  "webDir": "dist",
+  "server": {
+    "androidScheme": "https"
+  }
+}
