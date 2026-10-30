@@ -477,8 +477,17 @@ export default function Login() {
               </motion.button>
             </form>
 
-            {/* Teacher self-registration link */}
+            {/* School signup + teacher self-registration links */}
             <p className={`mt-4 text-center text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
+              Is your school new to SmartEdufy?{' '}
+              <Link
+                to="/register/school"
+                className={`font-semibold ${dark ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-700'}`}
+              >
+                Create a school account →
+              </Link>
+            </p>
+            <p className={`mt-2 text-center text-sm ${dark ? 'text-slate-400' : 'text-slate-500'}`}>
               Are you a teacher?{' '}
               <Link
                 to="/register/teacher"

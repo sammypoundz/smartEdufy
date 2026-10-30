@@ -180,19 +180,24 @@ export default function AccountantLayout() {
         } ${dark ? "bg-gray-900 border-r border-white/10" : "bg-white border-r border-gray-200"}`}
       >
         {/* Brand */}
-        <div className="flex items-center gap-3 px-5 h-16 flex-shrink-0">
+        <div className="flex items-center gap-2 px-4 h-16 flex-shrink-0 min-w-0">
           <img
             src={dark ? logoDarkUrl : logoLightUrl}
             alt="SmartEdufy"
-            className="h-10 w-auto object-contain flex-shrink-0"
+            className="h-9 sm:h-10 w-auto max-w-[55%] object-contain object-left flex-shrink"
           />
-          <div className="min-w-0">
-            <p className="text-[11px] text-blue-500 font-semibold uppercase tracking-wider">
-              Accounts Portal
-            </p>
-          </div>
+          <span
+            className={`min-w-0 max-w-[45%] truncate rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider sm:text-[11px] ${
+              dark
+                ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                : "bg-white/60 text-blue-800 border-white/40"
+            }`}
+            title="Accountant"
+          >
+            Accountant
+          </span>
           <button
-            className="ml-auto md:hidden p-2 rounded-lg"
+            className="ml-auto md:hidden p-2 rounded-lg flex-shrink-0"
             onClick={() => setSidebarOpen(false)}
             aria-label="Close menu"
           >

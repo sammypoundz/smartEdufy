@@ -30,6 +30,7 @@ import {
 interface FeeStructure {
   id: string;
   className: string;
+  armName?: string | null;
   term: string;
   breakdown: {
     name: string;
@@ -67,6 +68,7 @@ interface FeePayment {
 interface ClassItem {
   id: string;
   name: string;
+  arms?: { id: string; letter: string; alias?: string | null }[];
 }
 
 // ============================================================
@@ -219,6 +221,7 @@ export default function AdminFees() {
 
   const [feeForm, setFeeForm] = useState({
     className: '',
+    armName: '' as string, // '' = whole class (all arms)
     term: '',
     breakdown: [
       {
@@ -367,6 +370,7 @@ export default function AdminFees() {
   const saveFeeMutation = useMutation({
     mutationFn: async (payload: {
       className: string;
+      armName?: string | null;
       term: string;
       breakdown: { name: string; amount: number }[];
       deadline: string;
@@ -776,6 +780,7 @@ export default function AdminFees() {
         availableClasses.length > 0
           ? availableClasses[0].name
           : '',
+      armName: '',
       term:
         currentTermName ||
         'First Term',
@@ -798,6 +803,7 @@ export default function AdminFees() {
 
     setFeeForm({
       className: fee.className,
+      armName: fee.armName || '',
       term: fee.term,
       breakdown: fee.breakdown.map(item => ({
         name: item.name,
@@ -892,6 +898,7 @@ export default function AdminFees() {
     const payload = {
       className:
         feeForm.className,
+      armName: feeForm.armName || null,
       term: feeForm.term,
       breakdown:
         feeForm.breakdown.map(item => ({
@@ -915,7 +922,7 @@ export default function AdminFees() {
       await Swal.fire({
         title:
           'Delete Fee Structure',
-        text: `Delete fee for ${fee.className} (${fee.term})?`,
+        text: `Delete fee for ${fee.className}${fee.armName ? ` (Arm ${fee.armName})` : ''} (${fee.term})?`,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor:
@@ -1808,6 +1815,17 @@ export default function AdminFees() {
                                 className={`whitespace-nowrap py-4 pl-6 pr-3 text-sm font-medium ${headingText}`}
                               >
                                 {fee.className}
+                                {fee.armName && (
+                                  <span
+                                    className={`ml-2 inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                      isDark
+                                        ? 'bg-blue-500/15 text-blue-300'
+                                        : 'bg-blue-50 text-blue-700'
+                                    }`}
+                                  >
+                                    Arm {fee.armName}
+                                  </span>
+                                )}
                               </td>
 
                               <td
@@ -2489,6 +2507,7 @@ export default function AdminFees() {
                             className:
                               e.target
                                 .value,
+                            armName: '', // reset arm when class changes
                           })
                         }
                         className={`w-full px-3 py-2.5 rounded-lg border focus:outline-none focus:ring-2 ${inputClass}`}
@@ -2512,6 +2531,51 @@ export default function AdminFees() {
                           )
                         )}
                       </select>
+                    </div>
+
+                    {/* Class arm (optional) — narrow the fee to a specific arm */}
+                    <div>
+                      <label
+                        className={`block text-sm font-medium mb-1.5 ${bodyText}`}
+                      >
+                        Class Arm{" "}
+                        <span className={`text-xs font-normal ${mutedText}`}>
+                          (optional)
+                        </span>
+                      </label>
+
+                      <select
+                        value={feeForm.armName}
+                        onChange={(e) =>
+                          setFeeForm({
+                            ...feeForm,
+                            armName: e.target.value,
+                          })
+                        }
+                        disabled={
+                          !feeForm.className ||
+                          (availableClasses.find((c) => c.name === feeForm.className)?.arms?.length ?? 0) === 0
+                        }
+                        className={`w-full px-3 py-2.5 rounded-lg border focus:outline-none focus:ring-2 disabled:opacity-60 ${inputClass}`}
+                      >
+                        <option value="">
+                          Whole class (all arms)
+                        </option>
+
+                        {(availableClasses.find((c) => c.name === feeForm.className)?.arms ?? []).map(
+                          (arm) => (
+                            <option key={arm.id} value={arm.alias || arm.letter}>
+                              {arm.alias ? `${arm.letter} — ${arm.alias}` : `Arm ${arm.letter}`}
+                            </option>
+                          )
+                        )}
+                      </select>
+
+                      <p className={`mt-1.5 text-xs ${mutedText}`}>
+                        {feeForm.armName
+                          ? `Fee applies only to students in arm "${feeForm.armName}"`
+                          : 'Leave as whole class to assign the fee to every arm'}
+                      </p>
                     </div>
 
                     <div>

@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import TeacherDashboard from './pages/teacher/Dashboard';
 import TeacherSubjects from './pages/teacher/Subjects';
 import TeacherRegister from './pages/auth/TeacherRegister';
+import SchoolRegister from './pages/auth/SchoolRegister';
 import TeacherProfileSetup from './pages/teacher/ProfileSetup';
 import Login from './pages/auth/Login';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -118,6 +119,7 @@ function App() {
         {/* Public routes – no layout */}
         <Route path="/login" element={<Login />} />
         <Route path="/register/teacher" element={<TeacherRegister />} />
+        <Route path="/register/school" element={<SchoolRegister />} />
         <Route element={<ProtectedRoute />}><Route path="/teacher/profile-setup" element={<TeacherProfileSetup />} /></Route>
         <Route path="/student/test" element={<TestPortal />} />
 
