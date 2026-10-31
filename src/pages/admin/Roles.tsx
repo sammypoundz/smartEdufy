@@ -52,7 +52,11 @@ export default function AdminRoles() {
     queryKey: ["roles"],
     queryFn: () =>
       unwrap(api.get<RoleDef[]>("/roles")).then((d) =>
-        Array.isArray(d) ? d : [],
+        Array.isArray(d)
+          ? // Normalize: older cached/stored role objects may lack the
+            // `privileges` array — default it so rendering never crashes.
+            d.map((r) => ({ ...r, privileges: Array.isArray(r?.privileges) ? r.privileges : [] }))
+          : [],
       ),
   });
 
@@ -64,6 +68,8 @@ export default function AdminRoles() {
     onSuccess: (_data, vars) => {
       toast.success(vars.id ? "Role updated" : "Role created");
       queryClient.invalidateQueries({ queryKey: ["roles"] });
+      // Staff page reads role labels under a different cache key — keep it fresh too
+      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
       setShowModal(false);
     },
     onError: (err: unknown) => toast.error(getErrorMessage(err, "Save failed")),
@@ -75,6 +81,7 @@ export default function AdminRoles() {
     onSuccess: () => {
       toast.success("Role deleted");
       queryClient.invalidateQueries({ queryKey: ["roles"] });
+      queryClient.invalidateQueries({ queryKey: ["role-labels"] });
     },
     onError: (err: unknown) => toast.error(getErrorMessage(err, "Delete failed")),
   });
@@ -248,14 +255,14 @@ export default function AdminRoles() {
                 )}
 
                 <div className="mt-3 flex flex-wrap gap-1">
-                  {role.privileges.length === 0 ? (
+                  {(role.privileges || []).length === 0 ? (
                     <span
                       className={`text-xs italic ${theme === "dark" ? "text-gray-500" : "text-gray-400"}`}
                     >
                       No privileges assigned
                     </span>
                   ) : (
-                    role.privileges.map((key) => {
+                    (role.privileges || []).map((key) => {
                       const priv = ALL_PRIVILEGES.find((p) => p.key === key);
                       return (
                         <span

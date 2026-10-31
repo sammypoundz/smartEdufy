@@ -734,8 +734,11 @@ export default function AdminStaff() {
   // All selectable roles: system roles + custom roles created by the admin
   // on the Roles & Privileges page (POST /roles). Custom roles appear in the
   // primary-role dropdown, the additional-roles chips and the role filter.
+  // NOTE: uses its own cache key — must NOT share `['roles']` with the
+  // Roles & Privileges / Users pages, which cache full RoleDef objects under
+  // that key. Sharing it corrupts their cache and crashes their rendering.
   const rolesQuery = useQuery<string[]>({
-    queryKey: ['roles'],
+    queryKey: ['role-labels'],
     queryFn: async () => {
       const list = await unwrap<any[]>(api.get('/roles'));
       if (!Array.isArray(list)) return BASE_ROLES;
