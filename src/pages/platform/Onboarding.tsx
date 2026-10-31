@@ -81,16 +81,23 @@ export default function PlatformOnboarding() {
   const qc = useQueryClient();
   const fileInput = useRef<HTMLInputElement>(null);
   const cameraInput = useRef<HTMLInputElement>(null);
+  const reviewPanelRef = useRef<HTMLDivElement>(null);
   const [selectedSchool, setSelectedSchool] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [activeBatchId, setActiveBatchId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [toast, setToast] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [busyRecordId, setBusyRecordId] = useState<string | null>(null);
+  const [busyAction, setBusyAction] = useState<string | null>(null);
   const [confirmClasses, setConfirmClasses] = useState<{
     batchId: string;
     missing: string[];
   } | null>(null);
+  const [reportModal, setReportModal] = useState<
+    "duplicates" | "rejected" | null
+  >(null);
 
   const notify = (msg: string) => {
     setToast(msg);
@@ -142,10 +149,33 @@ export default function PlatformOnboarding() {
         `AI extracted ${data.batch.extracted} students — review & approve below`,
       );
       qc.invalidateQueries({ queryKey: ["platform", "onboarding", "batches"] });
+      qc.invalidateQueries({
+        queryKey: ["platform", "onboarding", "batch", data.batch.id],
+      });
+      // Scroll down to the extracted-data preview once it has rendered.
+      setTimeout(() => {
+        reviewPanelRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 300);
     },
     onError: (e: any) =>
       notify(e?.response?.data?.error || e?.message || "Upload failed"),
   });
+
+  // Reset selection & busy state when switching batches, then scroll the
+  // extraction preview (review panel) into view.
+  const selectActiveBatch = (id: string) => {
+    setActiveBatchId(id);
+    setSelectedIds(new Set());
+    setBusyRecordId(null);
+    setBusyAction(null);
+    // Wait a tick so the review panel renders before scrolling to it.
+    setTimeout(() => {
+      reviewPanelRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 100);
+  };
 
   const updateRecord = useMutation({
     mutationFn: async ({
@@ -165,6 +195,59 @@ export default function PlatformOnboarding() {
         queryKey: ["platform", "onboarding", "batch", activeBatchId],
       }),
   });
+
+  // Bulk-approve / bulk-reject every selected record (one PATCH per record).
+  const bulkUpdateStatus = useMutation({
+    mutationFn: async ({
+      ids,
+      status,
+    }: {
+      ids: string[];
+      status: string;
+    }) => {
+      const results = await Promise.allSettled(
+        ids.map((id) =>
+          platformApi.patch(`/onboarding/records/${id}`, { status }),
+        ),
+      );
+      return {
+        status,
+        ok: results.filter((r) => r.status === "fulfilled").length,
+        failed: results.filter((r) => r.status === "rejected").length,
+      };
+    },
+    onSuccess: (data) => {
+      notify(
+        `Bulk ${data.status.toLowerCase()}: ${data.ok} record(s)${
+          data.failed ? ` · ${data.failed} failed` : ""
+        }`,
+      );
+      setSelectedIds(new Set());
+      qc.invalidateQueries({
+        queryKey: ["platform", "onboarding", "batch", activeBatchId],
+      });
+    },
+    onError: () => notify("Bulk update failed"),
+  });
+
+  // Single approve/reject with a per-row, per-action loading indicator.
+  const setRecordStatus = (id: string, status: string) => {
+    setBusyRecordId(id);
+    setBusyAction(status);
+    updateRecord.mutate(
+      { id, status },
+      {
+        onSuccess: () => {
+          setBusyRecordId(null);
+          setBusyAction(null);
+        },
+        onError: () => {
+          setBusyRecordId(null);
+          setBusyAction(null);
+        },
+      },
+    );
+  };
 
   const approveAll = useMutation({
     mutationFn: async (batchId: string) =>
@@ -278,6 +361,32 @@ export default function PlatformOnboarding() {
   };
   const isImage = previewUrl !== null;
 
+  // Records behind the clickable "duplicates skipped" / "rejected/failed"
+  // numbers in the batch-completed report.
+  const duplicateRecords = records.filter((r) => r.status === "DUPLICATE");
+  const rejectedRecords = records.filter(
+    (r) => r.status === "REJECTED" || r.flags?.includes("FAILED"),
+  );
+
+  // Selection helpers for the bulk check & approve feature
+  const pendingIds = records
+    .filter((r) => r.status === "PENDING")
+    .map((r) => r.id);
+  const allPendingSelected =
+    pendingIds.length > 0 && pendingIds.every((id) => selectedIds.has(id));
+  const toggleSelectAll = () =>
+    setSelectedIds(allPendingSelected ? new Set() : new Set(pendingIds));
+  const toggleSelect = (id: string) =>
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const selectedCount = selectedIds.size;
+  const checkboxCls =
+    "w-4 h-4 accent-blue-600 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed";
+
   return (
     <div className="space-y-6">
       {/* Confirm: create missing classes + Arm A before registering */}
@@ -331,6 +440,143 @@ export default function PlatformOnboarding() {
                   : "Create classes & register"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch report modal — duplicates / rejected details */}
+      {reportModal && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={() => setReportModal(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className={`w-full max-w-2xl rounded-2xl p-6 shadow-2xl border max-h-[85vh] overflow-y-auto ${
+              dark
+                ? "bg-gray-900 border-gray-700 text-gray-100"
+                : "bg-white border-gray-200"
+            }`}
+          >
+            {(() => {
+              const isDupes = reportModal === "duplicates";
+              const list = isDupes ? duplicateRecords : rejectedRecords;
+              return (
+                <>
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center gap-3">
+                      <div
+                        className={`w-11 h-11 rounded-2xl flex items-center justify-center ${
+                          isDupes
+                            ? "bg-violet-100 dark:bg-violet-500/15"
+                            : "bg-rose-100 dark:bg-rose-500/15"
+                        }`}
+                      >
+                        {isDupes ? (
+                          <ExclamationTriangleIcon className="w-6 h-6 text-violet-600 dark:text-violet-400" />
+                        ) : (
+                          <XCircleIcon className="w-6 h-6 text-rose-600 dark:text-rose-400" />
+                        )}
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold">
+                          {isDupes
+                            ? `Duplicates skipped (${list.length})`
+                            : `Rejected / failed (${list.length})`}
+                        </h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">
+                          {isDupes
+                            ? "These students were already registered in this school, so they were skipped."
+                            : "These records were rejected or failed validation."}
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setReportModal(null)}
+                      className="rounded-lg border border-gray-300 dark:border-gray-700 px-3 py-1.5 text-xs font-bold"
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {list.length === 0 ? (
+                    <p className="mt-6 text-center text-sm text-gray-500 py-6">
+                      Nothing to show here.
+                    </p>
+                  ) : (
+                    <div className="mt-4 overflow-x-auto rounded-xl border border-gray-200 dark:border-gray-700">
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr
+                            className={`text-left text-[11px] uppercase tracking-wider ${
+                              dark ? "text-gray-400" : "text-gray-500"
+                            }`}
+                          >
+                            <th className="px-4 py-2 font-bold">Student</th>
+                            <th className="px-3 py-2 font-bold">Class</th>
+                            <th className="px-3 py-2 font-bold">Admission No</th>
+                            <th className="px-4 py-2 font-bold">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
+                          {list.map((r) => (
+                            <tr key={r.id}>
+                              <td className="px-4 py-2 font-semibold">
+                                {r.name}
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {r.className || "—"}
+                              </td>
+                              <td className="px-3 py-2 text-xs">
+                                {r.admissionNumber || "—"}
+                              </td>
+                              <td className="px-4 py-2">
+                                <span
+                                  className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                    STATUS_STYLES[r.status] ||
+                                    "bg-gray-100 text-gray-600"
+                                  }`}
+                                >
+                                  {r.status}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+
+                  {!isDupes && list.length > 0 && (
+                    <div className="mt-5 flex justify-end gap-2">
+                      <button
+                        onClick={() => setReportModal(null)}
+                        className="rounded-lg border border-gray-300 dark:border-gray-700 px-4 py-2 text-xs font-bold"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => {
+                          setReportModal(null);
+                          startRegistration(activeBatchId!);
+                        }}
+                        disabled={
+                          register.isPending ||
+                          ensureClasses.isPending ||
+                          counts.approved === 0
+                        }
+                        className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-4 py-2 text-xs font-bold text-white shadow disabled:opacity-50 inline-flex items-center gap-1.5"
+                      >
+                        <UserPlusIcon className="w-4 h-4" />
+                        {register.isPending || ensureClasses.isPending
+                          ? "Registering…"
+                          : `Register approved students (${counts.approved})`}
+                      </button>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -526,7 +772,7 @@ export default function PlatformOnboarding() {
             {batches.data.slice(0, 8).map((b) => (
               <button
                 key={b.id}
-                onClick={() => setActiveBatchId(b.id)}
+                onClick={() => selectActiveBatch(b.id)}
                 className={`w-full px-5 py-3 flex items-center gap-4 text-left transition ${
                   b.id === activeBatchId
                     ? "bg-blue-50 dark:bg-blue-500/10"
@@ -554,7 +800,8 @@ export default function PlatformOnboarding() {
       {/* Review panel */}
       {activeBatchId && (
         <div
-          className={`rounded-2xl border ${
+          ref={reviewPanelRef}
+          className={`rounded-2xl border scroll-mt-24 ${
             dark ? "bg-gray-900 border-gray-800" : "bg-white border-gray-200"
           }`}
         >
@@ -586,7 +833,41 @@ export default function PlatformOnboarding() {
                     </span>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() =>
+                      bulkUpdateStatus.mutate({
+                        ids: [...selectedIds],
+                        status: "APPROVED",
+                      })
+                    }
+                    disabled={bulkUpdateStatus.isPending || selectedCount === 0}
+                    className="rounded-lg bg-gradient-to-r from-emerald-600 to-green-600 px-3 py-2 text-xs font-bold text-white shadow disabled:opacity-50 inline-flex items-center gap-1.5"
+                  >
+                    <CheckCircleIcon
+                      className={`w-4 h-4 ${
+                        bulkUpdateStatus.isPending ? "animate-pulse" : ""
+                      }`}
+                    />
+                    {bulkUpdateStatus.isPending
+                      ? "Working…"
+                      : `Approve selected (${selectedCount})`}
+                  </button>
+                  <button
+                    onClick={() =>
+                      bulkUpdateStatus.mutate({
+                        ids: [...selectedIds],
+                        status: "REJECTED",
+                      })
+                    }
+                    disabled={bulkUpdateStatus.isPending || selectedCount === 0}
+                    className="rounded-lg border border-rose-500 text-rose-600 dark:text-rose-400 px-3 py-2 text-xs font-bold inline-flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    <XCircleIcon className="w-4 h-4" />
+                    {bulkUpdateStatus.isPending
+                      ? "Working…"
+                      : `Reject selected (${selectedCount})`}
+                  </button>
                   <button
                     onClick={() => approveAll.mutate(activeBatchId!)}
                     disabled={approveAll.isPending || counts.pending === 0}
@@ -645,7 +926,17 @@ export default function PlatformOnboarding() {
                         dark ? "text-gray-400" : "text-gray-500"
                       }`}
                     >
-                      <th className="px-5 py-2.5 font-bold">Student</th>
+                      <th className="px-5 py-2.5 font-bold">
+                        <input
+                          type="checkbox"
+                          checked={allPendingSelected}
+                          onChange={toggleSelectAll}
+                          disabled={pendingIds.length === 0}
+                          title="Select all pending"
+                          className={checkboxCls}
+                        />
+                      </th>
+                      <th className="px-3 py-2.5 font-bold">Student</th>
                       <th className="px-3 py-2.5 font-bold">Gender</th>
                       <th className="px-3 py-2.5 font-bold">Religion</th>
                       <th className="px-3 py-2.5 font-bold">Class</th>
@@ -660,6 +951,18 @@ export default function PlatformOnboarding() {
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
                     {filtered.map((r) => (
                       <tr key={r.id}>
+                        <td className="px-5 py-2.5">
+                          <input
+                            type="checkbox"
+                            checked={selectedIds.has(r.id)}
+                            onChange={() => toggleSelect(r.id)}
+                            disabled={
+                              r.status !== "PENDING" ||
+                              bulkUpdateStatus.isPending
+                            }
+                            className={checkboxCls}
+                          />
+                        </td>
                         <td className="px-5 py-2.5">
                           <input
                             value={r.name}
@@ -787,29 +1090,35 @@ export default function PlatformOnboarding() {
                             r.status !== "DUPLICATE" && (
                               <button
                                 onClick={() =>
-                                  updateRecord.mutate({
-                                    id: r.id,
-                                    status: "APPROVED",
-                                  })
+                                  setRecordStatus(r.id, "APPROVED")
                                 }
                                 title="Approve"
-                                className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10"
+                                disabled={busyRecordId === r.id}
+                                className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-500/10 disabled:opacity-50"
                               >
-                                <CheckCircleIcon className="w-5 h-5" />
+                                {busyRecordId === r.id &&
+                                busyAction === "APPROVED" ? (
+                                  <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                                ) : (
+                                  <CheckCircleIcon className="w-5 h-5" />
+                                )}
                               </button>
                             )}
                           {r.status === "PENDING" && (
                             <button
                               onClick={() =>
-                                updateRecord.mutate({
-                                  id: r.id,
-                                  status: "REJECTED",
-                                })
+                                setRecordStatus(r.id, "REJECTED")
                               }
                               title="Reject"
-                              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10"
+                              disabled={busyRecordId === r.id}
+                              className="p-1.5 rounded-lg text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 disabled:opacity-50"
                             >
-                              <XCircleIcon className="w-5 h-5" />
+                              {busyRecordId === r.id &&
+                              busyAction === "REJECTED" ? (
+                                <ArrowPathIcon className="w-5 h-5 animate-spin" />
+                              ) : (
+                                <XCircleIcon className="w-5 h-5" />
+                              )}
                             </button>
                           )}
                           {(r.status === "REJECTED" ||
@@ -849,10 +1158,21 @@ export default function PlatformOnboarding() {
                       <p>
                         {formatNumber(activeBatch?.registered || 0)} students
                         registered ·{" "}
-                        {formatNumber(activeBatch?.duplicates || 0)} duplicates
-                        skipped · {formatNumber(activeBatch?.rejected || 0)}{" "}
-                        rejected/failed of{" "}
-                        {formatNumber(activeBatch?.extracted || 0)}{" "}
+                        <button
+                          onClick={() => setReportModal("duplicates")}
+                          className="underline font-bold hover:text-emerald-600 dark:hover:text-emerald-200"
+                        >
+                          {formatNumber(activeBatch?.duplicates || 0)} duplicates
+                        </button>{" "}
+                        skipped ·{" "}
+                        <button
+                          onClick={() => setReportModal("rejected")}
+                          className="underline font-bold hover:text-emerald-600 dark:hover:text-emerald-200"
+                        >
+                          {formatNumber(activeBatch?.rejected || 0)}
+                          rejected/failed
+                        </button>{" "}
+                        of {formatNumber(activeBatch?.extracted || 0)}{" "}
                         extracted.
                       </p>
                     </div>
