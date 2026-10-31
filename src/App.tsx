@@ -60,6 +60,19 @@ import QuestionReviewPage from './pages/admin/QuestionReview';
 import EdufyAI, { EdufyProvider } from './edufy/EdufyAI';
 import OfflineManager from './pages/admin/OfflineManager';
 
+// Super Admin console (separate auth realm + layout)
+import { PlatformAuthProvider, usePlatformAuth } from './contexts/PlatformAuthContext';
+import SuperAdminLayout from './layouts/SuperAdminLayout';
+import PlatformLogin from './pages/platform/Login';
+import PlatformOverview from './pages/platform/Overview';
+import SchoolsPage from './pages/platform/Schools';
+import PlatformOnboarding from './pages/platform/Onboarding';
+import {
+  PeoplePage, SubscriptionsPage, RevenuePage, FeeAnalyticsPage,
+  WalletsPage, AiUsagePage, ForecastPage, SystemHealthPage,
+  NotificationsPage, AuditLogsPage,
+} from './pages/platform/Modules';
+
 // Teacher layout
 import TeacherLayout from './layouts/TeacherLayout';
 
@@ -72,6 +85,22 @@ import TestPortal from './pages/student/TestPortal';
 
 // Placeholder pages for other roles
 const StudentDashboard = () => <div>Student Dashboard</div>;
+
+// Guard for the Super Admin console — separate auth realm from the school
+// app. Requires a valid platform user; otherwise bounces to the platform
+// login page.
+function PlatformGuard() {
+  const { user, loading } = usePlatformAuth();
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" />
+      </div>
+    );
+  }
+  if (!user) return <Navigate to="/platform/login" replace />;
+  return <SuperAdminLayout />;
+}
 
 // Role‑based redirect: send staff users with any administrative privilege
 // to the admin area; others by primary role.
@@ -116,6 +145,16 @@ function App() {
       />
 
       <Routes>
+        {/* ====== SUPER ADMIN CONSOLE (separate auth realm) ====== */}
+        <Route path="/platform/login" element={
+          <PlatformAuthProvider><PlatformLogin /></PlatformAuthProvider>
+        } />
+        <Route path="/platform/*" element={
+          <PlatformAuthProvider>
+            <PlatformGuard />
+          </PlatformAuthProvider>
+        } />
+
         {/* Public routes – no layout */}
         <Route path="/login" element={<Login />} />
         <Route path="/register/teacher" element={<TeacherRegister />} />
@@ -180,6 +219,24 @@ function App() {
             <Route path="activity" element={<ActivityPage />} />
             <Route path="question-review" element={<QuestionReviewPage />} />
           </Route>
+        </Route>
+
+        {/* ====== SUPER ADMIN ROUTES ====== */}
+        <Route path="/platform" element={<SuperAdminLayout />}>
+          <Route index element={<PlatformOverview />} />
+          <Route path="dashboard" element={<PlatformOverview />} />
+          <Route path="schools" element={<SchoolsPage />} />
+          <Route path="onboarding" element={<PlatformOnboarding />} />
+          <Route path="people" element={<PeoplePage />} />
+          <Route path="subscriptions" element={<SubscriptionsPage />} />
+          <Route path="revenue" element={<RevenuePage />} />
+          <Route path="fees" element={<FeeAnalyticsPage />} />
+          <Route path="wallets" element={<WalletsPage />} />
+          <Route path="ai-usage" element={<AiUsagePage />} />
+          <Route path="forecast" element={<ForecastPage />} />
+          <Route path="system-health" element={<SystemHealthPage />} />
+          <Route path="notifications" element={<NotificationsPage />} />
+          <Route path="audit-logs" element={<AuditLogsPage />} />
         </Route>
 
         {/* ====== TEACHER ROUTES — same privilege-based access ====== */}

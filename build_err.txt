@@ -1,0 +1,9 @@
+[33mGenerated an empty chunk: "icons".[39m
+[33m[plugin vite:reporter] 
+(!) C:/Users/gambo/smartedufy/frontend/src/offline/db.ts is dynamically imported by C:/Users/gambo/smartedufy/frontend/src/contexts/AuthContext.tsx, C:/Users/gambo/smartedufy/frontend/src/layouts/AdminLayout.tsx, C:/Users/gambo/smartedufy/frontend/src/layouts/TeacherLayout.tsx but also statically imported by C:/Users/gambo/smartedufy/frontend/src/offline/OfflineContext.tsx, C:/Users/gambo/smartedufy/frontend/src/offline/offlineWrites.ts, C:/Users/gambo/smartedufy/frontend/src/offline/syncEngine.ts, dynamic import will not move module into another chunk.
+[39m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m

@@ -1,0 +1,26 @@
+[36mvite v7.3.1 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 2227 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mmanifest.webmanifest                        [39m[1m[2m    0.38 kB[22m[1m[22m
+[2mdist/[22m[32mindex.html                                  [39m[1m[2m    4.02 kB[22m[1m[22m[2m │ gzip:   1.51 kB[22m
+[2mdist/[22m[32massets/smart edufy icon-DXyatLcY.png        [39m[1m[2m  109.86 kB[22m[1m[22m
+[2mdist/[22m[32massets/smart edufy II-CVZAOiPi.png          [39m[1m[2m  358.30 kB[22m[1m[22m
+[2mdist/[22m[32massets/smart edufy-CvYsnPJb.png             [39m[1m[2m  364.68 kB[22m[1m[22m
+[2mdist/[22m[35massets/index-BL1kbtMJ.css                   [39m[1m[2m  176.35 kB[22m[1m[22m[2m │ gzip:  26.77 kB[22m
+[2mdist/[22m[36massets/icons-l0sNRNKZ.js                    [39m[1m[2m    0.00 kB[22m[1m[22m[2m │ gzip:   0.02 kB[22m
+[2mdist/[22m[36massets/workbox-window.prod.es5-BBnX5xw4.js  [39m[1m[2m    5.75 kB[22m[1m[22m[2m │ gzip:   2.36 kB[22m
+[2mdist/[22m[36massets/purify.es-4eNOHKSq.js                [39m[1m[2m   28.74 kB[22m[1m[22m[2m │ gzip:  11.02 kB[22m
+[2mdist/[22m[36massets/vendor-Cv9g0rw0.js                   [39m[1m[2m   49.11 kB[22m[1m[22m[2m │ gzip:  17.40 kB[22m
+[2mdist/[22m[36massets/index.es-qg-zXR2K.js                 [39m[1m[2m  158.94 kB[22m[1m[22m[2m │ gzip:  53.05 kB[22m
+[2mdist/[22m[36massets/html2canvas.esm-DXEQVQnt.js          [39m[1m[2m  201.04 kB[22m[1m[22m[2m │ gzip:  47.43 kB[22m
+[2mdist/[22m[36massets/index-B1e_-Sf7.js                    [39m[1m[33m3,248.50 kB[39m[22m[2m │ gzip: 876.68 kB[22m
+[32m✓ built in 51.17s[39m
+
+PWA v2.0.0
+mode      generateSW
+precache  14 entries (3783.58 KiB)
+files generated
+  dist/sw.js
+  dist/workbox-c121765f.js
