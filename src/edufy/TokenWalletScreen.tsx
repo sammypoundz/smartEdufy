@@ -10,50 +10,20 @@ import {
 import { useAuth } from "../contexts/AuthContext";
 import { useEdufy } from "./EdufyContext";
 import { api } from "../utils/api";
-import {
-  useTokenPackages,
-  useTokenWallet,
-  type TokenPackage,
-} from "./useTokenWallet";
+import { useTokenWallet } from "./useTokenWallet";
 
 /**
  * "Tokens" screen inside Edufy AI — shows tokens left, tokens used and a
- * top-up (purchase) flow wired to POST /api/tokens/purchase (Module 7).
+ * top-up flow routed exclusively through BIA CONNECT hosted checkout
+ * (POST /api/payments/bia/initialize). The legacy manual /tokens/purchase
+ * instant-credit flow was removed: it credited tokens without a verified
+ * payment, which is unsafe with a live payment gateway.
  */
 export default function TokenWalletScreen() {
   const { token } = useAuth();
   const { back } = useEdufy();
   const { wallet, status, refresh } = useTokenWallet();
-  const packages = useTokenPackages();
   const [topUpOpen, setTopUpOpen] = useState(false);
-  const [customTokens, setCustomTokens] = useState("");
-  const [method, setMethod] = useState<"TRANSFER" | "USSD" | "CARD">(
-    "TRANSFER",
-  );
-  const [buying, setBuying] = useState(false);
-
-  const purchase = async (tokens: number) => {
-    if (!token || buying) return;
-    setBuying(true);
-    try {
-      const res = await api.post("/tokens/purchase", { tokens, method }, token);
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Purchase failed");
-      toast.success(
-        `${tokens.toLocaleString()} tokens added — ₦${(
-          data.amountNgn ?? 0
-        ).toLocaleString()} · ref ${data.reference}`,
-        { duration: 6000 },
-      );
-      setTopUpOpen(false);
-      setCustomTokens("");
-      await refresh();
-    } catch (e: any) {
-      toast.error(e.message || "Token purchase failed");
-    } finally {
-      setBuying(false);
-    }
-  };
 
   // ---- BIA CONNECT hosted-checkout flow (instant, verified purchase) ----
   const [biaPackages, setBiaPackages] = useState<
@@ -224,16 +194,8 @@ export default function TokenWalletScreen() {
               </button>
             ) : (
               <TopUpFlow
-                packages={packages}
-                price={price}
-                buying={buying}
-                method={method}
-                setMethod={setMethod}
-                customTokens={customTokens}
-                setCustomTokens={setCustomTokens}
-                onCancel={() => setTopUpOpen(false)}
-                onBuy={purchase}
                 fmtNgn={fmtNgn}
+                onCancel={() => setTopUpOpen(false)}
                 biaEnabled={biaEnabled}
                 biaPackages={biaPackages}
                 biaConfirm={biaConfirm}
@@ -304,15 +266,6 @@ export default function TokenWalletScreen() {
 
 // ------------------------------ Top-up flow ------------------------------
 function TopUpFlow(props: {
-  packages: TokenPackage[];
-  price: number;
-  buying: boolean;
-  method: "TRANSFER" | "USSD" | "CARD";
-  setMethod: (m: "TRANSFER" | "USSD" | "CARD") => void;
-  customTokens: string;
-  setCustomTokens: (v: string) => void;
-  onCancel: () => void;
-  onBuy: (tokens: number) => void;
   fmtNgn: (n: number) => string;
   biaEnabled: boolean;
   biaPackages: { id: string; name: string; tokens: number; price: number }[];
@@ -327,17 +280,9 @@ function TopUpFlow(props: {
     tokens: number;
     price: number;
   }) => void;
+  onCancel: () => void;
 }) {
   const {
-    packages,
-    price,
-    buying,
-    method,
-    setMethod,
-    customTokens,
-    setCustomTokens,
-    onCancel,
-    onBuy,
     fmtNgn,
     biaEnabled,
     biaPackages,
@@ -345,9 +290,8 @@ function TopUpFlow(props: {
     setBiaConfirm,
     biaPaying,
     onBiaPay,
+    onCancel,
   } = props;
-  const custom = Math.max(0, Math.min(100000, Number(customTokens) || 0));
-  const showPackages = packages.length > 0;
 
   return (
     <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
@@ -406,7 +350,7 @@ function TopUpFlow(props: {
                 {biaPackages.map((p) => (
                   <button
                     key={p.id}
-                    disabled={biaPaying || buying}
+                    disabled={biaPaying}
                     onClick={() => setBiaConfirm(p)}
                     className="rounded-xl border border-blue-300 bg-white px-2 py-2.5 text-center shadow-sm transition hover:border-blue-500 hover:shadow disabled:opacity-60 dark:border-blue-500/40 dark:bg-gray-800"
                   >
@@ -425,76 +369,16 @@ function TopUpFlow(props: {
             </div>
           ) : (
             <p className="mt-2.5 text-[11px] text-blue-700 dark:text-blue-300">
-              {fmtNgn(price)} per token · credited instantly, payment verified by
-              the platform finance team.
+              Instant online payment is temporarily unavailable. Please try
+              again shortly, or contact support to top up your tokens.
             </p>
           )}
         </>
       )}
 
-      {showPackages && (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {packages.map((p) => (
-            <button
-              key={p.name}
-              disabled={buying}
-              onClick={() => onBuy(p.tokens)}
-              className="rounded-xl border border-blue-200 bg-white px-2 py-2.5 text-center shadow-sm transition hover:border-blue-400 hover:shadow disabled:opacity-60 dark:border-blue-500/40 dark:bg-gray-800"
-            >
-              <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
-                {p.name}
-              </span>
-              <span className="mt-0.5 block text-sm font-black text-blue-700 dark:text-blue-300">
-                {p.tokens.toLocaleString()}
-              </span>
-              <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
-                {fmtNgn(p.priceNgn)}
-              </span>
-            </button>
-          ))}
-        </div>
-      )}
-
-      {/* custom amount + payment method — hidden when BIA instant checkout is
-          active, so purchases always go through the verified gateway flow */}
-      {!biaConfirm && !(biaEnabled && biaPackages.length > 0) && (
-      <div className="mt-3 flex gap-2">
-        <input
-          type="number"
-          min={1}
-          max={100000}
-          value={customTokens}
-          onChange={(e) => setCustomTokens(e.target.value)}
-          placeholder="Custom amount"
-          aria-label="Custom token amount"
-          className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs text-gray-800 focus:border-blue-500 focus:outline-none dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100"
-        />
-        <button
-          disabled={buying || custom <= 0}
-          onClick={() => onBuy(custom)}
-          className="rounded-xl bg-blue-600 px-4 py-2 text-xs font-bold text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-50"
-        >
-          {buying ? "Buying…" : `Buy · ${fmtNgn(custom * price)}`}
-        </button>
-      </div>
-      )}
-
-      {/* payment method */}
-      <div className="mt-2 flex gap-1.5">
-        {(["TRANSFER", "USSD", "CARD"] as const).map((m) => (
-          <button
-            key={m}
-            onClick={() => setMethod(m)}
-            className={`flex-1 rounded-lg px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide transition ${
-              method === m
-                ? "bg-blue-600 text-white shadow-sm"
-                : "border border-gray-200 bg-white text-gray-500 hover:border-blue-300 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400"
-            }`}
-          >
-            {m}
-          </button>
-        ))}
-      </div>
+      {/* Payment method buttons + custom amount input REMOVED — the manual
+          /tokens/purchase flow credited tokens instantly without a verified
+          payment, so the ONLY purchase path is now the BIA hosted checkout. */}
 
       <button
         onClick={onCancel}
