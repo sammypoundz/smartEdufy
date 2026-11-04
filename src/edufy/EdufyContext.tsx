@@ -22,6 +22,7 @@ function useAuthSafe() {
 
 export type EdufyScreen =
   | "menu"
+  | "tokens"
   | "chat"
   | "result-scanner"
   | "timetable-creator"

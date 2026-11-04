@@ -43,4 +43,18 @@ export const authService = {
     const user = localStorage.getItem('user');
     return user ? JSON.parse(user) : null;
   },
+
+  /** Fresh profile for the signed-in staff/admin, including the school's
+   *  assigned subscription (plan, billing cycle, price per cycle, status). */
+  getMe: async () => {
+    const response = await api.get('/auth/me');
+    return response.data;
+  },
+
+  /** Active subscription plans (marketing-safe fields) for the school's
+   *  plan catalogue — shows what the school is on and what it can switch to. */
+  getPlans: async () => {
+    const response = await api.get('/auth/plans');
+    return response.data.plans as any[];
+  },
 };

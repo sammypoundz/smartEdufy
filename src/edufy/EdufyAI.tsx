@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
+import toast from "react-hot-toast";
 import { useAuth } from "../contexts/AuthContext";
 import {
   SparklesIcon,
@@ -8,6 +9,7 @@ import {
   ArrowsPointingOutIcon,
   ArrowsPointingInIcon,
   ExclamationTriangleIcon,
+  BoltIcon,
 } from "@heroicons/react/24/solid";
 import { EdufyProvider, useEdufy, type EdufyScreen as Screen } from "./EdufyContext";
 export { EdufyProvider };
@@ -23,8 +25,10 @@ import {
 import { MOCK_SUBSCRIPTION } from "./mockData";
 import { useOfflineSafe } from "../components/OfflineIndicator";
 import ResultScannerScreen from "./ResultScannerScreen";
+import TokenWalletScreen from "./TokenWalletScreen";
 import TimetableCreatorScreen from "./TimetableCreatorScreen";
 import ChatScreen from "./ChatScreen";
+import { useTokenWallet } from "./useTokenWallet";
 import {
   LessonPlanScreen,
   InsightsScreen,
@@ -190,7 +194,13 @@ function FloatingEdufyButton() {
 }
 
 // ============================ Feature Card ============================
-function FeatureCard({ id }: { id: Screen }) {
+function FeatureCard({
+  id,
+  onClickOverride,
+}: {
+  id: Screen;
+  onClickOverride?: () => void;
+}) {
   const { go } = useEdufy();
   const feature = EDUFY_FEATURES.find((f) => f.id === id)!;
   const locked = feature.premium && !MOCK_SUBSCRIPTION.premium;
@@ -198,7 +208,11 @@ function FeatureCard({ id }: { id: Screen }) {
 
   return (
     <button
-      onClick={() => !disabled && go(id)}
+      onClick={() => {
+        if (disabled) return;
+        if (onClickOverride) onClickOverride();
+        else go(id);
+      }}
       disabled={disabled}
       aria-label={`${feature.title}${feature.comingSoon ? " (coming soon)" : locked ? " (premium)" : ""}`}
       className={`group flex w-full items-start gap-3 rounded-2xl border p-3 text-left transition-all ${
@@ -242,9 +256,109 @@ function FeatureCard({ id }: { id: Screen }) {
   );
 }
 
+// ============================ Token Balance Strip ============================
+// Shows tokens left / used on the menu and links to the token wallet screen
+// where the school can top up. If the wallet can't be read (non-admin account
+// or a backend without the token routes) it still shows an amber card rather
+// than silently hiding the token feature.
+function TokenBalanceStrip() {
+  const { go } = useEdufy();
+  const { wallet, status } = useTokenWallet();
+
+  // Loading skeleton
+  if (status === "loading") {
+    return (
+      <div className="h-[68px] animate-pulse rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60" />
+    );
+  }
+
+  // Wallet unreadable (non-admin account, or the connected backend does not
+  // expose /api/tokens — e.g. the deployed cloud server). Still show the card
+  // with an honest message instead of silently hiding the token feature.
+  if (status === "unknown" || !wallet) {
+    return (
+      <button
+        onClick={() => go("tokens")}
+        aria-label="Open Edufy AI tokens"
+        className="flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-left transition hover:shadow-md dark:border-amber-500/40 dark:bg-amber-500/10"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+          <BoltIcon className="h-5 w-5" />
+        </span>
+        <span className="min-w-0 flex-1">
+          <span className="block text-xs font-bold text-gray-900 dark:text-gray-100">
+            Edufy AI Tokens
+          </span>
+          <span className="mt-0.5 block text-[10px] leading-snug text-amber-700 dark:text-amber-300">
+            Wallet unavailable — the connected server may not support tokens yet,
+            or your account can't view it. Tap to open the token screen.
+          </span>
+        </span>
+        <ChevronLeftIcon className="h-4 w-4 shrink-0 rotate-180 text-gray-300 dark:text-gray-600" />
+      </button>
+    );
+  }
+
+  const empty = wallet.balance <= 0;
+  return (
+    <button
+      onClick={() => go("tokens")}
+      aria-label="Open token wallet"
+      className={`flex w-full items-center gap-3 rounded-2xl border p-3 text-left transition hover:shadow-md ${
+        empty
+          ? "border-red-200 bg-red-50 dark:border-red-500/40 dark:bg-red-500/10"
+          : "border-blue-100 bg-gradient-to-r from-blue-50 to-indigo-50 dark:border-blue-500/30 dark:from-blue-500/10 dark:to-indigo-500/10"
+      }`}
+    >
+      <span
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${
+          empty
+            ? "bg-red-500"
+            : "bg-gradient-to-br from-blue-500 to-indigo-600"
+        }`}
+      >
+        <BoltIcon className="h-5 w-5" />
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="flex items-baseline gap-1.5">
+          <span className="text-base font-black text-gray-900 dark:text-gray-100">
+            {wallet.balance.toLocaleString()}
+          </span>
+          <span className="text-[10px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+            tokens left
+          </span>
+        </span>
+        <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+          {empty
+            ? "Out of tokens — scans are blocked. Tap to top up."
+            : `${wallet.lifetimeConsumed.toLocaleString()} used · 1 token per scan · tap to top up`}
+        </span>
+      </span>
+      <ChevronLeftIcon className="h-4 w-4 shrink-0 rotate-180 text-gray-300 dark:text-gray-600" />
+    </button>
+  );
+}
+
 // ============================ Menu Screen ============================
 function MenuScreen() {
   const offline = useOfflineSafe();
+  const { go } = useEdufy();
+  const { wallet, status, refresh } = useTokenWallet();
+  const tokenBlocked = status === "ready" && wallet !== null && wallet.balance <= 0;
+
+  const handleScanClick = () => {
+    refresh();
+    if (tokenBlocked) {
+      toast.error(
+        "Your school is out of Edufy AI tokens — top up in the Tokens screen to scan.",
+        { duration: 5000 },
+      );
+      go("tokens");
+      return;
+    }
+    go("result-scanner");
+  };
+
   return (
     <div className="flex h-full flex-col">
       {/* branding header */}
@@ -297,13 +411,18 @@ function MenuScreen() {
         </div>
       </div>
 
-      {/* feature cards */}
+      {/* token balance strip + feature cards */}
       <div className="flex-1 space-y-2.5 overflow-y-auto p-4">
+        <TokenBalanceStrip />
         <p className="text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
           AI Features
         </p>
         {EDUFY_FEATURES.map((f) => (
-          <FeatureCard key={f.id} id={f.id} />
+          <FeatureCard
+            key={f.id}
+            id={f.id}
+            onClickOverride={f.id === "result-scanner" ? handleScanClick : undefined}
+          />
         ))}
         <p className="pt-1 text-center text-[10px] text-gray-400 dark:text-gray-500">
           Mock subscription only — billing is not implemented in this demo.
@@ -320,6 +439,8 @@ function ActiveScreen({ screen }: { screen: Screen }) {
   switch (screen) {
     case "result-scanner":
       return <ResultScannerScreen />;
+    case "tokens":
+      return <TokenWalletScreen />;
     case "timetable-creator":
       return <TimetableCreatorScreen />;
     case "chat":

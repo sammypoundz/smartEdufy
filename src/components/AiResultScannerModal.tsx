@@ -125,7 +125,14 @@ export default function AiResultScannerModal({
       fd.append("image", file);
       const res = await api.post("/ai-scan/result-sheet", fd, token);
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "AI scan failed");
+      if (!res.ok) {
+        if (res.status === 402) {
+          throw new Error(
+            "Your school is out of Edufy AI tokens. Top up in the Tokens screen (Edufy AI menu) to scan.",
+          );
+        }
+        throw new Error(data?.error || "AI scan failed");
+      }
       const students: any[] = Array.isArray(data.students) ? data.students : [];
       if (students.length === 0) {
         throw new Error(

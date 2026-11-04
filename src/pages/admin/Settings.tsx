@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
 import toast from 'react-hot-toast';
@@ -19,6 +19,7 @@ import {
   PencilIcon,
   XMarkIcon,
   CheckBadgeIcon,
+  BoltIcon,
 } from '@heroicons/react/24/outline';
 
 // Types
@@ -93,6 +94,7 @@ const categories = [
   { id: 'notifications', label: 'Notifications', icon: BellIcon, gradient: 'from-pink-500 to-rose-400', bg: 'bg-pink-50 dark:bg-pink-900/20' },
   { id: 'security', label: 'Security', icon: ShieldCheckIcon, gradient: 'from-red-500 to-orange-400', bg: 'bg-red-50 dark:bg-red-900/20' },
   { id: 'backup', label: 'Backup', icon: ArrowPathIcon, gradient: 'from-teal-500 to-cyan-400', bg: 'bg-teal-50 dark:bg-teal-900/20' },
+  { id: 'tokens', label: 'Edufy AI Tokens', icon: BoltIcon, gradient: 'from-violet-500 to-fuchsia-400', bg: 'bg-violet-50 dark:bg-violet-900/20' },
 ];
 
 interface IdGeneratorConfig {
@@ -1048,6 +1050,9 @@ export default function AdminSettings() {
           </div>
         );
 
+      case 'tokens':
+        return <TokensPanel inputBgClass={inputBgClass} labelTextClass={labelTextClass} />;
+
       default:
         return null;
     }
@@ -1427,3 +1432,109 @@ const Modal = ({ children, onClose, title, theme }: any) => (
     </div>
   </>
 );
+
+// ---- Edufy AI Tokens panel: wallet balance, packages, purchase, ledger ----
+function TokensPanel({ labelTextClass }: { inputBgClass?: string; labelTextClass?: string }) {
+  const { theme } = useTheme();
+  const qc = useQueryClient();
+
+  const walletQ = useQuery({
+    queryKey: ['tokens-wallet'],
+    queryFn: () => unwrapRes<any>(api.get('/tokens/wallet')),
+  });
+  const packagesQ = useQuery({
+    queryKey: ['tokens-packages'],
+    queryFn: () => unwrapRes<any[]>(api.get('/tokens/packages')),
+  });
+
+  const [buying, setBuying] = useState<string | null>(null);
+
+  const purchase = async (pkg: { name: string; tokens: number; priceNgn: number }) => {
+    if (!window.confirm(`Buy ${pkg.tokens} Edufy AI tokens for ₦${pkg.priceNgn.toLocaleString()}?\nRecord your bank transfer reference afterwards.`)) return;
+    setBuying(pkg.name);
+    try {
+      const res = await api.post('/tokens/purchase', { tokens: pkg.tokens, method: 'TRANSFER' });
+      if (!res.ok) throw new Error((await res.json())?.error || 'Purchase failed');
+      const data = await res.json();
+      toast.success(`${data.tokens} tokens added. Reference: ${data.reference}`);
+      qc.invalidateQueries({ queryKey: ['tokens-wallet'] });
+    } catch (e: any) {
+      toast.error(e.message || 'Purchase failed');
+    } finally {
+      setBuying(null);
+    }
+  };
+
+  const w = walletQ.data;
+  const formatNgn = (n: number) => `₦${Number(n || 0).toLocaleString()}`;
+
+  return (
+    <div className="space-y-8">
+      {/* Balance card */}
+      <div className="rounded-2xl border border-violet-200 dark:border-violet-900/50 bg-gradient-to-r from-violet-500/10 to-fuchsia-500/10 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className={`text-sm ${labelTextClass}`}>⚡ Edufy AI Token Balance</p>
+            <p className="text-4xl font-extrabold mt-1 bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
+              {walletQ.isLoading ? '…' : (w?.wallet?.balance ?? 0).toLocaleString()}
+            </p>
+            <p className="text-xs text-gray-500 mt-1">
+              {(w?.wallet?.reserved ?? 0).toLocaleString()} held for running AI tasks · value {formatNgn((w?.wallet?.balance ?? 0) * (w?.tokenPrice ?? 0))}
+            </p>
+          </div>
+          <div className="text-right">
+            <p className={`text-sm ${labelTextClass}`}>Lifetime</p>
+            <p className="text-sm mt-1">Purchased: <b>{(w?.wallet?.lifetimePurchased ?? 0).toLocaleString()}</b></p>
+            <p className="text-sm">Consumed: <b>{(w?.wallet?.lifetimeConsumed ?? 0).toLocaleString()}</b></p>
+          </div>
+        </div>
+      </div>
+
+      {/* Packages */}
+      <div>
+        <h3 className="font-bold mb-3">🛒 Buy Tokens <span className="text-xs font-normal text-gray-500">(@ {formatNgn(w?.tokenPrice ?? 0)} each)</span></h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {(packagesQ.data || []).map((pkg: any) => (
+            <div key={pkg.name} className={`rounded-2xl border p-5 ${theme === 'dark' ? 'border-gray-700 bg-gray-800/40' : 'border-gray-200 bg-white'}`}>
+              <p className="text-xs font-bold uppercase tracking-wide text-violet-500">{pkg.name}</p>
+              <p className="text-2xl font-extrabold mt-2">{pkg.tokens.toLocaleString()} <span className="text-sm font-medium text-gray-500">tokens</span></p>
+              <p className="text-lg font-bold text-fuchsia-500 mt-1">{formatNgn(pkg.priceNgn)}</p>
+              <button
+                onClick={() => purchase(pkg)}
+                disabled={buying === pkg.name}
+                className="mt-4 w-full rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-600 px-4 py-2.5 text-sm font-bold text-white shadow disabled:opacity-50"
+              >
+                {buying === pkg.name ? 'Processing…' : 'Buy now'}
+              </button>
+            </div>
+          ))}
+        </div>
+        <p className="text-xs text-gray-500 mt-3">
+          After paying by bank transfer, tokens are credited immediately — quote your reference
+          to SmartEdufy finance to complete verification. AI scans &amp; onboarding extract 1 token per student/page.
+        </p>
+      </div>
+
+      {/* Ledger */}
+      <div>
+        <h3 className="font-bold mb-3">📜 Recent Activity</h3>
+        <div className={`rounded-2xl border ${theme === 'dark' ? 'border-gray-700' : 'border-gray-200'} divide-y ${theme === 'dark' ? 'divide-gray-800' : 'divide-gray-100'}`}>
+          {(w?.ledger || []).length === 0 && (
+            <p className="p-4 text-sm text-gray-500">No token activity yet.</p>
+          )}
+          {(w?.ledger || []).map((e: any) => (
+            <div key={e.id} className="flex items-center justify-between px-4 py-3 text-sm">
+              <div>
+                <p className="font-semibold">{e.type}</p>
+                <p className="text-xs text-gray-500">{e.description || e.reference || '—'} · {new Date(e.createdAt).toLocaleDateString()}</p>
+              </div>
+              <span className={`font-bold ${e.amount > 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                {e.amount > 0 ? '+' : ''}{e.amount !== 0 ? e.amount.toLocaleString() : '—'}
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -17,6 +17,7 @@ import {
 } from "@heroicons/react/24/outline";
 import { useEdufy } from "./EdufyContext";
 import { useAuth } from "../contexts/AuthContext";
+import { useTokenWallet } from "./useTokenWallet";
 import { api } from "../utils/api";
 
 // Real extraction: the file is sent to POST /api/ai-scan/result-sheet, which
@@ -60,6 +61,9 @@ const PROGRESS_STEPS = [
 export default function ResultScannerScreen() {
   const { back, scannerHandoff, resetToMenu, pushScan, closePanel } = useEdufy();
   const { token } = useAuth();
+  const { wallet: tokenWallet, status: tokenStatus, refresh: refreshTokens } =
+    useTokenWallet();
+  const outOfTokens = tokenStatus === "ready" && tokenWallet !== null && tokenWallet.balance <= 0;
   const navigate = useNavigate();
   const rosterNames = scannerHandoff?.rosterNames ?? [];
   const onApply = scannerHandoff?.onApply;
@@ -89,7 +93,16 @@ export default function ResultScannerScreen() {
       fd.append("image", f);
       const res = await api.post("/ai-scan/result-sheet", fd, token);
       const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "AI scan failed");
+      if (!res.ok) {
+        // 402 = the school ran out of tokens between upload and scan.
+        if (res.status === 402) {
+          refreshTokens();
+          throw new Error(
+            "Your school is out of Edufy AI tokens. Top up in the Tokens screen to scan.",
+          );
+        }
+        throw new Error(data?.error || "AI scan failed");
+      }
       const students: any[] = Array.isArray(data.students) ? data.students : [];
       if (students.length === 0) {
         throw new Error(
@@ -119,6 +132,12 @@ export default function ResultScannerScreen() {
 
   const onDrop = useCallback(
     (accepted: File[], rejected: { file: File }[]) => {
+      if (outOfTokens) {
+        setError(
+          "Your school is out of Edufy AI tokens. Top up in the Tokens screen to scan.",
+        );
+        return;
+      }
       if (rejected.length) {
         setError("Unsupported file. Please upload a JPG or PNG result sheet.");
         return;
@@ -132,7 +151,7 @@ export default function ResultScannerScreen() {
       setStage("scanning");
       scan(f);
     },
-    [token],
+    [token, outOfTokens],
   );
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -185,6 +204,12 @@ export default function ResultScannerScreen() {
   }, [cameraOn]);
 
   const startCamera = async () => {
+    if (outOfTokens) {
+      setError(
+        "Your school is out of Edufy AI tokens. Top up in the Tokens screen to scan.",
+      );
+      return;
+    }
     setError(null);
     setStartingCamera(true);
     try {
@@ -204,6 +229,13 @@ export default function ResultScannerScreen() {
   };
 
   const capturePhoto = () => {
+    if (outOfTokens) {
+      stopCamera();
+      setError(
+        "Your school is out of Edufy AI tokens. Top up in the Tokens screen to scan.",
+      );
+      return;
+    }
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
     const canvas = document.createElement("canvas");
@@ -340,9 +372,35 @@ export default function ResultScannerScreen() {
             Photo of a result sheet → marks extracted
           </p>
         </div>
+        {tokenStatus === "ready" && tokenWallet && (
+          <span
+            className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+              outOfTokens
+                ? "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300"
+                : "bg-blue-50 text-blue-700 dark:bg-blue-500/15 dark:text-blue-300"
+            }`}
+            title="Tokens left · 1 token per scan"
+          >
+            ⚡ {tokenWallet.balance.toLocaleString()} left
+          </span>
+        )}
       </div>
 
+      {/* ---- no-tokens block (upload stage) ---- */}
       <div className="flex-1 overflow-y-auto p-4">
+        {stage === "upload" && outOfTokens && (
+          <div className="mb-4 flex flex-col items-center rounded-2xl border border-red-200 bg-red-50 p-4 text-center dark:border-red-500/40 dark:bg-red-500/10">
+            <ExclamationTriangleIcon className="h-8 w-8 text-red-500" />
+            <p className="mt-2 text-xs font-bold text-red-700 dark:text-red-300">
+              No tokens left — scanning is disabled
+            </p>
+            <p className="mt-1 text-[11px] leading-snug text-red-600 dark:text-red-400">
+              Each result-sheet scan costs 1 token and your school's balance is
+              0. An admin or principal can top up from the Tokens screen in the
+              Edufy AI menu.
+            </p>
+          </div>
+        )}
         {/* ---------- upload stage ---------- */}
         {stage === "upload" && (
           <div>
