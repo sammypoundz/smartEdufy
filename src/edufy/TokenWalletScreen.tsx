@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import {
   BoltIcon,
@@ -53,6 +53,63 @@ export default function TokenWalletScreen() {
     } finally {
       setBuying(false);
     }
+  };
+
+  // ---- BIA CONNECT hosted-checkout flow (instant, verified purchase) ----
+  const [biaPackages, setBiaPackages] = useState<
+    { id: string; name: string; tokens: number; price: number }[]
+  >([]);
+  const [biaEnabled, setBiaEnabled] = useState(false);
+  const [biaConfirm, setBiaConfirm] = useState<{
+    id: string;
+    name: string;
+    tokens: number;
+    price: number;
+  } | null>(null);
+  const [biaPaying, setBiaPaying] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    if (!token) return;
+    api
+      .get("/payments/token-packages", token)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!alive || !data) return;
+        setBiaEnabled(Boolean(data.biaEnabled));
+        setBiaPackages(Array.isArray(data.packages) ? data.packages : []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  const startBiaCheckout = async (pkg: {
+    id: string;
+    name: string;
+    tokens: number;
+    price: number;
+  }) => {
+    if (!token || biaPaying) return;
+    setBiaPaying(true);
+    try {
+      const res = await api.post(
+        "/payments/bia/initialize",
+        { packageId: pkg.id },
+        token,
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Could not start payment");
+      if (!data?.authorizationUrl)
+        throw new Error("Payment gateway did not return a checkout link");
+      // Hand off to BIA's hosted checkout page.
+      window.location.href = data.authorizationUrl;
+    } catch (e: any) {
+      toast.error(e.message || "Could not start payment");
+      setBiaPaying(false);
+    }
+    // Keep the button disabled — we're navigating away on success.
   };
 
   const price = wallet?.tokenPrice ?? 0;
@@ -177,6 +234,12 @@ export default function TokenWalletScreen() {
                 onCancel={() => setTopUpOpen(false)}
                 onBuy={purchase}
                 fmtNgn={fmtNgn}
+                biaEnabled={biaEnabled}
+                biaPackages={biaPackages}
+                biaConfirm={biaConfirm}
+                setBiaConfirm={setBiaConfirm}
+                biaPaying={biaPaying}
+                onBiaPay={startBiaCheckout}
               />
             )}
 
@@ -229,6 +292,9 @@ export default function TokenWalletScreen() {
                 </li>
               ))}
             </ul>
+
+            {/* ---- BIA payment history ---- */}
+            <BiaPaymentHistory fmtNgn={fmtNgn} />
           </>
         )}
       </div>
@@ -248,6 +314,19 @@ function TopUpFlow(props: {
   onCancel: () => void;
   onBuy: (tokens: number) => void;
   fmtNgn: (n: number) => string;
+  biaEnabled: boolean;
+  biaPackages: { id: string; name: string; tokens: number; price: number }[];
+  biaConfirm: { id: string; name: string; tokens: number; price: number } | null;
+  setBiaConfirm: (
+    v: { id: string; name: string; tokens: number; price: number } | null,
+  ) => void;
+  biaPaying: boolean;
+  onBiaPay: (pkg: {
+    id: string;
+    name: string;
+    tokens: number;
+    price: number;
+  }) => void;
 }) {
   const {
     packages,
@@ -260,19 +339,98 @@ function TopUpFlow(props: {
     onCancel,
     onBuy,
     fmtNgn,
+    biaEnabled,
+    biaPackages,
+    biaConfirm,
+    setBiaConfirm,
+    biaPaying,
+    onBiaPay,
   } = props;
   const custom = Math.max(0, Math.min(100000, Number(customTokens) || 0));
   const showPackages = packages.length > 0;
 
   return (
     <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
-      <p className="text-xs font-bold text-blue-900 dark:text-blue-200">
-        Buy tokens
-      </p>
-      <p className="mt-0.5 text-[11px] text-blue-700 dark:text-blue-300">
-        {fmtNgn(price)} per token · credited instantly, payment verified by the
-        platform finance team.
-      </p>
+      {/* ---- STEP 2: BIA payment confirmation ---- */}
+      {biaConfirm ? (
+        <div>
+          <p className="text-xs font-bold text-blue-900 dark:text-blue-200">
+            Confirm payment
+          </p>
+          <div className="mt-2 space-y-1.5 rounded-xl border border-blue-200 bg-white p-3 text-[11px] dark:border-blue-500/40 dark:bg-gray-800">
+            <BiaRow label="Package" value={biaConfirm.name} />
+            <BiaRow
+              label="Tokens"
+              value={`${biaConfirm.tokens.toLocaleString()} Edufy AI tokens`}
+            />
+            <BiaRow label="Amount payable" value={fmtNgn(biaConfirm.price)} bold />
+            <BiaRow label="Payment method" value="Bank Transfer via BIA CONNECT" />
+          </div>
+          <p className="mt-2 text-[10px] leading-relaxed text-blue-700/80 dark:text-blue-300/80">
+            You'll be taken to BIA's secure checkout to complete the payment via
+            a dynamic bank transfer. Tokens are credited automatically once the
+            payment is verified.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              disabled={biaPaying}
+              onClick={() => onBiaPay(biaConfirm)}
+              className="flex-1 rounded-xl bg-blue-600 px-4 py-2.5 text-xs font-bold text-white shadow-sm transition hover:bg-blue-500 disabled:opacity-60"
+            >
+              {biaPaying
+                ? "Starting checkout…"
+                : `Pay Now · ${fmtNgn(biaConfirm.price)}`}
+            </button>
+            <button
+              disabled={biaPaying}
+              onClick={() => setBiaConfirm(null)}
+              className="rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-xs font-semibold text-gray-500 transition hover:border-gray-300 disabled:opacity-60 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-400"
+            >
+              Back
+            </button>
+          </div>
+        </div>
+      ) : (
+        <>
+          <p className="text-xs font-bold text-blue-900 dark:text-blue-200">
+            Buy tokens
+          </p>
+
+          {/* ---- STEP 1: BIA instant checkout packages ---- */}
+          {biaEnabled && biaPackages.length > 0 && (
+            <div className="mt-2">
+              <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500 dark:text-blue-300">
+                Instant payment · verified automatically
+              </p>
+              <div className="mt-1.5 grid grid-cols-3 gap-2">
+                {biaPackages.map((p) => (
+                  <button
+                    key={p.id}
+                    disabled={biaPaying || buying}
+                    onClick={() => setBiaConfirm(p)}
+                    className="rounded-xl border border-blue-300 bg-white px-2 py-2.5 text-center shadow-sm transition hover:border-blue-500 hover:shadow disabled:opacity-60 dark:border-blue-500/40 dark:bg-gray-800"
+                  >
+                    <span className="block text-[9px] font-bold uppercase tracking-wide text-gray-400 dark:text-gray-500">
+                      {p.name}
+                    </span>
+                    <span className="mt-0.5 block text-sm font-black text-blue-700 dark:text-blue-300">
+                      {p.tokens.toLocaleString()}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-gray-500 dark:text-gray-400">
+                      {fmtNgn(p.price)}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <p className="mt-2.5 text-[11px] text-blue-700 dark:text-blue-300">
+            {fmtNgn(price)} per token · credited instantly, payment verified by
+            the platform finance team.
+          </p>
+        </>
+      )}
 
       {showPackages && (
         <div className="mt-3 grid grid-cols-3 gap-2">
@@ -298,6 +456,7 @@ function TopUpFlow(props: {
       )}
 
       {/* custom amount */}
+      {!biaConfirm && (
       <div className="mt-3 flex gap-2">
         <input
           type="number"
@@ -317,6 +476,7 @@ function TopUpFlow(props: {
           {buying ? "Buying…" : `Buy · ${fmtNgn(custom * price)}`}
         </button>
       </div>
+      )}
 
       {/* payment method */}
       <div className="mt-2 flex gap-1.5">
@@ -337,10 +497,101 @@ function TopUpFlow(props: {
 
       <button
         onClick={onCancel}
+        disabled={biaPaying}
         className="mt-2 w-full rounded-lg py-1.5 text-[10px] font-semibold text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
       >
         Cancel
       </button>
     </div>
+  );
+}
+
+/** Small label/value row for the BIA payment confirmation card. */
+function BiaRow({ label, value, bold }: { label: string; value: string; bold?: boolean }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <span className="text-gray-400 dark:text-gray-500">{label}</span>
+      <span
+        className={`truncate text-right text-gray-800 dark:text-gray-200 ${
+          bold ? "font-black" : "font-semibold"
+        }`}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+// --------------------------- BIA payment history ---------------------------
+// Recent BIA CONNECT token purchases for this school (GET /payments/token-history).
+// Backend scopes to the signed-in school — a school can never see another's rows.
+interface BiaTxn {
+  id: string;
+  internalReference: string;
+  biaReference?: string;
+  amount: number;
+  tokenQuantity: number;
+  status: string;
+  createdAt: string;
+  paidAt?: string;
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  SUCCESS: "bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-300",
+  PENDING: "bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-300",
+  FAILED: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+  EXPIRED: "bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400",
+  REVERSED: "bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-300",
+};
+
+function BiaPaymentHistory({ fmtNgn }: { fmtNgn: (n: number) => string }) {
+  const { token } = useAuth();
+  const [rows, setRows] = useState<BiaTxn[]>([]);
+
+  useEffect(() => {
+    let alive = true;
+    if (!token) return;
+    api
+      .get("/payments/token-history", token)
+      .then((res) => (res.ok ? res.json() : []))
+      .then((data) => {
+        if (alive && Array.isArray(data)) setRows(data.slice(0, 15));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [token]);
+
+  if (rows.length === 0) return null;
+
+  return (
+    <>
+      <h4 className="mt-5 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+        Purchase history
+      </h4>
+      <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200 dark:divide-gray-700/70 dark:border-gray-700">
+        {rows.map((t) => (
+          <li key={t.id} className="flex items-center gap-3 px-3 py-2.5 text-[11px]">
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-mono text-[10px] font-semibold text-gray-800 dark:text-gray-200">
+                {t.internalReference}
+              </span>
+              <span className="text-gray-400 dark:text-gray-500">
+                {new Date(t.createdAt).toLocaleDateString()} ·{" "}
+                {t.tokenQuantity.toLocaleString()} tokens · {fmtNgn(t.amount)}
+              </span>
+            </span>
+            <span
+              className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-bold ${
+                STATUS_STYLES[t.status] || STATUS_STYLES.PENDING
+              }`}
+            >
+              {t.status}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </>
   );
 }

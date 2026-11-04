@@ -82,6 +82,7 @@ import AccountantDashboard from './pages/accountant/Dashboard';
 
 // Student test portal (public)
 import TestPortal from './pages/student/TestPortal';
+import PaymentCallback from './pages/PaymentCallback';
 
 // Placeholder pages for other roles
 const StudentDashboard = () => <div>Student Dashboard</div>;
@@ -161,6 +162,7 @@ function App() {
         <Route path="/register/school" element={<SchoolRegister />} />
         <Route element={<ProtectedRoute />}><Route path="/teacher/profile-setup" element={<TeacherProfileSetup />} /></Route>
         <Route path="/student/test" element={<TestPortal />} />
+<Route path="/payment/callback" element={<PaymentCallback />} />
 
         {/* Root redirect – protected */}
         <Route element={<ProtectedRoute />}>
