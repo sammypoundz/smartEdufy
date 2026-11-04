@@ -18,9 +18,7 @@ import {
   EdufyLogo,
   PremiumBadge,
   ComingSoonBadge,
-  UpgradePrompt,
   FeatureIcon,
-  PlanBadge,
 } from "./shared";
 import { MOCK_SUBSCRIPTION } from "./mockData";
 import { useOfflineSafe } from "../components/OfflineIndicator";
@@ -377,9 +375,6 @@ function MenuScreen() {
           </div>
           {/* Plan badge lives under the branding, clear of the top-right
               expand/close buttons that previously covered it. */}
-          <div className="mt-2 flex items-center gap-1.5">
-            <PlanBadge plan={MOCK_SUBSCRIPTION.plan} />
-          </div>
         </div>
         {/* decorative corner sparkles — keeps the header balanced now the
             badge has moved to the content block */}
@@ -428,8 +423,6 @@ function MenuScreen() {
           Mock subscription only — billing is not implemented in this demo.
         </p>
       </div>
-
-      <UpgradePrompt />
     </div>
   );
 }

@@ -104,6 +104,7 @@ const categories = [
   {
     name: 'System',
     items: [
+      { name: 'Subscription', href: '/admin/subscription', icon: BanknotesIcon, privilege: 'settings' },
       { name: 'Settings', href: '/admin/settings', icon: CogIcon, privilege: 'settings' },
       { name: 'Offline Mode', href: '/admin/offline', icon: CloudIcon, privilege: 'settings' },
       { name: 'Audit Logs', href: '/admin/audit-logs', icon: ClipboardDocumentCheckIcon, privilege: 'audit-logs' },
