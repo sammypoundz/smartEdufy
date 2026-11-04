@@ -397,7 +397,7 @@ function TopUpFlow(props: {
           </p>
 
           {/* ---- STEP 1: BIA instant checkout packages ---- */}
-          {biaEnabled && biaPackages.length > 0 && (
+          {biaEnabled && biaPackages.length > 0 ? (
             <div className="mt-2">
               <p className="text-[10px] font-bold uppercase tracking-wide text-blue-500 dark:text-blue-300">
                 Instant payment · verified automatically
@@ -423,12 +423,12 @@ function TopUpFlow(props: {
                 ))}
               </div>
             </div>
+          ) : (
+            <p className="mt-2.5 text-[11px] text-blue-700 dark:text-blue-300">
+              {fmtNgn(price)} per token · credited instantly, payment verified by
+              the platform finance team.
+            </p>
           )}
-
-          <p className="mt-2.5 text-[11px] text-blue-700 dark:text-blue-300">
-            {fmtNgn(price)} per token · credited instantly, payment verified by
-            the platform finance team.
-          </p>
         </>
       )}
 
@@ -455,8 +455,9 @@ function TopUpFlow(props: {
         </div>
       )}
 
-      {/* custom amount */}
-      {!biaConfirm && (
+      {/* custom amount + payment method — hidden when BIA instant checkout is
+          active, so purchases always go through the verified gateway flow */}
+      {!biaConfirm && !(biaEnabled && biaPackages.length > 0) && (
       <div className="mt-3 flex gap-2">
         <input
           type="number"
