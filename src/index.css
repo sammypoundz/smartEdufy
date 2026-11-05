@@ -595,7 +595,8 @@ body {
 @media (max-width: 767px) {
   /* ---- 1. Page background ---- */
   .min-h-screen.bg-gradient-to-br,
-  [class*='bg-gradient-to-br from-blue-50'] {
+  [class*='bg-gradient-to-br from-blue-50 '],
+  [class$='bg-gradient-to-br from-blue-50'] {
     background: #F6F8FC !important;
     background-image: none !important;
   }

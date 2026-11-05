@@ -18,6 +18,7 @@ import AdminClasses from './pages/admin/Classes';
 import AdminAcademic from './pages/admin/Academic';
 import AdminResults from './pages/admin/Results';
 import AdminReports from './pages/admin/Reports';
+import AdminReportDesigner from './pages/admin/ReportDesigner';
 import AdminSettings from './pages/admin/Settings';
 import AdminSubscriptionPage from './pages/admin/SubscriptionPage';
 import AdminParent from './pages/admin/Parent';
@@ -189,6 +190,7 @@ function App() {
             <Route path="academic" element={<AdminAcademic />} />
             <Route path="results" element={<AdminResults />} />
             <Route path="reports" element={<AdminReports />} />
+            <Route path="report-designer" element={<AdminReportDesigner />} />
             <Route path="settings" element={<AdminSettings />} />
             <Route path="subscription" element={<AdminSubscriptionPage />} />
             <Route path="student/:id" element={<StudentBio />} />

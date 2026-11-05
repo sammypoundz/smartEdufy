@@ -4,15 +4,14 @@ import { useAuth } from "../contexts/AuthContext";
 import { api } from "../utils/api";
 
 /**
- * /payment/callback — BIA CONNECT hosted-checkout return page.
+ * /payment/callback — Paystack hosted-checkout return page.
  *
- * BIA redirects the customer back here after checkout (the exact query format
- * is not yet documented, so the reference is read from any of the common
- * parameter names AND from the path — pending confirmation from BIA docs).
+ * Paystack redirects the customer back here after checkout with the
+ * ?reference= or ?trxref= query parameter.
  *
  * This page NEVER marks a payment successful itself. It asks the backend
- * (GET /api/payments/:reference/status), which verifies server-side with BIA.
- * Only a backend-verified SUCCESS shows the success state.
+ * (GET /api/payments/:reference/status), which verifies server-side with
+ * Paystack. Only a backend-verified SUCCESS shows the success state.
  */
 
 type PaymentStatus = {
@@ -151,7 +150,7 @@ export default function PaymentCallback() {
           Confirming your payment…
         </h2>
         <p className="mt-1 text-[11px] text-gray-500 dark:text-gray-400">
-          We're verifying with BIA CONNECT — this usually takes a few seconds.
+          We're verifying with Paystack — this usually takes a few seconds.
           Don't close this page.
         </p>
         {reference && (
@@ -244,7 +243,7 @@ export default function PaymentCallback() {
         </h2>
         <p className="mt-1 text-[11px] leading-relaxed text-gray-500 dark:text-gray-400">
           {status?.message ||
-            "Your payment is still being confirmed by BIA CONNECT. Tokens are credited automatically the moment it is verified — you can safely leave this page."}
+            "Your payment is still being confirmed by Paystack. Tokens are credited automatically the moment it is verified — you can safely leave this page."}
         </p>
         {status && (
           <div className="mt-4 space-y-1.5 rounded-xl bg-gray-50 p-3 text-left text-[11px] dark:bg-gray-900/60">

@@ -14,8 +14,9 @@ import { useTokenWallet } from "./useTokenWallet";
 
 /**
  * "Tokens" screen inside Edufy AI — shows tokens left, tokens used and a
- * top-up flow routed exclusively through BIA CONNECT hosted checkout
- * (POST /api/payments/bia/initialize). The legacy manual /tokens/purchase
+ * top-up flow routed exclusively through Paystack hosted checkout
+ * (POST /api/payments/paystack/initialize, bank-transfer channel). The legacy
+ * manual /tokens/purchase
  * instant-credit flow was removed: it credited tokens without a verified
  * payment, which is unsafe with a live payment gateway.
  */
@@ -30,9 +31,8 @@ export default function TokenWalletScreen() {
     { id: string; name: string; tokens: number; price: number }[]
   >([]);
   const [biaEnabled, setBiaEnabled] = useState(false);
-  // Fee rate (0.9%) and per-token price come from the server so the UI always
-  // mirrors the authoritative backend pricing.
-  const [feeRate, setFeeRate] = useState(0.009);
+  // Per-token price comes from the server so the UI always mirrors the
+  // authoritative backend pricing (no processing fee is charged).
   const [tokenPrice, setTokenPrice] = useState(0);
   const [customTokens, setCustomTokens] = useState("");
   const [biaConfirm, setBiaConfirm] = useState<{
@@ -53,7 +53,6 @@ export default function TokenWalletScreen() {
         if (!alive || !data) return;
         setBiaEnabled(Boolean(data.biaEnabled));
         setBiaPackages(Array.isArray(data.packages) ? data.packages : []);
-        if (typeof data.feeRate === "number") setFeeRate(data.feeRate);
         if (typeof data.tokenPrice === "number") setTokenPrice(data.tokenPrice);
       })
       .catch(() => {});
@@ -72,7 +71,7 @@ export default function TokenWalletScreen() {
     setBiaPaying(true);
     try {
       const res = await api.post(
-        "/payments/bia/initialize",
+        "/payments/paystack/initialize",
         pkg.id ? { packageId: pkg.id } : { customTokens: pkg.tokens },
         token,
       );
@@ -234,7 +233,6 @@ export default function TokenWalletScreen() {
                 setBiaConfirm={setBiaConfirm}
                 biaPaying={biaPaying}
                 onBiaPay={startBiaCheckout}
-                feeRate={feeRate}
                 tokenPrice={price}
                 customTokens={customTokens}
                 setCustomTokens={setCustomTokens}
@@ -316,7 +314,6 @@ function TopUpFlow(props: {
     tokens: number;
     price: number;
   }) => void;
-  feeRate: number;
   tokenPrice: number;
   customTokens: string;
   setCustomTokens: (v: string) => void;
@@ -330,7 +327,6 @@ function TopUpFlow(props: {
     setBiaConfirm,
     biaPaying,
     onBiaPay,
-    feeRate,
     tokenPrice,
     customTokens,
     setCustomTokens,
@@ -338,14 +334,13 @@ function TopUpFlow(props: {
   } = props;
 
   // Custom-amount pricing — identical math to the backend (which re-prices
-  // from the DB anyway; these numbers are display-only).
+  // from the DB anyway; these numbers are display-only). No processing fee.
   const customCount = parseInt(customTokens, 10);
   const customBase =
     Number.isFinite(customCount) && customCount > 0 && tokenPrice > 0
       ? Math.round((customCount * tokenPrice + Number.EPSILON) * 100) / 100
       : 0;
-  const customFee = customBase > 0 ? Math.round((customBase * feeRate + Number.EPSILON) * 100) / 100 : 0;
-  const customTotal = customBase > 0 ? Math.round((customBase + customFee + Number.EPSILON) * 100) / 100 : 0;
+  const customTotal = customBase;
 
   return (
     <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3 dark:border-blue-500/30 dark:bg-blue-500/10">
@@ -363,20 +358,16 @@ function TopUpFlow(props: {
             />
             <BiaRow label="Subtotal" value={fmtNgn(biaConfirm.price)} />
             <BiaRow
-              label={`Processing fee (${(Math.round(feeRate * 1000) / 10).toString().replace(/\.0$/, "")}%)`}
-              value={fmtNgn(Math.round((biaConfirm.price * feeRate + Number.EPSILON) * 100) / 100)}
-            />
-            <BiaRow
               label="Amount payable"
-              value={fmtNgn(Math.round((biaConfirm.price * (1 + feeRate) + Number.EPSILON) * 100) / 100)}
+              value={fmtNgn(biaConfirm.price)}
               bold
             />
-            <BiaRow label="Payment method" value="Bank Transfer via BIA CONNECT" />
+            <BiaRow label="Payment method" value="Bank Transfer via Paystack" />
           </div>
           <p className="mt-2 text-[10px] leading-relaxed text-blue-700/80 dark:text-blue-300/80">
-            You'll be taken to BIA's secure checkout to complete the payment via
-            a dynamic bank transfer. Tokens are credited automatically once the
-            payment is verified.
+            You'll be taken to Paystack's secure checkout to complete the
+            payment via a dynamic bank transfer. Tokens are credited
+            automatically once the payment is verified.
           </p>
           <div className="mt-3 flex gap-2">
             <button
@@ -386,7 +377,7 @@ function TopUpFlow(props: {
             >
               {biaPaying
                 ? "Starting checkout…"
-                : `Pay Now · ${fmtNgn(Math.round((biaConfirm.price * (1 + feeRate) + Number.EPSILON) * 100) / 100)}`}
+                : `Pay Now · ${fmtNgn(biaConfirm.price)}`}
             </button>
             <button
               disabled={biaPaying}
@@ -464,10 +455,6 @@ function TopUpFlow(props: {
                     label={`${customCount.toLocaleString()} tokens × ${fmtNgn(tokenPrice)}`}
                     value={fmtNgn(customBase)}
                   />
-                  <BiaRow
-                    label={`Processing fee (${(Math.round(feeRate * 1000) / 10).toString().replace(/\.0$/, "")}%)`}
-                    value={fmtNgn(customFee)}
-                  />
                   <div className="flex items-center justify-between gap-3 border-t border-blue-100 pt-1.5 dark:border-blue-500/30">
                     <span className="font-bold text-gray-700 dark:text-gray-200">Total</span>
                     <span className="font-black text-blue-700 dark:text-blue-300">
@@ -498,9 +485,8 @@ function TopUpFlow(props: {
       )}
 
       {/* The manual /tokens/purchase flow was removed — it credited tokens
-          without a verified payment. The ONLY purchase paths are the BIA
-          hosted checkout (packages + custom amount), which pays the base
-          price plus a 0.9% processing fee. */}
+          without a verified payment. The ONLY purchase paths are the
+          Paystack hosted checkout (packages + custom amount). */}
 
       <button
         onClick={onCancel}
