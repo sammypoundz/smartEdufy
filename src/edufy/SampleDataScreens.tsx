@@ -12,7 +12,7 @@ import { useEdufy } from './EdufyContext';
 
 function ScreenHeader({ title, subtitle, onBack }: { title: string; subtitle: string; onBack: () => void }) {
   return (
-    <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700/70">
+    <div className="flex items-center gap-2 border-b border-gray-100 px-4 pb-3 pt-14 md:pt-3 dark:border-gray-700/70">
       <button onClick={onBack} aria-label="Back to Edufy AI menu"
         className="rounded-lg p-1.5 text-gray-500 transition hover:bg-gray-100 hover:text-gray-700 dark:hover:bg-gray-700/60 dark:hover:text-gray-200">
         <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>

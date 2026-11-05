@@ -32,8 +32,8 @@ export const EDUFY_FEATURES: EdufyFeature[] = [
     description: "Generate school timetables intelligently.",
     icon: "calendar",
     premium: false,
-    comingSoon: false,
-    available: true,
+    comingSoon: true,
+    available: false,
   },
   {
     id: "chat",
@@ -41,8 +41,8 @@ export const EDUFY_FEATURES: EdufyFeature[] = [
     description: "Ask questions and get assistance.",
     icon: "chat",
     premium: false,
-    comingSoon: false,
-    available: true,
+    comingSoon: true,
+    available: false,
   },
   {
     id: "lesson-plan",
@@ -50,8 +50,8 @@ export const EDUFY_FEATURES: EdufyFeature[] = [
     description: "Create lesson plans and teaching activities.",
     icon: "lesson",
     premium: false,
-    comingSoon: false,
-    available: true,
+    comingSoon: true,
+    available: false,
   },
   {
     id: "insights",
@@ -59,8 +59,8 @@ export const EDUFY_FEATURES: EdufyFeature[] = [
     description: "Explore student results and performance.",
     icon: "chart",
     premium: false,
-    comingSoon: false,
-    available: true,
+    comingSoon: true,
+    available: false,
   },
   {
     id: "reports",
@@ -68,8 +68,8 @@ export const EDUFY_FEATURES: EdufyFeature[] = [
     description: "Prepare academic summaries and reports.",
     icon: "report",
     premium: false,
-    comingSoon: false,
-    available: true,
+    comingSoon: true,
+    available: false,
   },
 ];
 

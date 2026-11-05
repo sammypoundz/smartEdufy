@@ -90,7 +90,7 @@ export default function SubscriptionPage() {
         >
           <button
             onClick={() => navigate(-1)}
-            className="mb-4 inline-flex items-center gap-1.5 rounded-xl bg-white/80 px-3 py-1.5 text-xs font-semibold text-gray-600 shadow-sm ring-1 ring-gray-200 transition hover:bg-white hover:text-gray-900 dark:bg-gray-800/80 dark:text-gray-300 dark:ring-gray-700 dark:hover:text-white"
+            className="mb-6 sm:mb-8 inline-flex items-center gap-1.5 rounded-xl bg-white/80 px-4 py-2.5 text-xs font-semibold text-gray-600 shadow-sm ring-1 ring-gray-200 transition hover:bg-white hover:text-gray-900 dark:bg-gray-800/80 dark:text-gray-300 dark:ring-gray-700 dark:hover:text-white"
           >
             <svg
               className="h-4 w-4"

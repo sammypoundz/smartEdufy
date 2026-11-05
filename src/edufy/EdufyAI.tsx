@@ -105,11 +105,22 @@ function FloatingEdufyButton() {
     return () => window.removeEventListener("resize", onResize);
   }, [pos, updatePos]);
 
+  // CSS zoom applied by ViewControls (documentElement.style.zoom) scales the
+  // fixed-position coordinate space: while zoomed, window.innerWidth is the
+  // UNSCALED viewport, so clamping to it lets the FAB drift past / short of
+  // the visible screen edges. Divide pointer deltas by the zoom factor so the
+  // drag tracks the cursor 1:1 and the clamps match the real viewport.
+  const getZoomFactor = () => {
+    const z = parseFloat(document.documentElement.style.zoom || "");
+    return Number.isFinite(z) && z > 0 ? z : 1;
+  };
+
   const onPointerDown = (e: React.PointerEvent) => {
     if (e.button !== 0) return;
+    const zf = getZoomFactor();
     dragState.current = {
-      startX: e.clientX,
-      startY: e.clientY,
+      startX: e.clientX / zf,
+      startY: e.clientY / zf,
       startPos: pos,
       moved: false,
     };
@@ -119,8 +130,9 @@ function FloatingEdufyButton() {
   const onPointerMove = (e: React.PointerEvent) => {
     const ds = dragState.current;
     if (!ds) return;
-    const dx = e.clientX - ds.startX;
-    const dy = e.clientY - ds.startY;
+    const zf = getZoomFactor();
+    const dx = e.clientX / zf - ds.startX;
+    const dy = e.clientY / zf - ds.startY;
     if (!ds.moved && Math.abs(dx) + Math.abs(dy) < 6) return; // still a tap
     ds.moved = true;
     setDragging(true);
@@ -223,7 +235,7 @@ function FeatureCard({
         className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
           disabled
             ? "bg-gray-100 text-gray-400 dark:bg-gray-700/70 dark:text-gray-500"
-            : "bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-sm"
+            : "bg-blue-600 text-white shadow-md shadow-blue-500/30"
         }`}
       >
         <FeatureIcon icon={feature.icon} className="h-5 w-5" />
@@ -263,10 +275,25 @@ function TokenBalanceStrip() {
   const { go } = useEdufy();
   const { wallet, status } = useTokenWallet();
 
-  // Loading skeleton
+  // Loading skeleton — mirrors the strip's real layout (badge + number +
+  // caption + chevron) so nothing jumps when the wallet arrives.
   if (status === "loading") {
     return (
-      <div className="h-[68px] animate-pulse rounded-2xl border border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-800/60" />
+      <div
+        aria-busy="true"
+        aria-live="polite"
+        className="flex w-full items-center gap-3 rounded-2xl border border-blue-100 bg-blue-50/50 p-3 dark:border-blue-500/30 dark:bg-blue-500/10"
+      >
+        <span className="h-9 w-9 shrink-0 animate-pulse rounded-xl bg-blue-100 dark:bg-blue-500/20" />
+        <span className="min-w-0 flex-1 space-y-2">
+          <span className="flex items-baseline gap-1.5">
+            <span className="h-5 w-12 animate-pulse rounded bg-gray-200 dark:bg-gray-700" />
+            <span className="h-2.5 w-14 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+          </span>
+          <span className="block h-2.5 w-40 animate-pulse rounded-full bg-gray-200 dark:bg-gray-700" />
+        </span>
+        <ChevronLeftIcon className="h-4 w-4 shrink-0 rotate-180 text-gray-200 dark:text-gray-700" />
+      </div>
     );
   }
 
@@ -280,7 +307,7 @@ function TokenBalanceStrip() {
         aria-label="Open Edufy AI tokens"
         className="flex w-full items-center gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-left transition hover:shadow-md dark:border-amber-500/40 dark:bg-amber-500/10"
       >
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-sm">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-amber-500 text-white shadow-md shadow-amber-500/40">
           <BoltIcon className="h-5 w-5" />
         </span>
         <span className="min-w-0 flex-1">
@@ -309,10 +336,8 @@ function TokenBalanceStrip() {
       }`}
     >
       <span
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-sm ${
-          empty
-            ? "bg-red-500"
-            : "bg-gradient-to-br from-blue-500 to-indigo-600"
+        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-white shadow-md ${
+          empty ? "bg-red-500 shadow-red-500/40" : "bg-blue-600 shadow-blue-500/40"
         }`}
       >
         <BoltIcon className="h-5 w-5" />
@@ -359,8 +384,9 @@ function MenuScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* branding header */}
-      <div className="flex items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-700 px-4 py-4 text-white">
+      {/* branding header — extra top padding on mobile keeps the floating
+          close button in its own clear row instead of covering the logo */}
+      <div className="flex items-center justify-between bg-gradient-to-r from-blue-600 to-indigo-700 px-4 pb-4 pt-14 text-white md:pt-4">
         <div className="flex min-w-0 flex-col">
           <div className="flex items-center gap-3">
             <EdufyLogo size={42} />
@@ -419,7 +445,7 @@ function MenuScreen() {
             onClickOverride={f.id === "result-scanner" ? handleScanClick : undefined}
           />
         ))}
-        <p className="pt-1 text-center text-[10px] text-gray-400 dark:text-gray-500">
+        <p className="pt-2 pb-4 text-center text-[10px] text-gray-400 dark:text-gray-500">
           Mock subscription only — billing is not implemented in this demo.
         </p>
       </div>
@@ -496,14 +522,14 @@ function EdufyPanel() {
             role="dialog"
             aria-modal="true"
             aria-label="Edufy AI Assistant"
-            initial={{ x: "100%", opacity: 0.5 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: "100%", opacity: 0.4 }}
+            // Mobile: slide up from the bottom (bottom-sheet). Desktop: slide in
+            // from the right (side panel).
+            initial={{ y: "100%", x: "100%", opacity: 0.5 }}
+            animate={{ y: 0, x: 0, opacity: 1 }}
+            exit={{ y: "100%", x: "100%", opacity: 0.4 }}
             transition={{ type: "spring", damping: 28, stiffness: 300 }}
-            className={`fixed inset-y-0 right-0 z-[70] flex w-full flex-col bg-white shadow-2xl md:inset-y-4 md:right-4 md:rounded-3xl md:border md:border-gray-200 dark:bg-gray-900 dark:shadow-black/40 dark:md:border-gray-700 ${
-              expanded
-                ? "md:w-[min(90vw,900px)]"
-                : "md:w-[400px]"
+            className={`fixed inset-x-0 bottom-0 z-[70] flex h-[min(85dvh,720px)] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl pb-[env(safe-area-inset-bottom,0px)] md:inset-y-4 md:left-auto md:right-4 md:h-auto md:rounded-3xl md:border md:border-gray-200 md:pb-0 dark:bg-gray-900 dark:shadow-black/40 dark:md:border-gray-700 ${
+              expanded ? "md:w-[min(90vw,900px)]" : "md:w-[400px]"
             }`}
           >
             {/* top chrome: close + expand (desktop only) */}
@@ -523,7 +549,7 @@ function EdufyPanel() {
               <button
                 onClick={closePanel}
                 aria-label="Close Edufy AI"
-                className="rounded-full bg-gray-100/90 p-1.5 text-gray-500 ring-1 ring-black/5 transition hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800/90 dark:text-gray-400 dark:ring-white/10 dark:hover:bg-gray-700 dark:hover:text-gray-200"
+                className="flex h-8 w-8 items-center justify-center rounded-full bg-gray-100/90 p-0 text-gray-500 ring-1 ring-black/5 transition hover:bg-gray-200 hover:text-gray-700 dark:bg-gray-800/90 dark:text-gray-400 dark:ring-white/10 dark:hover:bg-gray-700 dark:hover:text-gray-200"
               >
                 <XMarkIcon className="h-4 w-4" />
               </button>

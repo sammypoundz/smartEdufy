@@ -55,7 +55,7 @@ export default function ChatScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700/70">
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 pb-3 pt-14 md:pt-3 dark:border-gray-700/70">
         <button
           onClick={back}
           aria-label="Back to Edufy AI menu"

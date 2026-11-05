@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -20,6 +20,8 @@ import {
   XMarkIcon,
   CheckBadgeIcon,
   BoltIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 
 // Types
@@ -173,6 +175,46 @@ export default function AdminSettings() {
 
   // Term picker
   const [showTermPicker, setShowTermPicker] = useState(false);
+
+  // Tab bar overflow: track whether the horizontal category bar can scroll
+  // left/right so we can show directional indicators.
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false);
+  const [canScrollTabsRight, setCanScrollTabsRight] = useState(false);
+  const updateTabOverflow = useCallback(() => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    setCanScrollTabsLeft(el.scrollLeft > 4);
+    setCanScrollTabsRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 4);
+  }, []);
+  const scrollTabs = (dir: 'left' | 'right') => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    el.scrollBy({ left: dir === 'left' ? -220 : 220, behavior: 'smooth' });
+  };
+  useEffect(() => {
+    updateTabOverflow();
+    const el = tabBarRef.current;
+    if (!el) return;
+    el.addEventListener('scroll', updateTabOverflow, { passive: true });
+    const ro = new ResizeObserver(updateTabOverflow);
+    ro.observe(el);
+    window.addEventListener('resize', updateTabOverflow);
+    return () => {
+      el.removeEventListener('scroll', updateTabOverflow);
+      ro.disconnect();
+      window.removeEventListener('resize', updateTabOverflow);
+    };
+  }, [updateTabOverflow]);
+
+  // Keep the active tab visible when it changes (e.g. deep-linked via ?tab=).
+  useEffect(() => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    const idx = categories.findIndex((c) => c.id === activeCategory);
+    const btn = el.children[idx] as HTMLElement | undefined;
+    btn?.scrollIntoView({ behavior: 'smooth', inline: 'nearest', block: 'nearest' });
+  }, [activeCategory]);
 
   // Loading states for saves
   const [saving, setSaving] = useState(false);
@@ -1092,46 +1134,77 @@ export default function AdminSettings() {
           <p className="text-gray-600 dark:text-gray-400 mt-2 text-base sm:text-lg">Configure your school's preferences, security, and workflows</p>
         </motion.div>
 
-        <div className="flex flex-col md:flex-row gap-6">
-          {/* ========== DESKTOP SIDEBAR NAV ========== */}
-          <aside className="hidden md:block w-64 shrink-0">
-            <div
-              className={`sticky top-6 rounded-3xl border p-3 space-y-1 shadow-lg ${
-                theme === 'dark'
-                  ? 'bg-gray-800/50 border border-white/10'
-                  : 'bg-white border border-gray-200/80'
-              }`}
-            >
-              {categories.map((cat) => {
-                const isActive = activeCategory === cat.id;
-                return (
+        <div className="flex flex-col gap-6">
+          {/* ========== HORIZONTAL CATEGORY NAV (replaces the old in-page sidebar,
+              which conflicted with the app's main sidebar) ========== */}
+          <nav className={mobileView === 'detail' ? 'hidden md:block' : 'block'}>
+            <div className="relative">
+              {/* Left scroll indicator */}
+              {canScrollTabsLeft && (
+                <>
+                  <div className={`pointer-events-none absolute left-0 top-0 bottom-0 z-10 w-10 rounded-l-2xl bg-gradient-to-r ${
+                    theme === 'dark' ? 'from-[#1a2333]' : 'from-white'
+                  } to-transparent`} />
                   <button
-                    key={cat.id}
-                    onClick={() => selectCategory(cat.id)}
-                    className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-2xl text-sm font-medium transition-all duration-200 ${
-                      isActive
-                        ? `bg-gradient-to-r ${cat.gradient} text-white shadow-md`
-                        : theme === 'dark'
-                          ? 'text-gray-300 hover:bg-white/10'
-                          : 'text-gray-700 hover:bg-gray-100/80'
+                    onClick={() => scrollTabs('left')}
+                    aria-label="Scroll tabs left"
+                    className={`absolute left-0.5 top-1/2 -translate-y-1/2 z-20 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 ${
+                      theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-700 ring-1 ring-gray-200'
                     }`}
                   >
-                    <span
-                      className={`p-1.5 rounded-lg ${
+                    <ChevronLeftIcon className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+
+              <div
+                ref={tabBarRef}
+                className={`hidden md:flex items-center gap-1.5 overflow-x-auto rounded-2xl border px-1.5 py-1.5 shadow-sm no-scrollbar ${
+                  theme === 'dark'
+                    ? 'bg-gray-800/50 border-white/10'
+                    : 'bg-white/90 border-gray-200/80 backdrop-blur'
+                }`}
+              >
+                {categories.map((cat) => {
+                  const isActive = activeCategory === cat.id;
+                  return (
+                    <button
+                      key={cat.id}
+                      onClick={() => selectCategory(cat.id)}
+                      className={`flex shrink-0 items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium whitespace-nowrap transition-all duration-200 ${
                         isActive
-                          ? 'bg-white/20'
-                          : `bg-gradient-to-br ${cat.gradient} bg-clip-text`
+                          ? `bg-gradient-to-r ${cat.gradient} text-white shadow-md`
+                          : theme === 'dark'
+                            ? 'text-gray-300 hover:bg-white/10'
+                            : 'text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <cat.icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`} />
-                    </span>
-                    <span>{cat.label}</span>
-                    {isActive && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/80 animate-pulse" />}
+                      <cat.icon className={`h-4.5 w-4.5 ${isActive ? 'text-white' : theme === 'dark' ? 'text-gray-400' : 'text-gray-400'}`} />
+                      <span>{cat.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Right scroll indicator */}
+              {canScrollTabsRight && (
+                <>
+                  <div className={`pointer-events-none absolute right-0 top-0 bottom-0 z-10 w-10 rounded-r-2xl bg-gradient-to-l ${
+                    theme === 'dark' ? 'from-[#1a2333]' : 'from-white'
+                  } to-transparent`} />
+                  <button
+                    onClick={() => scrollTabs('right')}
+                    aria-label="Scroll tabs right"
+                    className={`absolute right-0.5 top-1/2 -translate-y-1/2 z-20 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all hover:scale-110 ${
+                      theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-700 ring-1 ring-gray-200'
+                    }`}
+                  >
+                    <ChevronRightIcon className="h-4 w-4" />
                   </button>
-                );
-              })}
+                </>
+              )}
             </div>
-          </aside>
+          </nav>
 
           <div className="flex-1 min-w-0">
             {/* ========== MOBILE LAUNCHER GRID (app-style home) ========== */}

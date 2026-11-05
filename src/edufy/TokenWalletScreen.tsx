@@ -96,8 +96,9 @@ export default function TokenWalletScreen() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* header */}
-      <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3 dark:border-gray-700/70">
+      {/* header — top padding on mobile clears the panel's floating close
+          button so the refresh control is never covered */}
+      <div className="flex items-center gap-2 border-b border-gray-100 px-4 pb-3 pt-14 md:pt-3 dark:border-gray-700/70">
         <button
           onClick={back}
           aria-label="Back to Edufy AI menu"
@@ -145,9 +146,33 @@ export default function TokenWalletScreen() {
         )}
 
         {status === "loading" && (
-          <p className="py-8 text-center text-xs text-gray-400">
-            Loading wallet…
-          </p>
+          <div className="space-y-3" aria-busy="true" aria-live="polite">
+            {/* balance cards skeleton */}
+            <div className="grid grid-cols-2 gap-2.5">
+              {[0, 1].map((i) => (
+                <div
+                  key={i}
+                  className="h-[104px] animate-pulse rounded-2xl bg-gray-100 dark:bg-gray-800"
+                />
+              ))}
+            </div>
+            {/* section title skeleton */}
+            <div className="h-3 w-32 animate-pulse rounded-full bg-gray-100 dark:bg-gray-800" />
+            {/* top-up packages skeleton */}
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="flex items-center gap-3 rounded-2xl border border-gray-100 p-3 dark:border-gray-700/60"
+              >
+                <div className="h-10 w-10 shrink-0 animate-pulse rounded-xl bg-gray-100 dark:bg-gray-800" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <div className="h-3 w-24 animate-pulse rounded-full bg-gray-100 dark:bg-gray-800" />
+                  <div className="h-2.5 w-36 animate-pulse rounded-full bg-gray-100 dark:bg-gray-800" />
+                </div>
+                <div className="h-7 w-16 shrink-0 animate-pulse rounded-lg bg-gray-100 dark:bg-gray-800" />
+              </div>
+            ))}
+          </div>
         )}
 
         {status === "ready" && wallet && (

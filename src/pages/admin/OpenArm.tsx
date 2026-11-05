@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useTheme } from '../../contexts/ThemeContext';
@@ -105,6 +105,34 @@ export default function OpenArm() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'members');
   const tabNavRef = useRef<HTMLElement | null>(null);
+
+  // Directional scroll indicators for the mobile tab strip (same UX as the
+  // Settings page): show a chevron whenever there's overflow in that direction.
+  const [canScrollTabsLeft, setCanScrollTabsLeft] = useState(false);
+  const [canScrollTabsRight, setCanScrollTabsRight] = useState(false);
+  const updateTabOverflow = useCallback(() => {
+    const nav = tabNavRef.current;
+    if (!nav) return;
+    setCanScrollTabsLeft(nav.scrollLeft > 4);
+    setCanScrollTabsRight(nav.scrollLeft + nav.clientWidth < nav.scrollWidth - 4);
+  }, []);
+  const scrollTabs = (dir: 'left' | 'right') => {
+    tabNavRef.current?.scrollBy({ left: dir === 'left' ? -180 : 180, behavior: 'smooth' });
+  };
+  useEffect(() => {
+    updateTabOverflow();
+    const nav = tabNavRef.current;
+    if (!nav) return;
+    nav.addEventListener('scroll', updateTabOverflow, { passive: true });
+    const ro = new ResizeObserver(updateTabOverflow);
+    ro.observe(nav);
+    window.addEventListener('resize', updateTabOverflow);
+    return () => {
+      nav.removeEventListener('scroll', updateTabOverflow);
+      ro.disconnect();
+      window.removeEventListener('resize', updateTabOverflow);
+    };
+  }, [updateTabOverflow]);
 
   // Modal states
   const [showSubjectModal, setShowSubjectModal] = useState(false);
@@ -1374,7 +1402,35 @@ export default function OpenArm() {
         <div className="relative mb-6 md:border-b md:border-gray-200 dark:md:border-gray-700">
           {/* Edge fade hints on mobile to signal scrollability */}
           <div className="md:hidden pointer-events-none absolute inset-y-0 right-0 w-6 z-10 bg-gradient-to-l from-white/80 dark:from-[#0B1120]/80 to-transparent" />
-          <nav ref={tabNavRef} className="tab-scroll flex md:-mb-px gap-2 md:space-x-0 md:gap-0 overflow-x-auto snap-x snap-mandatory pb-1 md:pb-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+          {/* Left chevron indicator (mobile only) */}
+          {canScrollTabsLeft && (
+            <button
+              onClick={() => scrollTabs('left')}
+              aria-label="Scroll tabs left"
+              className={`md:hidden absolute left-0 top-1/2 -translate-y-1/2 z-20 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all active:scale-95 ${
+                theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-700 ring-1 ring-gray-200'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+              </svg>
+            </button>
+          )}
+          {/* Right chevron indicator (mobile only) */}
+          {canScrollTabsRight && (
+            <button
+              onClick={() => scrollTabs('right')}
+              aria-label="Scroll tabs right"
+              className={`md:hidden absolute right-1 top-1/2 -translate-y-1/2 z-20 flex h-7 w-7 items-center justify-center rounded-full shadow-md transition-all active:scale-95 ${
+                theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-white text-gray-700 ring-1 ring-gray-200'
+              }`}
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2.2} stroke="currentColor" className="h-4 w-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+              </svg>
+            </button>
+          )}
+          <nav ref={tabNavRef} className="tab-scroll flex md:-mb-px gap-2 md:gap-8 overflow-x-auto snap-x snap-mandatory pb-1 md:pb-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
             {['members', 'subjects', 'results', 'skills', 'attendance', 'timetable', 'form-teacher'].map((tab) => (
               <button
                 key={tab}
