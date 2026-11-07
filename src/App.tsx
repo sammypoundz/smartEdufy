@@ -17,6 +17,7 @@ import AdminUsers from './pages/admin/Users';
 import AdminClasses from './pages/admin/Classes';
 import AdminAcademic from './pages/admin/Academic';
 import AdminResults from './pages/admin/Results';
+import AdminEpins from './pages/admin/Epins';
 import AdminReports from './pages/admin/Reports';
 import AdminReportDesigner from './pages/admin/ReportDesigner';
 import AdminSettings from './pages/admin/Settings';
@@ -205,6 +206,7 @@ function App() {
             <Route path="class/:classId/arm/:armId" element={<OpenArm />} />
             <Route path="academic" element={<AdminAcademic />} />
             <Route path="results" element={<AdminResults />} />
+            <Route path="epins" element={<AdminEpins />} />
             <Route path="reports" element={<AdminReports />} />
             <Route path="report-designer" element={<AdminReportDesigner />} />
             <Route path="settings" element={<AdminSettings />} />

@@ -53,6 +53,7 @@ import {
   ClipboardDocumentCheckIcon,
   CloudIcon,
   SparklesIcon,
+  KeyIcon,
 } from '@heroicons/react/24/outline';
 
 // ---------- Categories ----------
@@ -74,6 +75,7 @@ const categories = [
       { name: 'Time Table', href: '/admin/timetable', icon: CalendarIcon, privilege: 'timetable' },
       { name: 'Assessment Format', href: '/admin/assessment-format', icon: ClipboardDocumentListIcon, privilege: 'assessment-format' },
       { name: 'Result Compiler', href: '/admin/results', icon: ChartBarIcon, privilege: 'results' },
+      { name: 'Result e-Pins', href: '/admin/epins', icon: KeyIcon, privilege: 'results' },
       { name: 'Report Cards', href: '/admin/reports', icon: DocumentChartBarIcon, privilege: 'reports' },
       { name: 'Report Designer', href: '/admin/report-designer', icon: SparklesIcon, privilege: 'reports' },
       { name: 'Academic Setup', href: '/admin/academic', icon: CogIcon, privilege: 'academic' },

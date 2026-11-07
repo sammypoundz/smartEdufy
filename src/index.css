@@ -300,6 +300,36 @@ body {
   }
 }
 
+/* ===== Print support for e-Pin scratch cards ===== */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+  .epin-print-sheet.print-area {
+    padding: 0 !important;
+    gap: 4mm !important;
+    grid-template-columns: repeat(3, 1fr) !important;
+  }
+  .epin-print-sheet .epin-card {
+    border-width: 1.5px !important;
+    border-color: #1d4ed8 !important;
+    border-radius: 3mm !important;
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+  .epin-print-sheet .epin-card .bg-gradient-to-r {
+    background: #1e40af !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .epin-print-sheet,
+  .epin-print-sheet * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}
+
 /* =====================================================================
    ===== APP-LIKE MOBILE LAYER (all pages, desktop untouched) ==========
    ===================================================================== */

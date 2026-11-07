@@ -11,6 +11,7 @@ import { formatArm } from '../../utils/arm';
 import toast from 'react-hot-toast';
 import * as XLSX from 'xlsx';
 import UploadProgress from '../../components/UploadProgress';
+import MasterSheetOffcanvas from '../../components/MasterSheetOffcanvas';
 import { useEdufy } from '../../edufy/EdufyContext';
 import {
   DocumentArrowDownIcon,
@@ -18,6 +19,7 @@ import {
   CloudArrowUpIcon,
   DocumentChartBarIcon,
   ClockIcon,
+  TableCellsIcon,
 } from '@heroicons/react/24/outline';
 
 // Types (unchanged)
@@ -95,6 +97,8 @@ export default function AdminResults() {
   const [showCompiled, setShowCompiled] = useState(false);
 
   const [history, setHistory] = useState<HistoryItem[]>([]);
+  // Fullscreen Master Sheet offcanvas (broadsheet of all subjects & students)
+  const [showMasterSheet, setShowMasterSheet] = useState(false);
   // AI scanning happens in the Edufy agent panel (floating modal). When a
   // completed scan is pushed from the panel, it lands here to be consumed.
   const { pendingScan, consumePendingScan } = useEdufy();
@@ -681,6 +685,7 @@ export default function AdminResults() {
             <button onClick={downloadEntrySheetPdf} disabled={students.length===0} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-rose-500 to-red-600 text-white text-xs sm:text-sm shadow-lg disabled:opacity-50"><PrinterIcon className="h-4 w-4 mr-1.5"/>Entry Sheet</button>
             <button onClick={triggerFileUpload} disabled={students.length===0||uploading} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-purple-500 to-indigo-600 text-white text-xs sm:text-sm shadow-lg disabled:opacity-50"><CloudArrowUpIcon className="h-4 w-4 mr-1.5"/>{uploading?'Uploading...':'Bulk Upload'}</button>
             <button onClick={compileResults} disabled={!selectedArmId || !selectedTerm || !selectedAcademicYearId || loadingCompiled} className="inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-600 text-white text-xs sm:text-sm shadow-lg hover:shadow-xl disabled:opacity-50"><DocumentChartBarIcon className="h-4 w-4 mr-1.5"/>{loadingCompiled?'Compiling...':'Compile Results'}</button>
+            <button onClick={()=>setShowMasterSheet(true)} className="col-span-2 inline-flex items-center justify-center px-3 py-2.5 rounded-lg bg-gradient-to-r from-teal-500 to-cyan-600 text-white text-xs sm:text-sm shadow-lg hover:shadow-xl"><TableCellsIcon className="h-4 w-4 mr-1.5"/>Master Sheet</button>
           </div>
         </div>
 
@@ -935,6 +940,21 @@ export default function AdminResults() {
             )}
           </div>
         )}
+
+        {/* Fullscreen Master Sheet offcanvas — computes all subjects & students for the chosen class */}
+        <MasterSheetOffcanvas
+          open={showMasterSheet}
+          onClose={()=>setShowMasterSheet(false)}
+          dark={theme === 'dark'}
+          token={token}
+          classes={classes.map(c => ({ id: c.id, name: c.name }))}
+          initialClassId={selectedClassId}
+          initialArmId={selectedArmId}
+          academicYears={academicYears}
+          initialYearId={selectedAcademicYearId}
+          initialTerm={selectedTerm}
+          computeGrade={computeGrade}
+        />
 
       </div>
     </div>

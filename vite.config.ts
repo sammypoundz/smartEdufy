@@ -55,6 +55,17 @@ export default defineConfig({
       },
     }),
   ],
+  server: {
+    host: '127.0.0.1',
+    port: 5173,
+    strictPort: true,
+    // HMR over plain ws on loopback; polling fallback keeps updates flowing
+    // even when antivirus/firewall blocks the WebSocket upgrade.
+    hmr: {
+      host: '127.0.0.1',
+      port: 5173,
+    },
+  },
   optimizeDeps: {
     include: ['@heroicons/react', 'axios']
   },
