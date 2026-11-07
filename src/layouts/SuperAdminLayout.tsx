@@ -25,6 +25,7 @@ import {
   ArrowLeftOnRectangleIcon,
   Squares2X2Icon,
   AcademicCapIcon,
+  SignalIcon,
 } from "@heroicons/react/24/outline";
 
 const categories = [
@@ -44,6 +45,11 @@ const categories = [
     items: [
       { name: "Schools", href: "/platform/schools", icon: BuildingOffice2Icon },
       { name: "Students & Staff", href: "/platform/people", icon: UsersIcon },
+      {
+        name: "Traffic & Activity",
+        href: "/platform/traffic",
+        icon: SignalIcon,
+      },
       {
         name: "AI Onboarding Center",
         href: "/platform/onboarding",

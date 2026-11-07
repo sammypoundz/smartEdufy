@@ -70,6 +70,7 @@ import PlatformLogin from './pages/platform/Login';
 import PlatformOverview from './pages/platform/Overview';
 import SchoolsPage from './pages/platform/Schools';
 import PlatformOnboarding from './pages/platform/Onboarding';
+import TrafficPage from './pages/platform/Traffic';
 import {
   PeoplePage, SubscriptionsPage, RevenuePage, FeeAnalyticsPage,
   WalletsPage, AiUsagePage, ForecastPage, SystemHealthPage,
@@ -250,6 +251,7 @@ function App() {
           <Route path="schools" element={<SchoolsPage />} />
           <Route path="onboarding" element={<PlatformOnboarding />} />
           <Route path="people" element={<PeoplePage />} />
+          <Route path="traffic" element={<TrafficPage />} />
           <Route path="subscriptions" element={<SubscriptionsPage />} />
           <Route path="revenue" element={<RevenuePage />} />
           <Route path="fees" element={<FeeAnalyticsPage />} />
