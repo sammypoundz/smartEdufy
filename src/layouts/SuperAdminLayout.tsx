@@ -11,7 +11,6 @@ import {
   CreditCardIcon,
   BanknotesIcon,
   WalletIcon,
-  CpuChipIcon,
   ChartBarIcon,
   ServerStackIcon,
   BellIcon,
@@ -71,18 +70,6 @@ const categories = [
         icon: Squares2X2Icon,
       },
       { name: "Edufy Wallet", href: "/platform/wallets", icon: WalletIcon },
-    ],
-  },
-  {
-    name: "AI Intelligence",
-    items: [
-      { name: "AI Usage & Costs", href: "/platform/ai", icon: CpuChipIcon },
-      {
-        name: "Scan Analytics",
-        href: "/platform/ai/scans",
-        icon: ChartBarIcon,
-      },
-      { name: "AI Models", href: "/platform/ai/models", icon: Squares2X2Icon },
     ],
   },
   {

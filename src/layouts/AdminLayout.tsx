@@ -11,11 +11,13 @@ import logoLightUrl from '../assets/smart edufy II.png';
 import { api } from '../utils/api';
 import { getUnreadNotificationCount } from '../data/notifications';
 import { useTimetableWorkflowAttention, AttentionBadge } from '../hooks/useTimetableWorkflowAttention';
+
 import { usePendingLinkRequestCount } from '../hooks/useParentLink';
 import { usePendingTeacherRegistrationCount } from '../hooks/useTeacherRegistration';
 import ViewControls from '../components/ViewControls';
 import LogoutConfirmModal from '../components/LogoutConfirmModal';
 import Swal from 'sweetalert2';
+import { ArrowLeftStartOnRectangleIcon } from '@heroicons/react/24/outline';
 import {
   FolderIcon,
   FolderOpenIcon,
@@ -127,6 +129,50 @@ function getSchoolNameTextClass(name: string): string {
   if (len <= 30) return 'text-lg';
   if (len <= 45) return 'text-base';
   return 'text-sm';
+}
+
+// ============================ Impersonation Bar ============================
+// Shown only when the current school session was opened by a Super Admin via
+// "Login as Admin" (the school JWT carries an impersonatedBy claim). Lets the
+// Super Admin jump straight back to the platform dashboard without logging out
+// — the platform tab stays open separately.
+function ImpersonationBar({ dark }: { dark: boolean }) {
+  const navigate = useNavigate();
+  const [returning, setReturning] = useState(false);
+
+  const returnToPlatform = () => {
+    setReturning(true);
+    // The platform session lives under separate localStorage keys
+    // (platformToken / platformUser), so navigating there restores it.
+    navigate('/platform');
+  };
+
+  return (
+    <div
+      className={`sticky top-0 z-50 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-center text-xs sm:text-sm font-semibold text-white ${
+        dark
+          ? 'bg-gradient-to-r from-indigo-700 via-blue-700 to-indigo-700'
+          : 'bg-gradient-to-r from-indigo-600 via-blue-600 to-indigo-600'
+      } shadow-md`
+    }
+    >
+      <span className="inline-flex items-center gap-1.5">
+        <span className="relative flex h-2 w-2">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-300 opacity-75" />
+          <span className="relative inline-flex h-2 w-2 rounded-full bg-amber-300" />
+        </span>
+        Super Admin session — you're viewing this school as its admin
+      </span>
+      <button
+        onClick={returnToPlatform}
+        disabled={returning}
+        className="inline-flex items-center gap-1.5 rounded-lg bg-white/15 px-3 py-1 font-bold ring-1 ring-white/30 transition hover:bg-white/25 disabled:opacity-50"
+      >
+        <ArrowLeftStartOnRectangleIcon className="h-4 w-4" />
+        {returning ? 'Returning…' : 'Return to Super Admin Dashboard'}
+      </button>
+    </div>
+  );
 }
 
 export default function AdminLayout() {
@@ -451,11 +497,32 @@ export default function AdminLayout() {
     }
   };
 
+
+
+  // ---------- Super Admin impersonation detection ----------
+  // "Login as Admin" issues the school JWT with an impersonatedBy claim
+  // (the Super Admin's platform user id). Decode the stored token to detect
+  // it — the bar lets the Super Admin hop back to the platform dashboard.
+  const impersonatedBy = (() => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) return null;
+      const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+      return payload?.impersonatedBy || null;
+    } catch {
+      return null;
+    }
+  })();
+
   // ---------- Render ----------
   return (
     <div className={`min-h-screen transition-colors duration-300 ${
       theme === 'dark' ? 'bg-[#0B1120]' : 'bg-gradient-to-br from-blue-50 via-white to-blue-50'
     }`}>
+      {/* ====== Super Admin impersonation bar ====== */}
+      {impersonatedBy && (
+        <ImpersonationBar dark={theme === 'dark'} />
+      )}
       {/* ====== Desktop Sidebar ====== */}
       <div
         className={`hidden md:fixed md:inset-y-0 md:flex md:flex-col z-20 transition-all duration-300 ${

@@ -820,3 +820,16 @@ body {
     opacity: 0.5;
   }
 }
+
+/* =====================================================================
+   ONBOARDING WIZARD STEP STRIP — hide the scrollbar on mobile while
+   keeping the strip swipeable (WebKit + legacy Edge).
+   ===================================================================== */
+.no-bar {
+  -ms-overflow-style: none; /* legacy Edge */
+}
+.no-bar::-webkit-scrollbar {
+  display: none; /* Chrome / Safari */
+  height: 0;
+  width: 0;
+}

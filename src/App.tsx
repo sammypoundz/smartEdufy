@@ -20,6 +20,7 @@ import AdminResults from './pages/admin/Results';
 import AdminReports from './pages/admin/Reports';
 import AdminReportDesigner from './pages/admin/ReportDesigner';
 import AdminSettings from './pages/admin/Settings';
+import SchoolOnboarding from './pages/admin/SchoolOnboarding';
 import AdminSubscriptionPage from './pages/admin/SubscriptionPage';
 import AdminParent from './pages/admin/Parent';
 import ParentLayout from './layouts/ParentLayout';
@@ -156,6 +157,11 @@ function App() {
             <PlatformGuard />
           </PlatformAuthProvider>
         } />
+        <Route path="/platform" element={
+          <PlatformAuthProvider>
+            <PlatformGuard />
+          </PlatformAuthProvider>
+        } />
 
         {/* Public routes – no layout */}
         <Route path="/login" element={<Login />} />
@@ -173,6 +179,16 @@ function App() {
         {/* ====== ADMIN ROUTES — open to any user with a matching
              privilege (ADMIN/PRINCIPAL implicitly hold all) ====== */}
         <Route element={<ProtectedRoute />}>
+          {/* Fullscreen self-onboarding wizard — outside the admin chrome so
+              it fills the whole viewport with no sidebar or top bar. */}
+          <Route
+            path="/admin/onboarding"
+            element={
+              <AcademicSessionProvider>
+                <SchoolOnboarding />
+              </AcademicSessionProvider>
+            }
+          />
           <Route
             path="/admin/*"
             element={

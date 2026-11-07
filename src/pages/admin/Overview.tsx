@@ -18,6 +18,7 @@ import {
   ChevronRightIcon,
 } from '@heroicons/react/24/outline';
 import { api } from '../../utils/api';
+import { SparklesIcon } from '@heroicons/react/24/outline';
 
 // ---------- Animation variants ----------
 const container = {
@@ -197,6 +198,18 @@ export default function AdminOverview() {
   const { token, user } = useAuth();
   const navigate = useNavigate();
 
+  // ---------- Onboarding status (for the setup CTA banner) ----------
+  const onboarding = useQuery({
+    queryKey: ['onboarding-gate'],
+    queryFn: async () =>
+      (await api.get('/onboarding/progress')).json() as unknown as {
+        required: boolean;
+        completed: boolean;
+        progress: { completedStages: string[]; currentStage: string };
+      },
+  });
+  const showOnboardingCta = !!onboarding.data?.required && !onboarding.data?.completed;
+
   // ---------- Fetch real data ----------
   const { data, isLoading: loading } = useQuery({
     queryKey: ['admin-dashboard', token],
@@ -337,6 +350,35 @@ export default function AdminOverview() {
 
       <div className="relative z-10 max-w-7xl mx-auto">
         <Greeting name={user?.name || 'Administrator'} role={user?.role || ''} school={schoolName} theme={theme} />
+
+        {/* Onboarding CTA — shown while the Super Admin-assigned wizard is
+            still incomplete. Links back into the wizard at the current stage. */}
+        {showOnboardingCta && (
+          <button
+            onClick={() => navigate('/admin/onboarding')}
+            className={`mb-5 w-full text-left rounded-2xl border p-4 md:p-5 flex items-center gap-4 transition hover:shadow-md ${
+              theme === 'dark'
+                ? 'bg-blue-500/10 border-blue-500/30'
+                : 'bg-gradient-to-r from-blue-50 to-indigo-50 border-blue-200'
+            }`}
+          >
+            <span className="h-11 w-11 flex-shrink-0 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg">
+              <SparklesIcon className="w-6 h-6 text-white" />
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="block font-extrabold text-sm md:text-base text-blue-900 dark:text-blue-200">
+                Finish setting up your school
+              </span>
+              <span className="block text-xs md:text-sm text-blue-700 dark:text-blue-300 mt-0.5">
+                {onboarding.data?.progress?.completedStages?.length ?? 0}/8 stages done
+                {onboarding.data?.progress?.completedStages?.length
+                  ? ` · resume at ${onboarding.data.progress.currentStage.toLowerCase()}`
+                  : ' · start with your school profile'}
+              </span>
+            </span>
+            <ArrowRightIcon className="w-5 h-5 flex-shrink-0 text-blue-600 dark:text-blue-400" />
+          </button>
+        )}
 
         {/* Stats */}
         <motion.div variants={container} initial="hidden" animate="show" className="grid grid-cols-2 gap-3 md:gap-6 sm:grid-cols-2 lg:grid-cols-4 mb-5 md:mb-6">

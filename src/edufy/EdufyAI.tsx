@@ -59,21 +59,11 @@ const defaultPos = (): EdufyPos => {
   };
 };
 
-function loadSavedPos(): EdufyPos {
-  try {
-    const raw = localStorage.getItem(EDUFY_POS_KEY);
-    if (!raw) return defaultPos();
-    const p = JSON.parse(raw) as EdufyPos;
-    if (typeof p.x !== "number" || typeof p.y !== "number") return defaultPos();
-    return p;
-  } catch {
-    return defaultPos();
-  }
-}
+
 
 function FloatingEdufyButton() {
   const { open, togglePanel } = useEdufy();
-  const [pos, setPos] = useState<EdufyPos>(loadSavedPos);
+  const [pos, setPos] = useState<EdufyPos>(defaultPos);
   const [dragging, setDragging] = useState(false);
   const dragState = useRef<{
     startX: number;
@@ -571,7 +561,12 @@ export default function EdufyAI() {
   // users — the login page and other public views stay clean.
   const auth = useAuth();
   const isLoggedIn = !!auth?.user && !!auth?.token;
+
+  // Note: the school self-onboarding wizard no longer gates Edufy AI — the
+  // assistant is always available to logged-in users so it can help with
+  // setup too.
   if (!isLoggedIn) return null;
+
   return (
     <>
       <FloatingEdufyButton />

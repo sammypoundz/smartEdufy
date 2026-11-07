@@ -264,6 +264,25 @@ function SchoolInvoices() {
       ? "bg-gray-900/80 border-white/10"
       : "bg-white border-gray-200/80";
   const muted = theme === "dark" ? "text-gray-400" : "text-gray-500";
+  const [payingId, setPayingId] = useState<string | null>(null);
+
+  /** Pay a pending invoice through the Paystack hosted bank-transfer checkout. */
+  const payInvoice = async (invoiceId: string, invoiceNo: string) => {
+    setPayingId(invoiceId);
+    try {
+      const res = await api.post("/payments/invoice/initialize", { invoiceId });
+      if (!res.ok) {
+        const err = await res.json().catch(() => null);
+        throw new Error(err?.error || "Could not start payment");
+      }
+      const data = await res.json();
+      toast.success(`Redirecting to Paystack to pay ${invoiceNo}…`);
+      window.location.href = data.authorizationUrl;
+    } catch (e: any) {
+      toast.error(e?.message || "Could not start payment — please try again");
+      setPayingId(null);
+    }
+  };
 
   if (state === "loading")
     return <div className="mt-8 animate-pulse rounded-2xl bg-gray-200/60 dark:bg-gray-800/60 h-24" />;
@@ -290,7 +309,7 @@ function SchoolInvoices() {
               <tr
                 className={`border-b ${theme === "dark" ? "border-gray-800" : "border-gray-200"}`}
               >
-                {["Invoice", "Period", "Amount", "Due", "Status"].map((h) => (
+                {["Invoice", "Period", "Amount", "Due", "Status", ""].map((h) => (
                   <th
                     key={h}
                     className={`px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider ${muted}`}
@@ -327,6 +346,17 @@ function SchoolInvoices() {
                         Ref: {inv.paymentRef}
                       </span>
                     )}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {inv.status === "PENDING" || inv.status === "OVERDUE" ? (
+                      <button
+                        onClick={() => payInvoice(inv.id, inv.invoiceNo)}
+                        disabled={payingId === inv.id}
+                        className="rounded-lg bg-gradient-to-r from-blue-600 to-indigo-600 px-3 py-1.5 text-[11px] font-bold text-white shadow transition hover:opacity-90 disabled:opacity-50"
+                      >
+                        {payingId === inv.id ? "Starting…" : "Pay via Bank Transfer"}
+                      </button>
+                    ) : null}
                   </td>
                 </tr>
               ))}

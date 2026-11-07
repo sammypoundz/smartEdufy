@@ -59,7 +59,7 @@ export default function AdminHelp() {
         <motion.div variants={item} initial="hidden" animate="show" className="mt-8">
           <div className={`rounded-2xl p-6 shadow-xl ${theme === 'dark' ? 'bg-white/5 backdrop-blur-xl border border-white/10' : 'bg-white/30 backdrop-blur-md border border-white/20'}`}>
             <h3 className={`text-lg font-bold mb-2 ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>Need more help?</h3>
-            <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Contact our support team at support@smartedufy.com or call +234 800 123 4567.</p>
+            <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>Contact our support team at smartedufyng@gmail.com or call +234 810 977 5355.</p>
           </div>
         </motion.div>
       </div>
