@@ -360,7 +360,7 @@ export default function Epins() {
             >
               Scratch cards preview
             </h3>
-            <div className="epin-print-sheet print-area grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid print:grid-cols-3 print:gap-3">
+            <div className="epin-print-sheet print-area grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 print:grid print:grid-cols-2 print:gap-3">
               {pins.map((p, i) => (
                 <div
                   key={p.id}
@@ -419,7 +419,7 @@ export default function Epins() {
                       </div>
                     </div>
                     <div className="mt-1.5 text-center text-[9px] text-gray-600 print:text-gray-700">
-                      Check your result at
+                      Check your result at{" "}
                       <span className="font-semibold break-all">
                         {resultUrl.replace(/^https?:\/\//, "")}
                       </span>

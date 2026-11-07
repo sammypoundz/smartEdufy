@@ -306,10 +306,34 @@ body {
     size: A4;
     margin: 10mm;
   }
+  html,
+  body {
+    height: auto !important;
+    overflow: visible !important;
+  }
+  /* Override the shared .print-area rule (position:absolute) — absolutely
+     positioned blocks only print their first page, which cropped the cards.
+     The e-Pin sheet must stay in normal flow so it paginates naturally. */
   .epin-print-sheet.print-area {
+    position: static !important;
+    inset: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
     padding: 0 !important;
     gap: 4mm !important;
-    grid-template-columns: repeat(3, 1fr) !important;
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+  /* Any ancestor wrappers (layout shells) must not clip or constrain flow */
+  body:has(.epin-print-sheet) * {
+    overflow: visible !important;
+    height: auto !important;
+    max-height: none !important;
+  }
+  .epin-print-sheet.print-area,
+  .epin-print-sheet.print-area * {
+    max-height: none !important;
+    max-width: none !important;
+    overflow: visible !important;
   }
   .epin-print-sheet .epin-card {
     border-width: 1.5px !important;
@@ -317,6 +341,7 @@ body {
     border-radius: 3mm !important;
     break-inside: avoid;
     page-break-inside: avoid;
+    box-shadow: none !important;
   }
   .epin-print-sheet .epin-card .bg-gradient-to-r {
     background: #1e40af !important;
