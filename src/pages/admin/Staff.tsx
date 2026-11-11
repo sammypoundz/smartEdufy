@@ -821,10 +821,12 @@ export default function AdminStaff() {
   const optionsQuery = useQuery<{ armOptions: { display: string; className: string }[]; subjectsList: string[] }>({
     queryKey: ['staff-options'],
     queryFn: async () => {
-      const [arms, subjects] = await Promise.all([
+      const [classes, arms, subjects] = await Promise.all([
+        unwrap<any[]>(api.get('/classes')),
         unwrap<any[]>(api.get('/arms')),
         unwrap<any[]>(api.get('/subjects')),
       ]);
+      // Arms give us the specific "Class A" style options (one per arm/stream).
       const armOpts = (arms || []).map((arm) => {
         const className = arm.class?.name || arm.className || 'Unknown Class';
         return {
@@ -832,7 +834,19 @@ export default function AdminStaff() {
           className,
         };
       });
-      return { armOptions: armOpts, subjectsList: (subjects || []).map((s: any) => s.name) };
+      // IMPORTANT: also include every REGISTERED class, even one that has no
+      // arm/stream yet — otherwise such classes silently disappear from the
+      // form-teacher / subject-assignment dropdowns. Dedupe by className and
+      // skip classes that already appear via an arm option.
+      const classNamesFromArms = new Set(armOpts.map((o) => o.className));
+      const classOnlyOpts = (classes || [])
+        .filter((c: any) => c?.name && !classNamesFromArms.has(c.name))
+        .map((c: any) => ({ display: c.name, className: c.name }))
+        .sort((a: any, b: any) => a.display.localeCompare(b.display));
+      return {
+        armOptions: [...classOnlyOpts, ...armOpts],
+        subjectsList: (subjects || []).map((s: any) => s.name),
+      };
     },
     staleTime: 5 * 60 * 1000,
   });

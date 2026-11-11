@@ -468,8 +468,8 @@ export default function TrafficPage() {
                 </td>
                 <td className="px-4 py-3">
                   <div className="flex flex-wrap gap-1">
-                    {Object.entries(r.activityByRole)
-                      .sort((a: any, b: any) => b[1] - a[1])
+                    {(Object.entries(r.activityByRole) as [string, number][])
+                      .sort((a, b) => b[1] - a[1])
                       .slice(0, 4)
                       .map(([role, count]) => (
                         <span

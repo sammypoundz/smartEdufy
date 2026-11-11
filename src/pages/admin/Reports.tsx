@@ -4,6 +4,7 @@ import { useTheme } from '../../contexts/ThemeContext';
 import { useAuth } from '../../contexts/AuthContext';
 import { useAcademicSession } from '../../contexts/AcademicSessionContext';
 import { api } from '../../utils/api';
+import { API_BASE_URL } from '../../config/server';
 import { fetchGradingData, resolveClassScales, computeGradeWithScales } from '../../utils/grading';
 import type { GradingScale, GradingScaleGroup } from '../../utils/grading';
 import { formatArm } from '../../utils/arm';
@@ -99,6 +100,32 @@ export default function AdminReports() {
   const [downloadingAll, setDownloadingAll] = useState(false);
   const [printingAll, setPrintingAll] = useState(false);
   const [downloadingSingle, setDownloadingSingle] = useState<string | null>(null);
+
+  // Assigned report-card template for the selected class/session/term. When a
+  // template exists, cards are rendered/downloaded with it (backend resolves
+  // specific-term over all-terms); when null, the built-in card is used.
+  const [assignedTemplate, setAssignedTemplate] = useState<{ id: string; name: string; version: number } | null>(null);
+  const [templateHtml, setTemplateHtml] = useState<string | null>(null); // bound HTML for the open card
+
+  useEffect(() => {
+    if (!token || !selectedClassId || !selectedAcademicYearId || !selectedTerm) {
+      setAssignedTemplate(null);
+      return;
+    }
+    (async () => {
+      try {
+        const res = await api.get(
+          `/report-templates/class/${selectedClassId}?academicSessionId=${encodeURIComponent(selectedAcademicYearId)}&term=${encodeURIComponent(selectedTerm)}`,
+          token,
+        );
+        if (!res.ok) { setAssignedTemplate(null); return; }
+        const data = await res.json();
+        setAssignedTemplate(data.template || null);
+      } catch {
+        setAssignedTemplate(null);
+      }
+    })();
+  }, [token, selectedClassId, selectedAcademicYearId, selectedTerm]);
 
   // Grading scales (class-assigned group takes priority over school-wide)
   const [schoolScales, setSchoolScales] = useState<GradingScale[]>([]);
@@ -414,19 +441,70 @@ export default function AdminReports() {
     }
   };
 
-  const openModal = (card: StudentResultCard) => {
+  const openModal = async (card: StudentResultCard) => {
     setSelectedCard(card);
     setShowModal(true);
+    setTemplateHtml(null);
+    // With an assigned template, show the real bound template instead of the
+    // built-in table.
+    if (assignedTemplate && token) {
+      try {
+        const res = await api.get(
+          `/report-cards/student/${card.studentId}/preview?academicSessionId=${encodeURIComponent(selectedAcademicYearId)}&term=${encodeURIComponent(selectedTerm)}`,
+          token,
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setTemplateHtml(data.html || null);
+        }
+      } catch {
+        setTemplateHtml(null); // fall back to built-in card
+      }
+    }
+  };
+
+  // Print whatever is currently in the modal (template HTML or built-in card)
+  // via a hidden iframe so no popup window is left behind.
+  const printViaIframe = (html: string) => {
+    const iframe = document.createElement('iframe');
+    iframe.style.position = 'fixed';
+    iframe.style.right = '0';
+    iframe.style.bottom = '0';
+    iframe.style.width = '0';
+    iframe.style.height = '0';
+    iframe.style.border = '0';
+    document.body.appendChild(iframe);
+    const doc = iframe.contentWindow?.document;
+    if (!doc) return;
+    doc.open();
+    doc.write(html);
+    doc.close();
+    const win = iframe.contentWindow!;
+    const cleanup = () => setTimeout(() => iframe.remove(), 500);
+    if (win.document.readyState === 'complete') {
+      win.focus();
+      win.print();
+      cleanup();
+    } else {
+      iframe.onload = () => {
+        win.focus();
+        win.print();
+        cleanup();
+      };
+    }
   };
 
   const printModal = () => {
+    const yearName = academicYears.find(y => y.id === selectedAcademicYearId)?.name || '';
+    // Assigned template: print the exact bound template HTML.
+    if (templateHtml) {
+      printViaIframe(templateHtml);
+      return;
+    }
     const printContent = document.getElementById('result-card-print');
     if (!printContent) return;
-    const originalTitle = document.title;
-    document.title = `Result Card - ${selectedCard?.studentName}`;
     const printWindow = window.open('', '_blank');
     if (printWindow) {
-      const yearName = academicYears.find(y => y.id === selectedAcademicYearId)?.name || '';
       printWindow.document.write(`
         <html><head><title>Result Card - ${selectedCard?.studentName}</title>
         <style>
@@ -443,7 +521,6 @@ export default function AdminReports() {
       printWindow.print();
       printWindow.close();
     }
-    document.title = originalTitle;
   };
 
   if (classes.length === 0 && !loading) return <div className="p-8">Loading...</div>;
@@ -573,6 +650,22 @@ export default function AdminReports() {
                     <button onClick={() => setShowModal(false)} className={`p-2 rounded-lg transition-colors ${theme === 'dark' ? 'text-gray-400 hover:text-white hover:bg-white/10' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'}`}><XMarkIcon className="h-5 w-5" /></button>
                   </div>
                 </div>
+                {assignedTemplate && (
+                  <div className="px-6 pb-2">
+                    <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 text-violet-700 dark:bg-violet-500/15 dark:text-violet-300 px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-wide">
+                      Template: {assignedTemplate.name} (v{assignedTemplate.version})
+                    </span>
+                  </div>
+                )}
+                {templateHtml ? (
+                  <div className="max-h-[70vh] overflow-y-auto bg-white">
+                    <iframe
+                      title="Report card preview"
+                      srcDoc={templateHtml}
+                      className="w-full h-[70vh] border-0"
+                    />
+                  </div>
+                ) : (
                 <div className="p-6 max-h-[80vh] overflow-y-auto" id="result-card-print">
                   <div className="text-center mb-6">
                     <h2 className={`text-2xl font-bold ${theme === 'dark' ? 'text-white' : 'text-gray-900'}`}>{selectedCard.studentName}</h2>
@@ -608,8 +701,32 @@ export default function AdminReports() {
                     </table>
                   </div>
                 </div>
+                )}
                 <div className="flex justify-end gap-3 p-6 border-t border-gray-200 dark:border-gray-700">
                   <button onClick={() => setShowModal(false)} className={`px-4 py-2 rounded-lg ${theme === 'dark' ? 'bg-gray-700 text-gray-200' : 'bg-gray-200 text-gray-700'}`}>Close</button>
+                  {assignedTemplate && selectedCard && (
+                    <button onClick={async () => {
+                      setDownloadingSingle(selectedCard.studentId);
+                      try {
+                        const res = await api.post(`/report-cards/student/${selectedCard.studentId}/generate`, {
+                          academicSessionId: selectedAcademicYearId,
+                          term: selectedTerm,
+                        }, token);
+                        if (!res.ok) throw new Error(await res.text());
+                        const { fileUrl } = await res.json();
+                        window.open(`${fileUrl.startsWith('http') ? fileUrl : API_BASE_URL + fileUrl}`, '_blank');
+                        toast.success('PDF report card generated');
+                      } catch (err: any) {
+                        toast.error(err.message || 'PDF generation failed');
+                      } finally {
+                        setDownloadingSingle(null);
+                      }
+                    }} disabled={downloadingSingle === selectedCard.studentId}
+                      className="px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 text-white rounded-lg hover:from-rose-600 hover:to-red-700 disabled:opacity-50 inline-flex items-center gap-1.5">
+                      {downloadingSingle === selectedCard.studentId ? <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> : <PrinterIcon className="h-4 w-4" />}
+                      Download PDF
+                    </button>
+                  )}
                   <button onClick={() => { downloadSingleCard(selectedCard); setShowModal(false); }} className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">Download Excel</button>
                 </div>
               </div>
