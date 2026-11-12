@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { Link, useLocation } from "react-router-dom";
+import logoBlackUrl from "../../assets/smart edufy II.png";
+import logoWhiteUrl from "../../assets/smart edufy.png";
+import { useTheme } from "../../contexts/ThemeContext";
 import toast from "react-hot-toast";
 import { api } from "../../utils/api";
 import {
@@ -18,6 +21,7 @@ import {
  *   picks a new password and the single-use token is consumed.
  */
 export default function ForgotPassword() {
+  const { theme } = useTheme();
   const location = useLocation();
   const isReset = new URLSearchParams(location.search).has("token");
 
@@ -80,6 +84,14 @@ export default function ForgotPassword() {
   return (
     <div className="min-h-dvh flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-indigo-100 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
+        <div className="mb-6 flex justify-center">
+          <img
+            src={theme === "dark" ? logoWhiteUrl : logoBlackUrl}
+            alt="SmartEdufy logo"
+            className="h-14 w-auto object-contain"
+            draggable={false}
+          />
+        </div>
         {isReset ? (
           <>
             <h1 className="text-xl font-bold text-gray-900">
