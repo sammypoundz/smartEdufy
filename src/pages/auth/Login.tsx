@@ -475,6 +475,18 @@ export default function Login() {
                   </span>
                 )}
               </motion.button>
+              <div className="text-center">
+                <Link
+                  to="/forgot-password"
+                  className={`text-xs font-medium transition-colors ${
+                    dark
+                      ? "text-slate-400 hover:text-blue-300"
+                      : "text-slate-500 hover:text-blue-600"
+                  }`}
+                >
+                  Forgot your password?
+                </Link>
+              </div>
             </form>
 
             {/* School signup + teacher self-registration links */}

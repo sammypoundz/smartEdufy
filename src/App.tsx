@@ -6,6 +6,7 @@ import TeacherRegister from './pages/auth/TeacherRegister';
 import SchoolRegister from './pages/auth/SchoolRegister';
 import TeacherProfileSetup from './pages/teacher/ProfileSetup';
 import Login from './pages/auth/Login';
+import ForgotPassword from './pages/auth/ForgotPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import OfflineIndicator from './components/OfflineIndicator';
 import { useAuth } from './contexts/AuthContext';
@@ -167,6 +168,8 @@ function App() {
 
         {/* Public routes – no layout */}
         <Route path="/login" element={<Login />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password" element={<ForgotPassword />} />
         <Route path="/register/teacher" element={<TeacherRegister />} />
         <Route path="/register/school" element={<SchoolRegister />} />
         <Route element={<ProtectedRoute />}><Route path="/teacher/profile-setup" element={<TeacherProfileSetup />} /></Route>
