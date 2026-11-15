@@ -413,52 +413,86 @@ export default function Students() {
       const workbook = XLSX.read(data);
       const sheet = workbook.Sheets[workbook.SheetNames[0]];
       const rows = XLSX.utils.sheet_to_json(sheet);
+      /*
+       * Bulk import: every row is validated and imported INDEPENDENTLY.
+       * Valid rows succeed even when other rows fail; failed rows are
+       * collected (with their row number and reason) into a downloadable
+       * report so nothing is lost and the upload never aborts wholesale.
+       */
+      type FailedRow = { row: number; name: string; admissionNumber: string; error: string };
+      const failedRows: FailedRow[] = [];
       let successCount = 0;
-      let errorCount = 0;
-      let firstError = "";
       let processed = 0;
       setUploadProgress(0);
-      for (const row of rows) {
-        const { name, gender, admissionNumber } = row as any;
-        if (!name) {
-          errorCount++;
-        } else {
-          try {
-            const res = await api.post(
-              "/students",
-              {
-                name,
-                gender: gender || "male",
-                admissionNumber,
-                classId: resolvedClassId || undefined,
-                armId: resolvedArmId || undefined,
-              },
-              token,
-            );
-            if (!res.ok) {
-              const errData = await res.json().catch(() => null);
-              const msg =
-                (Array.isArray(errData?.error)
-                  ? errData.error[0]?.message
-                  : errData?.error) || `HTTP ${res.status}`;
-              throw new Error(`${name}: ${msg}`);
-            }
-            successCount++;
-          } catch (err: any) {
-            errorCount++;
-            if (!firstError) firstError = err.message;
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i] as any;
+        const rowNum = i + 2; // +2: header row is row 1, data starts at row 2
+        const name = String(row?.name ?? "").trim();
+        const admissionNumber = row?.admissionNumber ? String(row.admissionNumber).trim() : "";
+        try {
+          if (!name) throw new Error("Name is required");
+          const res = await api.post(
+            "/students",
+            {
+              name,
+              gender: row.gender || "male",
+              admissionNumber: admissionNumber || undefined,
+              classId: resolvedClassId || undefined,
+              armId: resolvedArmId || undefined,
+            },
+            token,
+          );
+          if (!res.ok) {
+            const errData = await res.json().catch(() => null);
+            const msg =
+              (Array.isArray(errData?.error)
+                ? errData.error[0]?.message
+                : errData?.error) || `HTTP ${res.status}`;
+            throw new Error(msg);
           }
+          successCount++;
+        } catch (err: any) {
+          failedRows.push({
+            row: rowNum,
+            name: name || "(missing)",
+            admissionNumber,
+            error: err.message || "Unknown error",
+          });
         }
         processed++;
         setUploadProgress(Math.round((processed / rows.length) * 100));
       }
+      const errorCount = failedRows.length;
       if (errorCount > 0) {
-        toast.error(
-          `Uploaded ${successCount} students, ${errorCount} failed. First error: ${firstError}`,
-        );
+        // Downloadable failed-records report (CSV) so the admin can fix and re-upload.
+        const csv = [
+          "Row,Name,Admission Number,Error",
+          ...failedRows.map((f) =>
+            [f.row, f.name, f.admissionNumber, f.error]
+              .map((v) => `"${String(v).replace(/"/g, '""')}"`)
+              .join(","),
+          ),
+        ].join("\n");
+        const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${file.name.replace(/\.[^.]+$/, "")}_failed_rows.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+        Swal.fire({
+          title: "Import finished with errors",
+          html:
+            `<b>${successCount}</b> student(s) imported successfully.<br/>` +
+            `<b>${errorCount}</b> row(s) failed — a failed-records report has been downloaded.<br/><br/>` +
+            `First error: ${failedRows[0].error}`,
+          icon: "warning",
+          background: theme === "dark" ? "#1f2937" : "#fff",
+          color: theme === "dark" ? "#fff" : "#000",
+        });
       } else {
         toast.success(
-          `Uploaded ${successCount} students, ${errorCount} failed` +
+          `Uploaded ${successCount} students successfully` +
             (fileNameClassId
               ? ` (class detected from file name${fileNameArmId ? " + arm" : ""})`
               : ""),
