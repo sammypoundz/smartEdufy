@@ -17,6 +17,7 @@ import {
   UserGroupIcon,
   BookOpenIcon,
   CheckIcon,
+  Squares2X2Icon,
 } from '@heroicons/react/24/outline';
 
 // ============================================================
@@ -105,6 +106,90 @@ export default function AdminSubjects() {
 
   const [submittingSubject, setSubmittingSubject] = useState(false);
 
+  // Bulk add mode: paste/enter many subject names, validated before submit
+  const [bulkMode, setBulkMode] = useState(false);
+  const [bulkNamesText, setBulkNamesText] = useState('');
+  const [bulkDescriptionsText, setBulkDescriptionsText] = useState('');
+  const [bulkTouched, setBulkTouched] = useState(false);
+
+  /*
+   * Parse the bulk input: one subject per line ("Name - Description" is
+   * supported). Derived values are computed, never stored, so validation
+   * is always live.
+   */
+  const bulkParsedRows = bulkNamesText
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line, index) => {
+      const dashMatch = line.match(/^(.+?)\s+-\s+(.+)$/);
+      const inlineDesc = dashMatch ? dashMatch[2].trim() : '';
+      const name = dashMatch ? dashMatch[1].trim() : line;
+      const description =
+        bulkDescriptionsText
+          .split('\n')
+          [index]?.trim() || inlineDesc;
+      return { name, description };
+    });
+
+  /* Per-row validation results (duplicate in payload / existing subject) */
+  const bulkRowIssues = bulkParsedRows.map((row, index) => {
+    if (!row.name) return { row, issue: 'Empty name' as const };
+    const lower = row.name.toLowerCase();
+    const firstIndex = bulkParsedRows.findIndex(
+      (r) => r.name.toLowerCase() === lower
+    );
+    if (firstIndex !== index)
+      return { row, issue: 'Duplicate in this list' as const };
+    if (subjects.some((s) => s.name.toLowerCase() === lower))
+      return { row, issue: 'Already exists' as const };
+    return { row, issue: null };
+  });
+
+  const bulkValidRows = bulkRowIssues.filter((r) => r.issue === null);
+  const bulkInvalidRows = bulkRowIssues.filter((r) => r.issue !== null);
+  const bulkHasError =
+    bulkParsedRows.length === 0 ||
+    bulkValidRows.length === 0 ||
+    bulkInvalidRows.length > 0;
+
+  const handleBulkCreateSubjects = async () => {
+    if (bulkHasError || !token) {
+      toast.error(
+        bulkParsedRows.length === 0
+          ? 'Enter at least one subject name'
+          : 'Fix the highlighted issues before adding'
+      );
+      return;
+    }
+
+    setSubmittingSubject(true);
+    try {
+      const res = await api.post(
+        '/subjects/bulk',
+        {
+          subjects: bulkValidRows.map((r) => ({
+            name: r.row.name,
+            description: r.row.description || undefined,
+          })),
+        },
+        token
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      toast.success(`${data.created} subject(s) created successfully!`);
+      await refreshSubjects();
+      setShowSubjectModal(false);
+      resetSubjectModal();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || 'Failed to bulk create subjects');
+    } finally {
+      setSubmittingSubject(false);
+    }
+  };
+
   // ==========================================================
   // ARM SUBJECT ASSIGNMENTS
   // ==========================================================
@@ -133,6 +218,89 @@ export default function AdminSubjects() {
   const [selectAll, setSelectAll] = useState(false);
 
   const [submittingArmAction, setSubmittingArmAction] = useState(false);
+
+  // ==========================================================
+  // BULK ASSIGN — pick classes (auto-includes all their arms),
+  // then pick the subjects all those classes share.
+  // ==========================================================
+
+  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+  const [bulkSelectedClassIds, setBulkSelectedClassIds] = useState<string[]>([]);
+  const [bulkSubjectIds, setBulkSubjectIds] = useState<string[]>([]);
+  const [bulkTeacherId, setBulkTeacherId] = useState('');
+  const [bulkSubmitting, setBulkSubmitting] = useState(false);
+
+  const toggleBulkClass = (classId: string) => {
+    setBulkSelectedClassIds((prev) =>
+      prev.includes(classId)
+        ? prev.filter((id) => id !== classId)
+        : [...prev, classId]
+    );
+  };
+
+  const toggleBulkSubject = (subjectId: string) => {
+    setBulkSubjectIds((prev) =>
+      prev.includes(subjectId)
+        ? prev.filter((id) => id !== subjectId)
+        : [...prev, subjectId]
+    );
+  };
+
+  const handleBulkAssign = async () => {
+    if (bulkSelectedClassIds.length === 0) {
+      toast.error('Please select at least one class');
+      return;
+    }
+    if (bulkArmIds.length === 0) {
+      toast.error('The selected classes have no arms');
+      return;
+    }
+    if (bulkSubjectIds.length === 0) {
+      toast.error('Please select at least one subject');
+      return;
+    }
+    if (!token) {
+      toast.error('Authentication required');
+      return;
+    }
+
+    setBulkSubmitting(true);
+    try {
+      const res = await api.post(
+        '/subjects/bulk-assign',
+        {
+          subjectIds: bulkSubjectIds,
+          armIds: bulkArmIds,
+          teacherId: bulkTeacherId || undefined,
+        },
+        token
+      );
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+
+      const linked = data.linked ?? 0;
+      const already = data.alreadyAssigned ?? 0;
+      if (linked > 0 && already === 0) {
+        toast.success(`${linked} assignment(s) created successfully!`);
+      } else if (linked > 0) {
+        toast.success(`${linked} assignment(s) created, ${already} already existed.`);
+      } else {
+        toast.error('All selected subjects are already assigned to those arms.');
+      }
+
+      setShowBulkAssignModal(false);
+      setBulkSelectedClassIds([]);
+      setBulkSubjectIds([]);
+      setBulkTeacherId('');
+      // Refresh whatever arm-subject list may be open
+      await loadArmSubjects();
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error?.message || 'Failed to bulk assign subjects');
+    } finally {
+      setBulkSubmitting(false);
+    }
+  };
 
   // ==========================================================
   // FETCH SUBJECTS
@@ -165,6 +333,10 @@ export default function AdminSubjects() {
 
   const resetSubjectModal = () => {
     setEditingSubject(null);
+    setBulkMode(false);
+    setBulkNamesText('');
+    setBulkDescriptionsText('');
+    setBulkTouched(false);
 
     setSubjectForm({
       name: '',
@@ -346,6 +518,11 @@ export default function AdminSubjects() {
     },
   });
   const classes = classesQuery.data ?? [];
+
+  // Every arm of every checked class gets the subjects
+  const bulkArmIds = classes
+    .filter((cls) => bulkSelectedClassIds.includes(cls.id))
+    .flatMap((cls) => (cls.arms || []).map((a) => a.id));
 
   const teachersQuery = useQuery<Teacher[]>({
     queryKey: ['teachers', token],
@@ -1023,16 +1200,31 @@ export default function AdminSubjects() {
             Arm Subject Assignments
           </h2>
 
-          <p
-            className={`text-sm mb-6 ${
-              theme === 'dark'
-                ? 'text-gray-400'
-                : 'text-gray-600'
-            }`}
-          >
-            Select a class and arm to view assigned subjects,
-            add new subjects, assign teachers, or remove subjects.
-          </p>
+          <div className="sm:flex sm:items-center sm:justify-between mb-6">
+            <p
+              className={`text-sm ${
+                theme === 'dark'
+                  ? 'text-gray-400'
+                  : 'text-gray-600'
+              }`}
+            >
+              Select a class and arm to view assigned subjects,
+              add new subjects, assign teachers, or remove subjects.
+            </p>
+
+            <button
+              onClick={() => {
+                setBulkSelectedClassIds([]);
+                setBulkSubjectIds([]);
+                setBulkTeacherId('');
+                setShowBulkAssignModal(true);
+              }}
+              className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 rounded-lg bg-gradient-to-r from-indigo-500 to-blue-600 text-white text-sm font-medium shadow-lg hover:shadow-xl hover:scale-[1.02] transition-all"
+            >
+              <Squares2X2Icon className="h-4 w-4 mr-2" />
+              Assign to Multiple Classes
+            </button>
+          </div>
 
           {/* CLASS / ARM SELECTORS */}
 
@@ -1364,11 +1556,172 @@ export default function AdminSubjects() {
             title={
               editingSubject
                 ? 'Edit Subject'
+                : bulkMode
+                ? 'Bulk Add Subjects'
                 : 'Add New Subject'
             }
             theme={theme}
+            fullscreen={!editingSubject}
           >
-            <div className="space-y-4">
+            {/* MODE SWITCH (only for new subjects) */}
+            {!editingSubject && (
+              <div
+                className="flex rounded-lg overflow-hidden border mb-4"
+                style={{
+                  borderColor: theme === 'dark' ? '#374151' : '#d1d5db',
+                }}
+              >
+                <button
+                  type="button"
+                  onClick={() => setBulkMode(false)}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition ${
+                    !bulkMode
+                      ? 'bg-blue-600 text-white'
+                      : theme === 'dark'
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Single
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setBulkMode(true)}
+                  className={`flex-1 px-3 py-2 text-sm font-medium transition ${
+                    bulkMode
+                      ? 'bg-blue-600 text-white'
+                      : theme === 'dark'
+                      ? 'bg-gray-800 text-gray-300 hover:bg-gray-700'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  Bulk Add
+                </button>
+              </div>
+            )}
+
+            {bulkMode && !editingSubject ? (
+              <div className="space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
+                    Subject Names (one per line)
+                  </label>
+                  <textarea
+                    rows={12}
+                    value={bulkNamesText}
+                    onChange={(e) => {
+                      setBulkNamesText(e.target.value);
+                      setBulkTouched(true);
+                    }}
+                    className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
+                      theme === 'dark'
+                        ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400 focus:ring-blue-500'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-blue-400'
+                    }`}
+                    placeholder={'Mathematics\nEnglish Language\nBasic Science - Contains an inline description'}
+                  />
+                  <p
+                    className={`mt-1 text-xs ${
+                      theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                    }`}
+                  >
+                    Tip: add an inline description with "Name - Description", or put
+                    descriptions on matching lines below.
+                  </p>
+                </div>
+
+                <div>
+                  <label
+                    className={`block text-sm font-medium mb-1 ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
+                    Descriptions (optional - one per line, matching the names above)
+                  </label>
+                  <textarea
+                    rows={3}
+                    value={bulkDescriptionsText}
+                    onChange={(e) => setBulkDescriptionsText(e.target.value)}
+                    className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
+                      theme === 'dark'
+                        ? 'bg-gray-800 border-gray-700 text-white placeholder-gray-400 focus:ring-blue-500'
+                        : 'bg-white border-gray-300 text-gray-900 placeholder-gray-500 focus:ring-blue-400'
+                    }`}
+                    placeholder="Descriptions line by line"
+                  />
+                </div>
+               </div>
+
+                {/* BULK VALIDATION PREVIEW */}
+                {bulkTouched && bulkParsedRows.length > 0 && (
+                  <div
+                    className={`rounded-lg border p-3 max-h-40 overflow-y-auto ${
+                      theme === 'dark'
+                        ? 'bg-gray-800 border-gray-700'
+                        : 'bg-gray-50 border-gray-200'
+                    }`}
+                  >
+                    <p
+                      className={`text-xs font-semibold mb-2 ${
+                        theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                      }`}
+                    >
+                      Validation: {bulkValidRows.length} ready, {bulkInvalidRows.length} issue(s)
+                    </p>
+                    {bulkRowIssues.map((r, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm py-0.5">
+                        <span
+                          className={
+                            r.issue === null
+                              ? 'text-green-500'
+                              : 'text-red-500'
+                          }
+                        >
+                          {r.issue === null ? '✓' : '⚠'}
+                        </span>
+                        <span
+                          className={
+                            theme === 'dark' ? 'text-gray-200' : 'text-gray-800'
+                          }
+                        >
+                          {r.row.name || '(empty line)'}
+                        </span>
+                        {r.issue && (
+                          <span className="text-red-500 text-xs ml-auto">{r.issue}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowSubjectModal(false);
+                      resetSubjectModal();
+                    }}
+                    className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleBulkCreateSubjects}
+                    disabled={submittingSubject || bulkHasError}
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition"
+                  >
+                    {submittingSubject
+                      ? 'Creating...'
+                      : `Create ${bulkValidRows.length} Subject${bulkValidRows.length !== 1 ? 's' : ''}`}
+                  </button>
+                </div>
+               </div>
+             ) : (
+              <div className="space-y-4">
 
               <div>
                 <label
@@ -1482,6 +1835,7 @@ export default function AdminSubjects() {
 
               </div>
             </div>
+            )}
           </Modal>
         )}
       </AnimatePresence>
@@ -1682,6 +2036,233 @@ export default function AdminSubjects() {
       </AnimatePresence>
 
       {/* ======================================================
+          BULK ASSIGN SUBJECTS TO MULTIPLE CLASSES MODAL
+      ====================================================== */}
+
+      <AnimatePresence>
+        {showBulkAssignModal && (
+          <Modal
+            onClose={() => {
+              if (bulkSubmitting) return;
+              setShowBulkAssignModal(false);
+            }}
+            title="Assign Subjects to Classes"
+            theme={theme}
+            fullscreen
+          >
+            <div className="space-y-5">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+              {/* STEP 1 — CLASSES */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <label
+                    className={`block text-sm font-medium ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
+                    1. Select Classes
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBulkSelectedClassIds((prev) =>
+                        prev.length === classes.length ? [] : classes.map((c) => c.id)
+                      )
+                    }
+                    className={`text-sm px-3 py-1 rounded-lg transition ${
+                      theme === 'dark'
+                        ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10'
+                        : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                    }`}
+                  >
+                    {bulkSelectedClassIds.length === classes.length && classes.length > 0
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+
+                <div
+                  className={`max-h-64 flex-1 min-h-[8rem] overflow-y-auto rounded-lg border ${
+                    theme === 'dark'
+                      ? 'bg-gray-800 border-gray-700'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  {classes.length === 0 ? (
+                    <p className="p-4 text-center text-sm text-gray-400">No classes found.</p>
+                  ) : (
+                    classes.map((cls) => {
+                      const checked = bulkSelectedClassIds.includes(cls.id);
+                      return (
+                        <label
+                          key={cls.id}
+                          className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition ${
+                            theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                          } ${checked ? (theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50') : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBulkClass(cls.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              theme === 'dark' ? 'text-white' : 'text-gray-900'
+                            }`}
+                          >
+                            {cls.name}
+                          </span>
+                          <span
+                            className={`ml-auto text-xs ${
+                              theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                            }`}
+                          >
+                            {(cls.arms || []).length} arm(s)
+                          </span>
+                        </label>
+                      );
+                    })
+                  )}
+                </div>
+                <p
+                  className={`mt-1 text-xs ${
+                    theme === 'dark' ? 'text-gray-400' : 'text-gray-500'
+                  }`}
+                >
+                  All arms of the selected classes will receive the subjects ({bulkArmIds.length} arm(s) total).
+                </p>
+              </div>
+
+              {/* STEP 2 — SUBJECTS */}
+              <div className="flex flex-col">
+                <div className="flex items-center justify-between mb-2">
+                  <label
+                    className={`block text-sm font-medium ${
+                      theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                    }`}
+                  >
+                    2. Select Subjects (shared by all selected classes)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setBulkSubjectIds((prev) =>
+                        prev.length === subjects.length ? [] : subjects.map((s) => s.id)
+                      )
+                    }
+                    className={`text-sm px-3 py-1 rounded-lg transition ${
+                      theme === 'dark'
+                        ? 'text-blue-400 hover:text-blue-300 hover:bg-white/10'
+                        : 'text-blue-600 hover:text-blue-800 hover:bg-blue-50'
+                    }`}
+                  >
+                    {bulkSubjectIds.length === subjects.length && subjects.length > 0
+                      ? 'Deselect All'
+                      : 'Select All'}
+                  </button>
+                </div>
+
+                <div
+                  className={`max-h-64 flex-1 min-h-[8rem] overflow-y-auto rounded-lg border ${
+                    theme === 'dark'
+                      ? 'bg-gray-800 border-gray-700'
+                      : 'bg-gray-50 border-gray-200'
+                  }`}
+                >
+                  {subjects.length === 0 ? (
+                    <p className="p-4 text-center text-sm text-gray-400">No subjects found. Create subjects first.</p>
+                  ) : (
+                    subjects.map((subject) => {
+                      const checked = bulkSubjectIds.includes(subject.id);
+                      return (
+                        <label
+                          key={subject.id}
+                          className={`flex items-center gap-3 px-4 py-2 cursor-pointer transition ${
+                            theme === 'dark' ? 'hover:bg-white/5' : 'hover:bg-gray-100'
+                          } ${checked ? (theme === 'dark' ? 'bg-blue-900/20' : 'bg-blue-50') : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleBulkSubject(subject.id)}
+                            className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          <span
+                            className={`text-sm font-medium ${
+                              theme === 'dark' ? 'text-white' : 'text-gray-900'
+                            }`}
+                          >
+                            {subject.name}
+                          </span>
+                          {checked && (
+                            <CheckIcon className="h-5 w-5 text-blue-600 dark:text-blue-400 ml-auto" />
+                          )}
+                        </label>
+                      );
+                    })
+                  )}
+                 </div>
+              </div>
+              </div>
+
+              {/* STEP 3 — TEACHER */}
+              <div>
+                <label
+                  className={`block text-sm font-medium mb-1 ${
+                    theme === 'dark' ? 'text-gray-300' : 'text-gray-700'
+                  }`}
+                >
+                  3. Teacher (optional - assigned to all selections)
+                </label>
+                <select
+                  value={bulkTeacherId}
+                  onChange={(e) => setBulkTeacherId(e.target.value)}
+                  className={`w-full px-4 py-2 rounded-lg border focus:outline-none focus:ring-2 ${
+                    theme === 'dark'
+                      ? 'bg-gray-800 border-gray-700 text-white focus:ring-blue-500'
+                      : 'bg-white border-gray-300 text-gray-900 focus:ring-blue-400'
+                  }`}
+                >
+                  <option value="">-- Not assigned --</option>
+                  {allTeachers.map((teacher) => (
+                    <option key={teacher.id} value={teacher.id}>
+                      {teacher.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:justify-end gap-3 pt-2">
+                <button
+                  onClick={() => {
+                    if (bulkSubmitting) return;
+                    setShowBulkAssignModal(false);
+                  }}
+                  className="px-4 py-2 rounded-lg bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleBulkAssign}
+                  disabled={
+                    bulkSubmitting ||
+                    bulkSelectedClassIds.length === 0 ||
+                    bulkSubjectIds.length === 0
+                  }
+                  className="px-4 py-2 bg-blue-600 text-white rounded-lg disabled:opacity-50 hover:bg-blue-700 transition"
+                >
+                  {bulkSubmitting
+                    ? 'Assigning...'
+                    : `Assign ${bulkSubjectIds.length} subject(s) to ${bulkArmIds.length} arm(s)`}
+                </button>
+              </div>
+            </div>
+          </Modal>
+        )}
+      </AnimatePresence>
+
+      {/* ======================================================
           ASSIGN TEACHER MODAL
       ====================================================== */}
 
@@ -1799,6 +2380,8 @@ interface ModalProps {
   onClose: () => void;
   title: string;
   theme: string;
+  /** Fullscreen layout: content is arranged in responsive columns */
+  fullscreen?: boolean;
 }
 
 function Modal({
@@ -1806,6 +2389,7 @@ function Modal({
   onClose,
   title,
   theme,
+  fullscreen = false,
 }: ModalProps) {
   return (
     <>
@@ -1821,7 +2405,7 @@ function Modal({
 
       {/* MODAL */}
 
-      <div className="fixed inset-0 flex items-center justify-center z-50 p-4 pointer-events-none">
+      <div className="fixed inset-0 flex items-center justify-center z-50 p-0 sm:p-4 pointer-events-none">
 
         <motion.div
           initial={{
@@ -1839,7 +2423,11 @@ function Modal({
           onClick={(e) =>
             e.stopPropagation()
           }
-          className={`w-full max-w-md rounded-2xl shadow-2xl overflow-hidden pointer-events-auto ${
+          className={`${
+            fullscreen
+              ? 'w-full h-full sm:h-[calc(100vh-2rem)] sm:rounded-2xl max-w-none'
+              : 'w-full max-w-md rounded-2xl'
+          } shadow-2xl overflow-hidden pointer-events-auto flex flex-col ${
             theme === 'dark'
               ? 'bg-gray-900'
               : 'bg-white'
@@ -1848,7 +2436,7 @@ function Modal({
 
           {/* HEADER */}
 
-          <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 shrink-0">
 
             <h3
               className={`text-xl font-bold ${
@@ -1872,7 +2460,13 @@ function Modal({
 
           {/* BODY */}
 
-          <div className="p-6">
+          <div
+            className={`overflow-y-auto ${
+              fullscreen
+                ? 'flex-1 p-4 sm:p-6 overflow-x-hidden'
+                : 'p-6'
+            }`}
+          >
             {children}
           </div>
 
