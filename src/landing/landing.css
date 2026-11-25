@@ -1,0 +1,16 @@
+/* Landing page global styles — pulled from the Mazoje/smart-edufy repo's
+   src/index.css. Scoped under .smart-landing so it doesn't clash with the
+   app's own Tailwind styles. */
+.smart-landing * {
+  box-sizing: border-box;
+}
+.smart-landing,
+.smart-landing html,
+.smart-landing body,
+.smart-landing #root {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  min-height: 100vh;
+  background-color: #faf5ff !important;
+}

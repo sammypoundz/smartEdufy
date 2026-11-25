@@ -157,7 +157,7 @@ export default function AccountantLayout() {
   const handleLogoutConfirm = () => {
     setLogoutOpen(false);
     logout();
-    navigate("/login");
+    navigate("/");
   };
 
   const initials = (user?.name || "A").charAt(0).toUpperCase();

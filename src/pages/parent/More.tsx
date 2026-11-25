@@ -25,7 +25,7 @@ export default function ParentMore() {
   const doLogout = async () => {
     setLogoutOpen(false);
     await logout();
-    navigate("/login", { replace: true });
+    navigate("/", { replace: true });
   };
 
   const items = [

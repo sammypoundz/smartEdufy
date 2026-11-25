@@ -336,7 +336,7 @@ export default function TeacherLayout() {
       }
     }
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const toggleSidebar = () => {

@@ -180,7 +180,7 @@ export default function ParentLayout() {
   const confirmLogout = () => {
     setShowLogoutConfirm(false);
     logout();
-    navigate("/login");
+    navigate("/");
   };
 
   const toggleSidebar = () => {

@@ -36,6 +36,7 @@ export const ALL_PRIVILEGES: PagePrivilege[] = [
   { key: 'users', label: 'User Management', group: 'Administration', adminHref: '/admin/users' },
   { key: 'roles', label: 'Roles & Privileges', group: 'Administration', adminHref: '/admin/roles' },
   { key: 'inventory', label: 'Inventory', group: 'Administration', adminHref: '/admin/inventory' },
+  { key: 'library', label: 'Library', group: 'Administration', adminHref: '/admin/library' },
   { key: 'settings', label: 'Settings', group: 'Administration', adminHref: '/admin/settings' },
   { key: 'audit-logs', label: 'Audit Logs', group: 'Administration', adminHref: '/admin/audit-logs', href: '/admin/audit-logs' },
 ];
@@ -59,7 +60,7 @@ export const SYSTEM_ROLE_PRIVILEGES: Record<string, string[]> = {
   ],
   BURSAR: ['fees', 'expenses', 'reports', 'inventory'],
   ACCOUNTANT: ['fees', 'expenses', 'payroll'],
-  LIBRARIAN: ['inventory', 'students'],
+  LIBRARIAN: ['library', 'inventory', 'students', 'fees'],
   PARENT: [],
   STUDENT: [],
 };
@@ -88,6 +89,7 @@ export const PRIVILEGE_ROUTES: Record<string, string[]> = Object.fromEntries(
       ...(p.key === 'students' ? ['/admin/student'] : []),
       ...(p.key === 'subjects' ? ['/admin/subject', '/teacher/subject'] : []),
       ...(p.key === 'teachers' ? ['/admin/teacher'] : []),
+      ...(p.key === 'library' ? ['/admin/library'] : []),
     ].filter(Boolean) as string[],
   ])
 );

@@ -105,7 +105,10 @@ const categories = [
   },
   {
     name: 'Inventory',
-    items: [{ name: 'Inventory', href: '/admin/inventory', icon: CubeIcon, privilege: 'inventory' }],
+    items: [
+      { name: 'Inventory', href: '/admin/inventory', icon: CubeIcon, privilege: 'inventory' },
+      { name: 'Library', href: '/admin/library', icon: BookOpenIcon, privilege: 'library' },
+    ],
   },
   {
     name: 'System',
@@ -444,7 +447,7 @@ export default function AdminLayout() {
       }
     }
     logout();
-    navigate('/login');
+    navigate('/');
   };
 
   const toggleSidebar = () => {

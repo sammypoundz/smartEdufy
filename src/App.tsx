@@ -5,7 +5,6 @@ import TeacherSubjects from './pages/teacher/Subjects';
 import TeacherRegister from './pages/auth/TeacherRegister';
 import SchoolRegister from './pages/auth/SchoolRegister';
 import TeacherProfileSetup from './pages/teacher/ProfileSetup';
-import Login from './pages/auth/Login';
 import ForgotPassword from './pages/auth/ForgotPassword';
 import ProtectedRoute from './components/ProtectedRoute';
 import OfflineIndicator from './components/OfflineIndicator';
@@ -32,6 +31,7 @@ import ParentChildDetail from './pages/parent/ChildDetail';
 import ParentFees from './pages/parent/Fees';
 import ParentMessages from './pages/parent/Messages';
 import ParentMore from './pages/parent/More';
+import ParentProfile from './pages/parent/Profile';
 import AdminFees from './pages/admin/Fees';
 import AdminBroadsheet from './pages/admin/Broadsheet';
 import AdminCBT from './pages/admin/CBT';
@@ -42,6 +42,7 @@ import TimetableWorkflow from './pages/timetable/TimetableWorkflow';
 import AdminAssessmentFormat from './pages/admin/AssessmentFormat';
 import AdminExpenses from './pages/admin/Expenses';
 import AdminInventory from './pages/admin/Inventory';
+import AdminLibrary from './pages/admin/Library';
 import AdminPayroll from './pages/admin/Payroll';
 import AdminHelp from './pages/admin/Help';
 import AdminStaff from './pages/admin/Staff';
@@ -63,6 +64,7 @@ import TeacherQuestions from './pages/teacher/Questions';
 import QuestionReviewPage from './pages/admin/QuestionReview';
 import EdufyAI, { EdufyProvider } from './edufy/EdufyAI';
 import OfflineManager from './pages/admin/OfflineManager';
+import Landing from './landing/Landing';
 
 // Super Admin console (separate auth realm + layout)
 import { PlatformAuthProvider, usePlatformAuth } from './contexts/PlatformAuthContext';
@@ -167,7 +169,6 @@ function App() {
         } />
 
         {/* Public routes – no layout */}
-        <Route path="/login" element={<Login />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password" element={<ForgotPassword />} />
         <Route path="/register/teacher" element={<TeacherRegister />} />
@@ -176,10 +177,12 @@ function App() {
         <Route path="/student/test" element={<TestPortal />} />
 <Route path="/payment/callback" element={<PaymentCallback />} />
 
-        {/* Root redirect – protected */}
-        <Route element={<ProtectedRoute />}>
-          <Route path="/" element={<RoleBasedRedirect />} />
-        </Route>
+        {/* ====== PUBLIC LANDING PAGE (marketing site) ====== */}
+        <Route path="/" element={<Landing />} />
+        <Route path="/home" element={<Landing />} />
+        <Route path="/login" element={<Landing initialPage="signin" />} />
+        <Route path="/signin" element={<Landing initialPage="signin" />} />
+        <Route path="/signup" element={<Landing initialPage="signin-signup" />} />
 
         {/* ====== ADMIN ROUTES — open to any user with a matching
              privilege (ADMIN/PRINCIPAL implicitly hold all) ====== */}
@@ -236,6 +239,7 @@ function App() {
             <Route path="assessment-format" element={<AdminAssessmentFormat />} />
             <Route path="expenses" element={<AdminExpenses />} />
             <Route path="inventory" element={<AdminInventory />} />
+            <Route path="library" element={<AdminLibrary />} />
             <Route path="payroll" element={<AdminPayroll />} />
             <Route path="help" element={<AdminHelp />} />
             <Route path="notifications" element={<Notifications />} />
@@ -337,6 +341,9 @@ function App() {
             <Route path="fees" element={<ParentFees />} />
             <Route path="messages" element={<ParentMessages />} />
             <Route path="more" element={<ParentMore />} />
+            <Route path="profile" element={<ParentProfile />} />
+            <Route path="notifications" element={<Notifications />} />
+            <Route path="support" element={<AdminHelp />} />
           </Route>
         </Route>
 

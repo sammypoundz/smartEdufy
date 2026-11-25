@@ -127,7 +127,7 @@ export default function SchoolRegister() {
 
       {/* Back link */}
       <Link
-        to="/login"
+        to="/"
         className={`fixed top-4 left-4 sm:top-6 sm:left-6 z-50 flex items-center gap-1.5 rounded-full border px-4 py-2 text-xs font-semibold backdrop-blur-md transition-colors ${
           dark
             ? "border-white/10 bg-white/[0.06] text-slate-300 hover:bg-white/[0.12]"
@@ -135,7 +135,7 @@ export default function SchoolRegister() {
         }`}
       >
         <ArrowLeftIcon className="h-4 w-4" />
-        Back to login
+        Back to home
       </Link>
 
       <motion.div
