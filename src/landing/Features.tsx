@@ -210,7 +210,7 @@ function FeatureCard({ item }: { item: FeatureItem }) {
     <article className="about-feature-card">
       <div className="about-icon-box">
         {React.cloneElement(
-          item.icon as React.ReactElement,
+          item.icon as React.ReactElement<any>,
           {
             size: 19,
             strokeWidth: 2,

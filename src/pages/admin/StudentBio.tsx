@@ -705,9 +705,9 @@ export default function StudentBio() {
                       {feeRecords.map(fee => (
                         <tr key={fee.id} className="border-b border-gray-100 dark:border-gray-800">
                           <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{fee.term}</td>
-                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{fee.amount.toLocaleString()}</td>
-                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{fee.paid.toLocaleString()}</td>
-                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{new Date(fee.dueDate).toLocaleDateString()}</td>
+                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{(fee.amount ?? 0).toLocaleString()}</td>
+                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{(fee.paid ?? 0).toLocaleString()}</td>
+                          <td className="py-2 px-2 text-gray-900 dark:text-gray-200">{fee.dueDate ? new Date(fee.dueDate).toLocaleDateString() : '—'}</td>
                           <td className="py-2 px-2">
                             <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                               fee.status === 'paid'
@@ -717,7 +717,7 @@ export default function StudentBio() {
                                 : 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300'
                             }`}>
                               {fee.status === 'paid' ? <CheckCircleIcon className="h-3 w-3" /> : fee.status === 'partial' ? <CheckCircleIcon className="h-3 w-3" /> : <XCircleIcon className="h-3 w-3" />}
-                              {fee.status.charAt(0).toUpperCase() + fee.status.slice(1)}
+                              {fee.status ? fee.status.charAt(0).toUpperCase() + fee.status.slice(1) : 'Unknown'}
                             </span>
                           </td>
                         </tr>

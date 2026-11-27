@@ -2,24 +2,32 @@
 import React, { useState } from 'react';
 import {
   CheckCircle2,
-  Rocket,
   Sparkles,
-  ArrowRight,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  MessageCircle
 } from 'lucide-react';
+
+// WhatsApp contact for pricing enquiries — opens a chat with a pre-typed
+// message asking about SmartEdufy pricing.
+const WHATSAPP_NUMBER = '2348109775355'; // +234 810 977 5355
+const WHATSAPP_PRICING_MESSAGE =
+  "Hello SmartEdufy, I would like to enquire about your pricing plans. Please send me more details about SmartEdufy pricing.";
+const WHATSAPP_PRICING_LINK = `https://wa.me/${WHATSAPP_NUMBER}?text=${encodeURIComponent(
+  WHATSAPP_PRICING_MESSAGE
+)}`;
 
 export default function PricingPage() {
   const [openFaq, setOpenFaq] = useState<number | null>(0);
 
   const faqs = [
     {
-      question: "Is SmartEdufy Basic really free forever?",
-      answer: "Yes. SmartEdufy Basic is 100% free with no monthly subscription charges or trial expiration. You get unlimited access to student management, CA entry, report cards, attendance, timetables, and all 3 mobile apps."
+      question: "How much does SmartEdufy cost?",
+      answer: "Pricing depends on your school's size and needs. Chat with us on WhatsApp (+234 810 977 5355) and we'll send you the actual price for your school, along with everything included."
     },
     {
       question: "What will be included in SmartEdufy Premium?",
-      answer: "SmartEdufy Premium introduces autonomous AI school assistants, intelligent conflict-free timetabling, predictive academic & fee analytics, automated terminal reports, and advanced multi-campus governance tools."
+      answer: "SmartEdufy Premium introduces autonomous AI school assistants, intelligent conflict-free timetabling, predictive academic & fee analytics, automated terminal reports, and advanced multi-campus governance tools. Contact us on WhatsApp to get the actual pricing for your school."
     },
     {
       question: "How fast can our school onboard?",
@@ -63,8 +71,7 @@ export default function PricingPage() {
               <h2 style={styles.cardName}>SmartEdufy Basic</h2>
 
               <div style={styles.priceRow}>
-                <span style={styles.priceMain}>Free</span>
-                <span style={styles.priceSub}>($0 / ₦0)</span>
+                <span style={styles.priceBlue}>Contact for pricing</span>
               </div>
 
               <p style={styles.cardTarget}>
@@ -72,9 +79,9 @@ export default function PricingPage() {
               </p>
             </div>
 
-            <button style={styles.primaryBtn}>
-              <span>Get Started Free</span>
-              <ArrowRight size={16} />
+            <button style={styles.primaryBtn} onClick={() => window.open(WHATSAPP_PRICING_LINK, '_blank', 'noopener')}>
+              <span>Contact us on WhatsApp</span>
+              <MessageCircle size={16} />
             </button>
 
             <div style={styles.featureList}>
@@ -98,7 +105,7 @@ export default function PricingPage() {
 
             <div style={styles.cardFooter}>
               <p style={styles.footerNote}>
-                No credit card required • Zero subscription fees
+                Chat with us on WhatsApp to know the actual price for your school
               </p>
             </div>
           </div>
@@ -116,7 +123,7 @@ export default function PricingPage() {
               <h2 style={styles.cardName}>SmartEdufy Premium</h2>
 
               <div style={styles.priceRow}>
-                <span style={styles.priceBlue}>Next-Gen AI</span>
+                <span style={styles.priceBlue}>Contact for pricing</span>
               </div>
 
               <p style={styles.cardTarget}>
@@ -124,9 +131,9 @@ export default function PricingPage() {
               </p>
             </div>
 
-            <button style={styles.outlineBtn}>
-              <span>Join Waitlist</span>
-              <Rocket size={16} />
+            <button style={styles.outlineBtn} onClick={() => window.open(WHATSAPP_PRICING_LINK, '_blank', 'noopener')}>
+              <span>Contact us on WhatsApp</span>
+              <MessageCircle size={16} />
             </button>
 
             <div style={styles.featureList}>
@@ -150,7 +157,7 @@ export default function PricingPage() {
 
             <div style={styles.cardFooter}>
               <p style={styles.highlightFooterNote}>
-                Priority waitlist schools get grandfathered pricing
+                Chat with us on WhatsApp to know the actual price for your school
               </p>
             </div>
           </div>
@@ -213,13 +220,19 @@ export default function PricingPage() {
           </h2>
 
           <p style={styles.bannerSubtitle}>
-            Modernize your school with zero software fees.
+            Chat with us on WhatsApp to know the actual price for your school.
           </p>
 
-          <button style={styles.bannerBtn}>
-            Get Started Free
-            <ArrowRight size={16} />
-          </button>
+          <a
+            href={WHATSAPP_PRICING_LINK}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={styles.whatsappBtn}
+          >
+            <MessageCircle size={18} />
+            <span>Contact us on WhatsApp</span>
+            <span style={styles.whatsappNumber}>+234 810 977 5355</span>
+          </a>
         </div>
 
       </div>
@@ -818,5 +831,35 @@ const styles: { [key: string]: React.CSSProperties } = {
     gap: '9px',
 
     boxShadow: '0 5px 15px rgba(15, 23, 42, 0.13)',
+  },
+
+  /* WHATSAPP PRICING ENQUIRY BUTTON */
+
+  whatsappBtn: {
+    position: 'relative',
+
+    display: 'inline-flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '9px',
+
+    marginTop: '18px',
+    padding: '13px 24px',
+    borderRadius: '12px',
+
+    background: '#25D366',
+    color: '#FFFFFF',
+
+    fontSize: '14px',
+    fontWeight: 750,
+    textDecoration: 'none',
+
+    boxShadow: '0 5px 15px rgba(37, 211, 102, 0.30)',
+  },
+
+  whatsappNumber: {
+    fontSize: '12.5px',
+    fontWeight: 550,
+    opacity: 0.9,
   },
 };

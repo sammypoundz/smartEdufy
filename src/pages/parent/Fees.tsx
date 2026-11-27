@@ -15,7 +15,7 @@ import { useAuth } from "../../contexts/AuthContext";
 import { useParentChildren } from "../../hooks/useParentData";
 import { api } from "../../utils/api";
 import { getErrorMessage } from "../../hooks/queryHelpers";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 
 interface FeeRow {
   id: string;
@@ -32,7 +32,6 @@ const fmtN = (n: number) => `₦${Number(n || 0).toLocaleString()}`;
 export default function ParentFees() {
   const { theme } = useTheme();
   const { token } = useAuth();
-  const queryClient = useQueryClient();
   const isDark = theme === "dark";
   const { data, isLoading } = useParentChildren(token);
   const children = data?.children ?? [];

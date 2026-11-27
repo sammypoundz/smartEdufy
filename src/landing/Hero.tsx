@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { CheckCircle2, ArrowRight, Sparkles } from 'lucide-react';
 
 interface HeroProps {
@@ -58,6 +58,15 @@ export default function Hero({ setCurrentPage }: HeroProps) {
               >
                 Sign up for free
                 <ArrowRight size={17} />
+              </button>
+
+              {/* Dedicated CTA for school onboarding — school registration is
+                  separate from user sign-up and lives at /register/school. */}
+              <button
+                className="hero-secondary-btn"
+                onClick={() => window.location.assign('/register/school')}
+              >
+                Register School
               </button>
 
               <button

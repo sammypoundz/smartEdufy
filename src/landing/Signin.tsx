@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -24,11 +24,53 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
   const [password, setPassword] = useState<string>('');
   const [fullName, setFullName] = useState<string>('');
   const [schoolName, setSchoolName] = useState<string>('');
+  // School-name autocomplete: as the admin types, we search the backend's
+  // public schools list (/auth/schools) and offer matching existing schools.
+  // If the typed name matches an existing school they pick it; if NOT, the
+  // form tells them the school isn't registered and points them to school
+  // registration (school onboarding is separate from user registration).
+  const [schoolSuggestions, setSchoolSuggestions] = useState<{ id: string; name: string }[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
+  const [schoolExists, setSchoolExists] = useState<boolean | null>(null);
+  // The typed school is only "concluded" to not exist AFTER the user has
+  // stopped typing (debounce) — while typing, partial matches act as hints
+  // and the not-registered error stays suppressed.
+  const [typingSchool, setTypingSchool] = useState<boolean>(false);
+  const schoolTimer = useRef<number | null>(null);
+  // Live email validation state (sign-up): format is validated on every
+  // keystroke and existence is checked against the backend (debounced).
+  const [emailStatus, setEmailStatus] = useState<'idle' | 'checking' | 'valid' | 'invalid_format' | 'taken'>('idle');
+  const emailCheckTimer = useRef<number | null>(null);
+  const [allSchools, setAllSchools] = useState<{ id: string; name: string }[]>([]);
   const [newPassword, setNewPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   
-  // Carousel slide state (0 = Slide 1, 1 = Slide 2)
+  // Fetch the public schools list once for the sign-up autocomplete.
+  useEffect(() => {
+    let cancelled = false;
+    api.get('/auth/schools')
+      .then((res: any) => {
+        if (cancelled) return;
+        const list = (res?.data?.schools || []).map((s: any) => ({ id: s.id, name: s.name }));
+        setAllSchools(list);
+      })
+      .catch(() => {
+        /* public list unavailable — autocomplete silently degrades */
+      });
+    return () => { cancelled = true; };
+  }, []);
+  
+  // Carousel slide state (0 = AI writeup, 1 = dashboard mockup)
+  // `visibleSlide` drives the enter/exit animation: on slide change the old
+  // content animates out first, then the new slide animates in.
+  // Slide 0 shows a handwritten-style writeup about SmartEdufy's AI-powered
+  // ecosystem that types itself in (handwriting animation), then the slider
+  // advances to the dashboard mockup. Hovering pauses the rotation.
   const [currentSlide, setCurrentSlide] = useState<number>(0);
+  const [visibleSlide, setVisibleSlide] = useState<number>(0);
+  const [phase, setPhase] = useState<'in' | 'out'>('in');
+  const [hovered, setHovered] = useState<boolean>(false);
+  const heroRef = useRef<HTMLElement | null>(null);
 
   // Responsive state for mobile viewports
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -44,14 +86,34 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Automatic slide/scroll effect every 5 seconds (5000ms)
+  // Automatic rotation. WRITEUP_DURATION gives the handwriting animation
+  // time to finish (~8s) before the slider moves to the mockup; MOCKUP_HOLD
+  // is how long the mockup stays before cycling back. Hover pauses.
+  const SLIDER_ENABLED = true;
+  const WRITEUP_DURATION = 11000;
+  const MOCKUP_HOLD = 8000;
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentSlide((prevSlide) => (prevSlide === 0 ? 1 : 0));
-    }, 5000);
+    if (!SLIDER_ENABLED) return;
+    if (hovered) return; // paused while the user hovers the hero panel
+    const delay = currentSlide === 0 ? WRITEUP_DURATION : MOCKUP_HOLD;
+    const t = setTimeout(() => {
+      setCurrentSlide((prev) => (prev === 0 ? 1 : 0));
+    }, delay);
+    return () => clearTimeout(t);
+  }, [currentSlide, hovered]);
 
-    return () => clearInterval(interval);
-  }, []);
+  useEffect(() => {
+    if (visibleSlide === currentSlide && phase === 'in') return;
+    if (visibleSlide === currentSlide) return; // already transitioning in
+    // Phase 1 — animate the current content out (300ms), then swap content
+    // and animate the next slide in.
+    setPhase('out');
+    const t = setTimeout(() => {
+      setVisibleSlide(currentSlide);
+      setPhase('in');
+    }, 300);
+    return () => clearTimeout(t);
+  }, [currentSlide, visibleSlide, phase]);
 
   // ===== REAL AUTH HANDLERS (wired to the SmartEdufy backend) =====
 
@@ -71,11 +133,97 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
     }
   };
 
+  // School-name autocomplete: filter the fetched school list as the user
+  // types. Suggestions (hints) react instantly to every keystroke; the
+  // "school doesn't exist" conclusion is DEBOUNCED — it only fires once the
+  // user has stopped typing for 700ms AND no registered school matches.
+  const handleSchoolNameChange = (value: string) => {
+    setSchoolName(value);
+    // Mark the field as "still typing" — suppresses the not-found error.
+    setTypingSchool(true);
+    if (schoolTimer.current) window.clearTimeout(schoolTimer.current);
+    schoolTimer.current = window.setTimeout(() => setTypingSchool(false), 700);
+
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) {
+      setSchoolSuggestions([]);
+      setShowSuggestions(false);
+      setSchoolExists(null);
+      return;
+    }
+    const matches = allSchools.filter((s) =>
+      s.name.toLowerCase().includes(trimmed),
+    );
+    setSchoolSuggestions(matches.slice(0, 6));
+    // Hints (autocomplete) show whenever there are partial matches — the
+    // not-registered error is a separate, role-specific signal below.
+    setShowSuggestions(matches.length > 0);
+    // Exact match (case-insensitive) → existing school; otherwise it's not
+    // registered yet — flag it so the form can react appropriately.
+    setSchoolExists(
+      allSchools.some(
+        (s) => s.name.toLowerCase() === trimmed,
+      ),
+    );
+  };
+
+  const pickSchool = (name: string) => {
+    setSchoolName(name);
+    setShowSuggestions(false);
+    setSchoolExists(true);
+    setTypingSchool(false);
+    if (schoolTimer.current) window.clearTimeout(schoolTimer.current);
+  };
+
+  // ===== Live email validation (sign-up) =====
+  // Format is checked on every keystroke; once the format is valid we debounce
+  // a backend existence check so the user instantly knows if the email is
+  // already registered (they should log in instead of signing up again).
+  const emailFormatOk = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim());
+
+  useEffect(() => {
+    if (activeNav !== 'Sign Up') return;
+    const value = email.trim();
+    if (emailCheckTimer.current) window.clearTimeout(emailCheckTimer.current);
+    if (!value) {
+      setEmailStatus('idle');
+      return;
+    }
+    if (!emailFormatOk) {
+      setEmailStatus('invalid_format');
+      return;
+    }
+    setEmailStatus('checking');
+    emailCheckTimer.current = window.setTimeout(async () => {
+      try {
+        const res = await api.get(`/auth/check-email?email=${encodeURIComponent(value)}`);
+        setEmailStatus(res.data?.exists ? 'taken' : 'valid');
+      } catch {
+        // Availability check unavailable — format is still valid.
+        setEmailStatus('valid');
+      }
+    }, 500);
+    return () => {
+      if (emailCheckTimer.current) window.clearTimeout(emailCheckTimer.current);
+    };
+  }, [email, activeNav, emailFormatOk]);
+
+  const emailInvalid = emailStatus === 'invalid_format';
+  const emailTaken = emailStatus === 'taken';
+
   const handleSignUp = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (submitting) return;
     if (password.length < 6) {
       toast.error('Password must be at least 6 characters');
+      return;
+    }
+    if (!emailFormatOk) {
+      toast.error('Please enter a valid work / school email address');
+      return;
+    }
+    if (emailTaken) {
+      toast.error('An account with this email already exists. Please log in instead.');
       return;
     }
     setSubmitting(true);
@@ -86,7 +234,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
         email: email.trim().toLowerCase(),
         password,
       });
-      // Persist the session directly from the signup response.
+      // register-school creates a brand-new school + its FIRST admin, so the
+      // account is always immediately valid — persist the session directly.
       try {
         localStorage.setItem('token', res.data.token);
         localStorage.setItem('user', JSON.stringify(res.data.user));
@@ -97,9 +246,18 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       toast.success('School account created! Welcome aboard 🎉');
       setTimeout(() => navigate('/admin', { replace: true }), 1200);
     } catch (err: any) {
-      toast.error(
-        err?.response?.data?.error || 'Could not create the school account',
-      );
+      const data = err?.response?.data;
+      if (data?.pendingApproval) {
+        // A second admin registering into an existing school must be
+        // approved by an active admin first — no auto-login.
+        toast.success(
+          data?.message ||
+            'Registration received — your account will be valid once an existing administrator approves it.',
+        );
+        setActiveNav('Sign In');
+      } else {
+        toast.error(data?.error || 'Could not create the account');
+      }
     } finally {
       setSubmitting(false);
     }
@@ -174,13 +332,15 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
           #fcf3ff 100%
         )
       `,
-      display: 'flex',
       flexDirection: 'column',
       alignItems: 'center',
       justifyContent: 'flex-start',
       padding: isMobile ? '2rem 1.25rem' : '2rem 3rem',
       position: 'relative',
       overflow: 'hidden',
+      // On mobile only the right (form) section is shown — the hero panel is
+      // hidden entirely so the login form is the first thing users see.
+      display: isMobile ? 'none' : 'flex',
     },
     homeBtn: {
       display: 'flex',
@@ -210,21 +370,88 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       flexDirection: 'column',
       alignItems: 'center',
       textAlign: 'center',
-      marginTop: isMobile ? '1rem' : 'auto',
-      marginBottom: isMobile ? '1rem' : 'auto',
+      // Nudged up from dead-center so the writeup/mockup sits slightly
+      // above the vertical midpoint of the hero panel.
+      marginTop: '-3rem',
+      marginBottom: 'auto',
       position: 'relative',
+    },
+    // Slide content wrapper — drives the enter/exit animation (opacity +
+    // translate transitions between the 'in' and 'out' phases).
+    slideContent: {
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'center',
+      width: '100%',
+      opacity: phase === 'in' ? 1 : 0,
+      transform: phase === 'in' ? 'translateY(0) scale(1)' : 'translateY(24px) scale(0.98)',
+      transition: 'opacity 0.3s ease, transform 0.3s ease',
+      willChange: 'opacity, transform',
     },
      heroImgFirst: {
-      width: '150%',
-      maxWidth: 'none',
-      height: 'auto',
-      objectFit: 'contain',
-      marginLeft: '25rem',
-      zIndex: 1,
-      position: 'relative',
-      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
-      borderRadius: '8px',
+       // Mockup styling (per design spec): oversized so it slides under the
+       // login form, offset right, pushed down, sidebar visible.
+       width: '160%',
+       maxWidth: 'none',
+       height: 'auto',
+       objectFit: 'contain',
+       objectPosition: 'left center',
+       marginLeft: '25rem',
+       marginTop: '9rem',
+       zIndex: 1,
+       position: 'relative',
+       borderRadius: '10px',
+       boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)',
+     },
+    // ===== AI writeup slide (slide 0) =====
+    writeupSlide: {
+      width: '100%',
+      maxWidth: '520px',
+      display: 'flex',
+      flexDirection: 'column',
+      alignItems: 'flex-start',
+      textAlign: 'left',
+      padding: '1rem 0.5rem',
     },
+    writeupEyebrow: {
+      fontSize: '0.75rem',
+      fontWeight: 700,
+      letterSpacing: '0.18em',
+      textTransform: 'uppercase' as const,
+      color: '#d946ef',
+      marginBottom: '1rem',
+    },
+    writeupHeading: {
+      // Elegant display serif for the headline
+      fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif",
+      fontSize: '2.1rem',
+      fontWeight: 700,
+      color: '#0f172a',
+      lineHeight: 1.2,
+      marginBottom: '1.25rem',
+    },
+    writeupBody: {
+      // Handwriting font for the body — carries the "writing itself in"
+      // feel together with the typewriter-style reveal.
+      fontFamily: "'Caveat', 'Segoe Script', cursive",
+      fontSize: '1.35rem',
+      lineHeight: 1.55,
+      color: '#475569',
+      marginBottom: '1.5rem',
+    },
+    writeupCta: {
+      fontFamily: "'Playfair Display', Georgia, serif",
+      fontSize: '0.95rem',
+      fontWeight: 600,
+      color: '#2563eb',
+      background: 'transparent',
+      border: 'none',
+      cursor: 'pointer',
+      padding: 0,
+      borderBottom: '2px solid #2563eb',
+      paddingBottom: '2px',
+    },
+    // ===== end AI writeup slide =====
     // Second demo image style
    heroImgSecond: {
       width: '130%',
@@ -251,12 +478,12 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       marginBottom: '1.25rem',
     },
     heroHeadline: {
-      fontSize: isMobile ? '1.5rem' : '2rem',
+      fontSize: isMobile ? '1.15rem' : '1.35rem',
       fontWeight: 700,
       color: '#0f172a',
       marginBottom: '0.75rem',
       lineHeight: 1.25,
-      maxWidth: '500px',
+      maxWidth: '460px',
     },
     highlightPink: {
       color: '#d946ef',
@@ -305,7 +532,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       width: '100%',
     },
     formLogo: {
-      display: 'flex',
+      // Hidden on mobile — the header already carries the logo there.
+      display: isMobile ? 'none' : 'flex',
       alignItems: 'center',
       justifyContent: 'center',
       gap: '0.5rem',
@@ -343,7 +571,74 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       display: 'flex',
       flexDirection: 'column',
       gap: '0.35rem',
+      position: 'relative' as const,
     },
+    // ===== School-name autocomplete / validation =====
+    schoolNameHeader: {
+      display: 'flex',
+      justifyContent: 'space-between',
+      alignItems: 'center',
+    },
+    schoolRegLink: {
+      fontSize: '0.75rem',
+      fontWeight: 600,
+      color: '#2563eb',
+      background: 'none',
+      border: 'none',
+      cursor: 'pointer',
+      padding: 0,
+    },
+    suggestionsDropdown: {
+      position: 'absolute' as const,
+      top: '100%',
+      left: 0,
+      right: 0,
+      zIndex: 20,
+      backgroundColor: '#ffffff',
+      border: '1px solid #e2e8f0',
+      borderRadius: '8px',
+      boxShadow: '0 8px 24px rgba(0, 0, 0, 0.12)',
+      overflow: 'hidden',
+      marginTop: '2px',
+    },
+    suggestionItem: {
+      display: 'block',
+      width: '100%',
+      textAlign: 'left' as const,
+      padding: '0.55rem 0.9rem',
+      fontSize: '0.85rem',
+      color: '#1e293b',
+      background: 'none',
+      border: 'none',
+      borderBottom: '1px solid #f1f5f9',
+      cursor: 'pointer',
+    },
+    schoolNotFoundBox: {
+      backgroundColor: '#fef2f2',
+      border: '1px solid #fecaca',
+      borderRadius: '8px',
+      padding: '0.7rem 0.9rem',
+      fontSize: '0.82rem',
+      color: '#991b1b',
+    },
+    schoolNotFoundBtn: {
+      display: 'inline-block',
+      padding: '0.35rem 0.8rem',
+      borderRadius: '6px',
+      backgroundColor: '#ef4444',
+      color: '#ffffff',
+      fontSize: '0.78rem',
+      fontWeight: 600,
+      border: 'none',
+      cursor: 'pointer',
+    },
+    emailErrorText: {
+      margin: 0,
+      fontSize: '0.78rem',
+      color: '#ef4444',
+      fontWeight: 500,
+    },
+    // ===== end autocomplete styles =====
     labelRow: {
       display: 'flex',
       justifyContent: 'space-between',
@@ -569,6 +864,55 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
           from { transform: rotate(0deg); }
           to { transform: rotate(360deg); }
         }
+        /* Google Fonts for the AI writeup slide */
+        @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=Caveat:wght@500;600&display=swap');
+        /* Handwriting entry — PER LINE, smooth (no jitter): each line is a
+           nowrap block whose clip-path wipes left→right like being written,
+           with a soft caret that fades out as the line completes. Lines are
+           staggered by inline animation-delay. */
+        .se-writeup-typed {
+          display: block;
+          white-space: nowrap;
+          max-width: 100%;
+          overflow: hidden;
+          clip-path: inset(0 100% 0 0);
+          animation: se-line-writing 1.2s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+          position: relative;
+        }
+        .se-writeup-typed::after {
+          content: '';
+          position: absolute;
+          top: 12%;
+          bottom: 12%;
+          right: 0;
+          width: 2px;
+          background: #d946ef;
+          opacity: 0;
+          animation: se-caret-glow 1.2s ease-in forwards;
+          animation-delay: inherit;
+        }
+        @keyframes se-line-writing {
+          from { clip-path: inset(0 100% 0 0); }
+          to { clip-path: inset(0 0 0 0); }
+        }
+        /* Caret appears during the write, then softly fades as the line
+           completes — no endless blinking, nothing noisy. */
+        @keyframes se-caret-glow {
+          0% { opacity: 0; }
+          15% { opacity: 1; }
+          80% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+        .se-writeup-fade {
+          animation: se-fade-up 1s ease both;
+        }
+        .se-writeup-fade-late {
+          animation: se-fade-up 1s ease 3.2s both;
+        }
+        @keyframes se-fade-up {
+          from { opacity: 0; transform: translateY(14px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
       `}</style>
       {/* Top Header */}
       <header style={styles.topHeader}>
@@ -593,22 +937,32 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
         </div>
 
         <nav style={styles.navLinks}>
-          {['Sign In', 'Sign Up', 'Forgot Password', 'Reset Password'].map((item) => (
-            <button
-              key={item}
-              style={getNavBtnStyle(activeNav === item)}
-              onClick={() => setActiveNav(item)}
-            >
-              {item}
-            </button>
-          ))}
+          {/* Mobile: the nav is hidden — mobile users get just the logo
+              header and the login form. */}
+          {isMobile
+            ? null
+            : ['Sign In', 'Sign Up', 'Forgot Password', 'Reset Password'].map((item) => (
+              <button
+                key={item}
+                style={getNavBtnStyle(activeNav === item)}
+                onClick={() => setActiveNav(item)}
+              >
+                {item}
+              </button>
+            ))}
         </nav>
       </header>
 
       {/* Main Body */}
       <main style={styles.mainContent}>
-        {/* Left Hero Section */}
-        <section style={styles.leftHeroSection}>
+        {/* Left Hero Section — hover pauses the slider rotation */}
+        <section
+          style={styles.leftHeroSection}
+          ref={heroRef}
+          onMouseEnter={() => setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+        >
+          {/* Home button — routes back to the landing page */}
           <button
             style={styles.homeBtn}
             onClick={() => (setCurrentPage ? setCurrentPage('home') : navigate('/'))}
@@ -617,44 +971,62 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
           </button>
 
           {/* Carousel Dots */}
-          <div style={styles.carouselDots}>
-            <span style={getDotStyle(currentSlide === 0)} onClick={() => setCurrentSlide(0)} title="Slide 1"></span>
-            <span style={getDotStyle(currentSlide === 1)} onClick={() => setCurrentSlide(1)} title="Slide 2"></span>
-          </div>
+          {SLIDER_ENABLED && (
+            <div style={styles.carouselDots}>
+              <span style={getDotStyle(currentSlide === 0)} onClick={() => setCurrentSlide(0)} title="SmartEdufy AI"></span>
+              <span style={getDotStyle(currentSlide === 1)} onClick={() => setCurrentSlide(1)} title="Dashboard"></span>
+            </div>
+          )}
 
           <div style={styles.heroImageContainer}>
-            {currentSlide === 0 ? (
-              <>
-                <div style={styles.badge}>
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 13l4 4L19 7" />
-                  </svg>
-                  Trusted by Leading African Institutions
-                </div>
-                <h2 style={styles.heroHeadline}>
-                  Empowering the <span style={styles.highlightPink}>next</span> generation of academic <span style={{ color: '#c084fc' }}>leaders</span>.
-                </h2>
-                <p style={{ color: '#64748b', fontSize: '0.95rem', maxWidth: '440px', lineHeight: 1.5 }}>
-                  Streamline admissions, student tracking, communication, and examinations with a modern system built for scale.
-                </p>
-                <img
-                  src="desktop1.jpeg"
-                  alt="SmartEdufy Dashboard Preview"
-                  style={styles.heroImgFirst}
-                />
-              </>
-            ) : (
-              <>
-                <h2 style={styles.heroHeadline}>
-                  Manage <span style={styles.highlightPink}>multiple</span> schools, campuses, and track operations across <span style={styles.highlightPink}>Nationwide</span>.
-                </h2>
-                <img
-                  src="desktop2.png"
-                  alt="SmartEdufy Nationwide Campuses Map"
-                  style={styles.heroImgSecond}
-                />
-              </>
-            )}
+            {/* Animated slide wrapper: fades/slides out on change, then the
+                new slide animates up and in. */}
+            <div style={styles.slideContent} key={visibleSlide}>
+              {visibleSlide === 0 ? (
+                <>
+                  {/* SLIDE 1 — SmartEdufy AI writeup, vertically centered in
+                      the hero panel, with a per-line handwriting reveal. */}
+                  <div style={styles.writeupSlide}>
+                    <p className="se-writeup-fade" style={styles.writeupEyebrow}>
+                      SmartEdufy AI
+                    </p>
+                    <h2 className="se-writeup-fade" style={styles.writeupHeading}>
+                      An AI-Powered Education Ecosystem
+                    </h2>
+                    {/* Handwriting animation runs line by line — each line
+                        reveals in sequence with its own caret. */}
+                    <p
+                      className="se-writeup-typed"
+                      style={{ ...styles.writeupBody, animationDelay: '0.2s' }}
+                    >
+                      AI-powered timetabling, testing and reporting
+                    </p>
+                    <p
+                      className="se-writeup-typed"
+                      style={{ ...styles.writeupBody, animationDelay: '1.6s' }}
+                    >
+                      — built for African schools of every size.
+                    </p>
+                    <button
+                      className="se-writeup-fade-late"
+                      style={styles.writeupCta}
+                      onClick={() => (setCurrentPage ? setCurrentPage('features') : navigate('/'))}
+                    >
+                      Discover more →
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* SLIDE 2 — the dashboard mockup */}
+                  <img
+                    src="desktop1.jpeg"
+                    alt="SmartEdufy Dashboard Preview"
+                    style={styles.heroImgFirst}
+                  />
+                </>
+              )}
+            </div>
           </div>
         </section>
 
@@ -801,15 +1173,80 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
                 </div>
 
                 <div style={styles.formGroup}>
-                  <label style={styles.label} htmlFor="schoolName">School Name</label>
+                  <div style={styles.schoolNameHeader}>
+                    <label style={styles.label} htmlFor="schoolName">School Name</label>
+                  {/* "Register a school →" link — only for the Administrative
+                      role, and only once typing has settled with no match. */}
+                    {role === 'Administrative' && schoolExists === false && !typingSchool && (
+                      <button
+                        type="button"
+                        style={styles.schoolRegLink}
+                        onClick={() => navigate('/register/school')}
+                      >
+                        Register a school →
+                      </button>
+                    )}
+                  </div>
                   <input
                     id="schoolName"
                     type="text"
                     value={schoolName}
-                    onChange={(e) => setSchoolName(e.target.value)}
+                    onChange={(e) => handleSchoolNameChange(e.target.value)}
+                    onFocus={() => setShowSuggestions(schoolSuggestions.length > 0)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 150)}
                     style={styles.input}
+                    autoComplete="off"
                     required
                   />
+                  {/* Autocomplete dropdown — existing schools matching the
+                      typed name. */}
+                  {showSuggestions && (
+                    <div style={styles.suggestionsDropdown}>
+                      {schoolSuggestions.map((s) => (
+                        <button
+                          key={s.id}
+                          type="button"
+                          style={styles.suggestionItem}
+                          onMouseDown={(e) => { e.preventDefault(); pickSchool(s.name); }}
+                        >
+                          {s.name}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  {/* Validation:
+                        • Admins → the typed school isn't registered yet, so
+                          they're nudged to school registration.
+                        • Teachers / Parents → plain "school doesn't exist"
+                          error; they can only join an existing school. */}
+                  {schoolName.trim() !== '' && schoolExists === false && !typingSchool && (
+                    role === 'Administrative' ? (
+                      <div style={styles.schoolNotFoundBox}>
+                        <p style={{ margin: 0, fontWeight: 600 }}>
+                          “{schoolName.trim()}” is not a registered school yet.
+                        </p>
+                        <p style={{ margin: '4px 0 8px 0', fontSize: '0.8rem' }}>
+                          Are you an admin setting up a new school? Register it first — school registration is separate from user sign-up.
+                        </p>
+                        <button
+                          type="button"
+                          style={styles.schoolNotFoundBtn}
+                          onClick={() => navigate('/register/school')}
+                        >
+                          Register this school
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={styles.schoolNotFoundBox}>
+                        <p style={{ margin: 0, fontWeight: 600 }}>
+                          School doesn't exist — “{schoolName.trim()}” is not a registered school.
+                        </p>
+                        <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem' }}>
+                          Please pick a registered school from the suggestions, or contact your school admin.
+                        </p>
+                      </div>
+                    )
+                  )}
                 </div>
 
                 <div style={styles.formGroup}>
@@ -819,9 +1256,36 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    style={styles.input}
+                    style={
+                      emailInvalid || emailTaken
+                        ? { ...styles.input, borderColor: '#ef4444' }
+                        : emailStatus === 'valid'
+                          ? { ...styles.input, borderColor: '#16a34a' }
+                          : styles.input
+                    }
                     required
                   />
+                  {/* Live validation feedback while typing */}
+                  {emailInvalid && (
+                    <p style={styles.emailErrorText}>
+                      Please enter a valid email address (e.g. you@school.edu.ng)
+                    </p>
+                  )}
+                  {emailTaken && (
+                    <p style={styles.emailErrorText}>
+                      This email is already registered — try logging in instead.
+                    </p>
+                  )}
+                  {emailStatus === 'checking' && !emailInvalid && !emailTaken && (
+                    <p style={{ ...styles.emailErrorText, color: '#64748b' }}>
+                      Checking email availability…
+                    </p>
+                  )}
+                  {emailStatus === 'valid' && (
+                    <p style={{ ...styles.emailErrorText, color: '#16a34a' }}>
+                      ✓ Email looks good and is available
+                    </p>
+                  )}
                 </div>
 
                 <div style={styles.formGroup}>

@@ -179,6 +179,9 @@ function App() {
 
         {/* ====== PUBLIC LANDING PAGE (marketing site) ====== */}
         <Route path="/" element={<Landing />} />
+        {/* Role-aware entry point: sends logged-in users to the workspace
+            matching their role (admin/teacher/accountant/parent/student). */}
+        <Route path="/dashboard" element={<RoleBasedRedirect />} />
         <Route path="/home" element={<Landing />} />
         <Route path="/login" element={<Landing initialPage="signin" />} />
         <Route path="/signin" element={<Landing initialPage="signin" />} />
