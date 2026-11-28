@@ -26,6 +26,9 @@ interface AuthContextType {
   user: User | null;
   token: string | null;
   loading: boolean;
+  // Direct state setter — used by signup flows that receive a session
+  // straight from the register response (no login round-trip).
+  setUser: (user: User | null) => void;
   login: (email: string, password: string) => Promise<LoginResult>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -197,7 +200,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, token, loading, login, logout, refreshUser }}>
+    <AuthContext.Provider value={{ user, token, loading, setUser, login, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

@@ -102,8 +102,8 @@ export default function SchoolRegister() {
     <div
       className={`min-h-dvh flex items-center justify-center px-4 py-10 transition-colors duration-300 ${
         dark
-          ? "bg-gray-900"
-          : "bg-gradient-to-br from-blue-50 via-white to-indigo-100"
+          ? "bg-[#0B1120]"
+          : "bg-gradient-to-br from-fuchsia-50 via-white to-indigo-100"
       }`}
     >
       {/* Theme toggle */}
@@ -148,22 +148,29 @@ export default function SchoolRegister() {
           className={`rounded-3xl border backdrop-blur-2xl shadow-2xl p-5 sm:p-8 lg:p-10 transition-colors duration-300 ${
             dark
               ? "border-white/10 bg-white/[0.03] shadow-black/40"
-              : "border-slate-200 bg-white shadow-blue-900/15"
+              : "border-white bg-white/70 backdrop-blur-xl shadow-fuchsia-900/10"
           }`}
         >
           {/* Heading */}
           <div
             className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-[11px] font-semibold ${
               dark
-                ? "border-blue-500/20 bg-blue-500/10 text-blue-400"
-                : "border-blue-200 bg-blue-100 text-blue-700"
+                ? "border-fuchsia-500/20 bg-fuchsia-500/10 text-fuchsia-400"
+                : "border-fuchsia-200 bg-fuchsia-100 text-fuchsia-700"
             }`}
           >
             <BuildingOffice2Icon className="h-3.5 w-3.5" />
             For schools
           </div>
+          <p
+            className={`text-[11px] font-bold uppercase tracking-[0.18em] ${
+              dark ? "text-fuchsia-400" : "text-fuchsia-600"
+            }`}
+          >
+            SmartEdufy for Schools
+          </p>
           <h2
-            className={`mt-4 text-2xl font-bold tracking-tight ${
+            className={`mt-2 text-3xl font-bold tracking-tight ${
               dark ? "text-white" : "text-slate-900"
             }`}
           >
@@ -317,7 +324,7 @@ export default function SchoolRegister() {
               disabled={loading}
               whileHover={{ scale: loading ? 1 : 1.01 }}
               whileTap={{ scale: loading ? 1 : 0.99 }}
-              className="group relative mt-2 w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-500 to-indigo-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
+              className="group relative mt-2 w-full overflow-hidden rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-fuchsia-600 py-3 text-sm font-semibold text-white shadow-lg shadow-blue-500/25 transition-all hover:shadow-blue-500/40 disabled:cursor-not-allowed disabled:opacity-50"
             >
               <span className="pointer-events-none absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/25 to-transparent transition-transform duration-700 group-hover:translate-x-full" />
               {loading ? (
@@ -344,8 +351,8 @@ export default function SchoolRegister() {
               to="/login"
               className={`font-semibold ${
                 dark
-                  ? "text-blue-400 hover:text-blue-300"
-                  : "text-blue-600 hover:text-blue-700"
+                  ? "text-fuchsia-400 hover:text-fuchsia-300"
+                  : "text-fuchsia-600 hover:text-fuchsia-700"
               }`}
             >
               Sign in →

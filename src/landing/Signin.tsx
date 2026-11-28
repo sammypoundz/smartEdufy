@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import api from '../services/api';
@@ -11,7 +11,7 @@ interface SigninProps {
 
 export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign In' }: SigninProps) {
   const navigate = useNavigate();
-  const { login } = useAuth();
+  const { login, setUser: setAuthUser } = useAuth();
   const [role, setRole] = useState<string>('Administrative');
   const [activeNav, setActiveNav] = useState<string>(initialAuth);
   const [showPassword, setShowPassword] = useState<boolean>(false);
@@ -32,6 +32,9 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
   const [schoolSuggestions, setSchoolSuggestions] = useState<{ id: string; name: string }[]>([]);
   const [showSuggestions, setShowSuggestions] = useState<boolean>(false);
   const [schoolExists, setSchoolExists] = useState<boolean | null>(null);
+  // The school the user explicitly picked from the suggestions dropdown —
+  // its id is what teacher/parent sign-up needs to join the school.
+  const [pickedSchool, setPickedSchool] = useState<{ id: string; name: string } | null>(null);
   // The typed school is only "concluded" to not exist AFTER the user has
   // stopped typing (debounce) — while typing, partial matches act as hints
   // and the not-registered error stays suppressed.
@@ -139,6 +142,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
   // user has stopped typing for 700ms AND no registered school matches.
   const handleSchoolNameChange = (value: string) => {
     setSchoolName(value);
+    // Name changed by hand — the previously picked school no longer applies.
+    setPickedSchool(null);
     // Mark the field as "still typing" — suppresses the not-found error.
     setTypingSchool(true);
     if (schoolTimer.current) window.clearTimeout(schoolTimer.current);
@@ -168,6 +173,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
   };
 
   const pickSchool = (name: string) => {
+    const picked = allSchools.find((s) => s.name === name) || null;
+    setPickedSchool(picked);
     setSchoolName(name);
     setShowSuggestions(false);
     setSchoolExists(true);
@@ -226,14 +233,33 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       toast.error('An account with this email already exists. Please log in instead.');
       return;
     }
+    // Route by the SELECTED role tab — never assume admin:
+    //   Administrative → /auth/register-school (school + first admin)
+    //   Teacher / Parent → /auth/register (role-specific account joined
+    //   to the picked existing school).
+    const isSchoolSignup = role === 'Administrative';
+    const schoolId = pickedSchool?.id;
+    if (!isSchoolSignup && !schoolId) {
+      toast.error('Please pick your school from the suggestions before continuing');
+      return;
+    }
     setSubmitting(true);
     try {
-      const res = await api.post('/auth/register-school', {
-        schoolName: schoolName.trim(),
-        adminName: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        password,
-      });
+      const res = isSchoolSignup
+        ? await api.post('/auth/register-school', {
+            schoolName: schoolName.trim(),
+            adminName: fullName.trim(),
+            email: email.trim().toLowerCase(),
+            password,
+          })
+        : await api.post('/auth/register', {
+            role: role === 'Teacher' ? 'TEACHER' : 'PARENT',
+            name: fullName.trim(),
+            email: email.trim().toLowerCase(),
+            password,
+            schoolId,
+            idMode: 'AUTO',
+          });
       // register-school creates a brand-new school + its FIRST admin, so the
       // account is always immediately valid — persist the session directly.
       try {
@@ -243,8 +269,22 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       } catch {
         /* storage unavailable – ignore */
       }
-      toast.success('School account created! Welcome aboard 🎉');
-      setTimeout(() => navigate('/admin', { replace: true }), 1200);
+      // Update React auth state so ProtectedRoute sees the user right
+      // away — writing localStorage alone is not enough.
+      if (setAuthUser) setAuthUser(res.data.user);
+      api.defaults.headers.common['Authorization'] = `Bearer ${res.data.token}`;
+      api.defaults.headers.common['x-tenant-id'] = res.data.user.schoolId;
+      toast.success('Account created! Welcome aboard 🎉');
+      setTimeout(
+        () =>
+          navigate(
+            isSchoolSignup
+              ? '/admin'
+              : role === 'Teacher' ? '/teacher/profile-setup' : '/parent',
+            { replace: true },
+          ),
+        1200,
+      );
     } catch (err: any) {
       const data = err?.response?.data;
       if (data?.pendingApproval) {
@@ -370,9 +410,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       flexDirection: 'column',
       alignItems: 'center',
       textAlign: 'center',
-      // Nudged up from dead-center so the writeup/mockup sits slightly
-      // above the vertical midpoint of the hero panel.
-      marginTop: '-3rem',
+      // Brought down slightly from the vertical midpoint of the hero panel.
+      marginTop: '1rem',
       marginBottom: 'auto',
       position: 'relative',
     },
@@ -397,7 +436,8 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
        objectFit: 'contain',
        objectPosition: 'left center',
        marginLeft: '25rem',
-       marginTop: '9rem',
+       // Vertically centered: pulled up from the previous 9rem offset.
+       marginTop: '0',
        zIndex: 1,
        position: 'relative',
        borderRadius: '10px',
@@ -530,6 +570,35 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
       textAlign: 'center',
       marginBottom: '1.5rem',
       width: '100%',
+    },
+    // ===== Mobile-only writeup (top of the Sign Up form) =====
+    mobileWriteup: {
+      textAlign: 'center' as const,
+      marginBottom: '1.25rem',
+      width: '100%',
+    },
+    mobileWriteupEyebrow: {
+      fontSize: '0.72rem',
+      fontWeight: 700,
+      letterSpacing: '0.18em',
+      textTransform: 'uppercase' as const,
+      color: '#d946ef',
+      margin: '0 0 0.5rem 0',
+    },
+    mobileWriteupHeading: {
+      fontFamily: "'Playfair Display', Georgia, 'Times New Roman', serif",
+      fontSize: '1.35rem',
+      fontWeight: 700,
+      color: '#0f172a',
+      lineHeight: 1.25,
+      margin: '0 0 0.5rem 0',
+    },
+    mobileWriteupBody: {
+      fontFamily: "'Caveat', 'Segoe Script', cursive",
+      fontSize: '1.05rem',
+      lineHeight: 1.5,
+      color: '#475569',
+      margin: 0,
     },
     formLogo: {
       // Hidden on mobile — the header already carries the logo there.
@@ -817,8 +886,9 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
     flex: 1,
     border: 'none',
     background: isActive ? '#ffffff' : 'transparent',
-    padding: '8px 12px',
-    fontSize: '0.85rem',
+    // Responsive: shrink text and padding as the screen gets narrower.
+    padding: isMobile ? '6px 6px' : '8px 12px',
+    fontSize: isMobile ? '0.7rem' : '0.85rem',
     fontWeight: 500,
     color: isActive ? '#2563eb' : '#64748b',
     borderRadius: '6px',
@@ -1159,6 +1229,22 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
 
             {/* SIGN UP FORM */}
             {activeNav === 'Sign Up' && (
+              <>
+              {/* Mobile-only writeup — the hero panel (which carries the
+                  AI writeup on desktop) is hidden on mobile, so introduce
+                  the sign-up experience with a short writeup instead. */}
+              {isMobile && (
+                <div style={styles.mobileWriteup}>
+                  <p style={styles.mobileWriteupEyebrow}>SmartEdufy AI</p>
+                  <h2 style={styles.mobileWriteupHeading}>
+                    An AI-Powered Education Ecosystem
+                  </h2>
+                  <p style={styles.mobileWriteupBody}>
+                    AI-powered timetabling, testing and reporting — built
+                    for African schools of every size.
+                  </p>
+                </div>
+              )}
               <form style={styles.form} onSubmit={handleSignUp}>
                 <div style={styles.formGroup}>
                   <label style={styles.label} htmlFor="fullName">Full Name</label>
@@ -1347,7 +1433,23 @@ export default function SmartEdufySignIn({ setCurrentPage, initialAuth = 'Sign I
                   </svg>
                   Sign up with Google
                 </button>
+
+                {/* Mobile: the top nav is hidden, so offer a sign-in
+                    link directly under the sign-up form. */}
+                {isMobile && (
+                  <p style={styles.signupPrompt}>
+                    Already have an account?{' '}
+                    <button
+                      type='button'
+                      style={styles.signupLink}
+                      onClick={() => setActiveNav('Sign In')}
+                    >
+                      Sign in
+                    </button>
+                  </p>
+                )}
               </form>
+              </>
             )}
 
             {/* FORGOT PASSWORD FORM */}
